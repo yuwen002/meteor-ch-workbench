@@ -1,0 +1,13 @@
+﻿node_modules/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+.idea/
+.vscode/
+wailsjs/
+build/
+bin/
