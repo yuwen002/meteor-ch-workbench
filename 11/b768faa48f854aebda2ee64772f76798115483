@@ -1,0 +1,60 @@
+frontend/src/locales/en.ts
+  h_a3f313f3d96276 1-114
+frontend/tailwind.config.js
+  h_a3f313f3d96276 1-25
+frontend/src/views/QueryEditor.vue
+  h_a3f313f3d96276 1-325,327-341,343-493
+frontend/src/router/index.ts
+  h_a3f313f3d96276 1-14
+main.go
+  h_a3f313f3d96276 1-38
+frontend/src/api.ts
+  h_a3f313f3d96276 1-65
+internal/clickhouse/service.go
+  h_a3f313f3d96276 1-297
+frontend/src/locales/zh.ts
+  h_a3f313f3d96276 1-53
+README.md
+  h_a3f313f3d96276 1-137
+docs/FEATURES.md
+  h_a3f313f3d96276 1-300
+frontend/src/App.vue
+  h_a3f313f3d96276 1-335
+frontend/package.json
+  h_a3f313f3d96276 1-27
+frontend/postcss.config.js
+  h_a3f313f3d96276 1-6
+frontend/src/components/ConnectionModal.vue
+  h_a3f313f3d96276 1-163
+internal/config/manager.go
+  h_a3f313f3d96276 1-222
+frontend/src/i18n.ts
+  h_a3f313f3d96276 1-30
+app.go
+  h_a3f313f3d96276 1-125
+frontend/src/components/FolderModal.vue
+  h_a3f313f3d96276 1-48
+frontend/src/types.ts
+  h_a3f313f3d96276 1-55
+frontend/src/main.ts
+  h_a3f313f3d96276 1-17
+frontend/src/components/MenuBar.vue
+  h_a3f313f3d96276 1-291
+frontend/src/style.css
+  h_a3f313f3d96276 1-85
+frontend/vite.config.ts
+  h_a3f313f3d96276 1-14
+frontend/src/stores/app.ts
+  h_a3f313f3d96276 1-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "11b768faa48f854aebda2ee64772f76798115483",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
