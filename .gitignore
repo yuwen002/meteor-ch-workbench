@@ -1,13 +1,22 @@
-﻿node_modules/
+# 依赖与构建产物
+node_modules/
 dist/
+frontend/dist/
+*.tsbuildinfo
+
+# 二进制
 *.exe
 *.dll
 *.so
 *.dylib
 *.test
 *.out
+
+# 编辑器
 .idea/
 .vscode/
+
+# Wails
 wailsjs/
 build/
 bin/

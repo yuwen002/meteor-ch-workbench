@@ -27,6 +27,7 @@ const form = reactive<Connection>({
   database: 'default',
   secure: false,
   use_compress: true,
+  insecure_skip_verify: false,
 })
 
 const testing = ref(false)
@@ -43,7 +44,7 @@ watch(
         id: '', folder_id: '', name: '',
         host: 'localhost', port: 9000, user: 'default',
         password: '', database: 'default',
-        secure: false, use_compress: true,
+        secure: false, use_compress: true, insecure_skip_verify: false,
       })
     }
   },
@@ -134,6 +135,14 @@ function submit() {
             {{ t('connection.compress') }}
           </label>
         </div>
+
+        <label v-if="form.secure" class="flex items-start gap-1.5 text-sm text-amber-400">
+          <input v-model="form.insecure_skip_verify" type="checkbox" class="mt-0.5" />
+          <span>
+            {{ t('connection.insecure') }}
+            <span class="block text-xs text-ch-muted">{{ t('connection.insecureHint') }}</span>
+          </span>
+        </label>
 
         <div v-if="testMsg" :class="['text-xs px-2 py-1 rounded', testOk ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400']">
           {{ testMsg }}

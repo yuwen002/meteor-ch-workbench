@@ -26,6 +26,10 @@ type Connection struct {
 	Database    string `json:"database"`
 	Secure      bool   `json:"secure"`
 	UseCompress bool   `json:"use_compress"`
+	// InsecureSkipVerify 允许连接自签证书的服务端。默认 false：
+	// 一旦写死 true，TLS 就等于没做认证，中间人可以直接拿到用户名密码。
+	// 勾选它必须由用户显式决定。
+	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
 }
 
 func (c *Connection) GenID() {
@@ -46,10 +50,10 @@ type DataFile struct {
 }
 
 type Manager struct {
-	mu      sync.RWMutex
-	path    string
-	dir     string
-	data    DataFile
+	mu   sync.RWMutex
+	path string
+	dir  string
+	data DataFile
 }
 
 func NewManager() *Manager {
@@ -58,7 +62,7 @@ func NewManager() *Manager {
 		dir = "."
 	}
 	dir = filepath.Join(dir, "meteor-ch-workbench")
-	_ = os.MkdirAll(dir, 0o755)
+	_ = os.MkdirAll(dir, 0o700)
 	return &Manager{
 		path: filepath.Join(dir, "connections.json"),
 		dir:  dir,
@@ -218,5 +222,6 @@ func (m *Manager) flush() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.path, data, 0o644)
+	// 文件里含明文密码，权限收紧到仅当前用户可读写（0o600）。
+	return os.WriteFile(m.path, data, 0o600)
 }

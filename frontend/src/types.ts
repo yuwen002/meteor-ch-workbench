@@ -9,6 +9,8 @@ export interface Connection {
   database: string
   secure: boolean
   use_compress: boolean
+  // 仅在自签证书集群上由用户显式勾选；默认不跳过证书校验。
+  insecure_skip_verify?: boolean
 }
 
 export interface Folder {
@@ -36,14 +38,18 @@ export interface TableInfo {
 
 export interface ClusterInfo {
   cluster: string
-  version: string
+  version?: string
   host_name: string
   host_address: string
   port: number
   is_local: boolean
   shard_num: number
+  shard_name?: string
   replica_num: number
-  uuid: string
+  errors_count?: number
+  database_shard_name?: string
+  database_replica_name?: string
+
 }
 
 export interface QueryResult {

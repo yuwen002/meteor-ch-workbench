@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as monaco from 'monaco-editor'
@@ -21,7 +21,7 @@ const loadingMeta = ref(false)
 const clusters = ref<ClusterInfo[]>([])
 const expandedClusters = ref<Set<string>>(new Set())
 const loadingClusters = ref(false)
-const copiedUUID = ref<string | null>(null)
+const copiedText = ref<string | null>(null)
 
 const result = ref<QueryResult | null>(null)
 const querying = ref(false)
@@ -86,12 +86,12 @@ function toggleCluster(cluster: string) {
   expandedClusters.value = new Set(expandedClusters.value)
 }
 
-async function copyUUID(uuid: string) {
-  if (!uuid) return
+async function copyText(text: string) {
+  if (!text) return
   try {
-    await navigator.clipboard.writeText(uuid)
-    copiedUUID.value = uuid
-    setTimeout(() => { copiedUUID.value = null }, 1500)
+    await navigator.clipboard.writeText(text)
+    copiedText.value = text
+    setTimeout(() => { copiedText.value = null }, 1500)
   } catch {
     // ignore
   }
@@ -149,13 +149,13 @@ function insertTableName(table: string) {
   }
 }
 
-function insertClusterUUID(uuid: string) {
-  if (!editor || !uuid) return
+function insertClusterIdentifier(value: string) {
+  if (!editor || !value) return
   const model = editor.getModel()
   const sel = editor.getSelection()
   if (model && sel) {
     model.pushEditOperations([], [
-      { range: sel, text: uuid },
+      { range: sel, text: value },
     ], () => null)
     editor.focus()
   }
@@ -364,7 +364,7 @@ onBeforeUnmount(() => {
                 :key="clusterName"
               >
                 <div
-                  class="flex items-center gap-1 px-3 py-1 hover:bg-ch-hover text-ch-text cursor-pointer"
+                  class="group flex items-center gap-1 px-3 py-1 hover:bg-ch-hover text-ch-text cursor-pointer"
                   @click="toggleCluster(clusterName)"
                 >
                   <svg
@@ -376,6 +376,19 @@ onBeforeUnmount(() => {
                   </svg>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-ch-muted shrink-0"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
                   <span class="truncate text-xs font-medium">{{ clusterName }}</span>
+<button                    class="shrink-0 opacity-0 group-hover:opacity-100 text-ch-muted hover:text-ch-accent transition-opacity"
+                    :title="copiedText === clusterName ? t('editor.copied') : t('editor.copyCluster')"
+                    @click.stop="copyText(clusterName)"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                  <button
+                    class="shrink-0 opacity-0 group-hover:opacity-100 text-ch-muted hover:text-ch-accent transition-opacity"
+                    :title="t('editor.insertCluster')"
+                    @click.stop="insertClusterIdentifier(clusterName)"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
                   <span class="text-ch-muted text-[10px] ml-auto">{{ nodes.length }}</span>
                 </div>
                 <div v-show="expandedClusters.has(clusterName)" class="pl-5">
@@ -393,23 +406,24 @@ onBeforeUnmount(() => {
                       <span class="text-ch-text truncate font-mono">{{ node.host_address }}:{{ node.port }}</span>
                     </div>
                     <div class="text-ch-muted text-[10px] leading-relaxed">
-                      <span class="mr-2">{{ t('editor.shard') }}: {{ node.shard_num }}</span>
+                      <span class="mr-2">{{ t('editor.shard') }}: {{ node.shard_num }}<template v-if="node.shard_name"> ({{ node.shard_name }})</template></span>
                       <span class="mr-2">{{ t('editor.replica') }}: {{ node.replica_num }}</span>
-                      <span class="text-ch-muted/70">{{ node.version }}</span>
+                      <span v-if="node.errors_count" class="mr-2 text-amber-400">{{ t('editor.errors') }}: {{ node.errors_count }}</span>
+<span v-if="node.version" class="text-ch-muted/70">v{{ node.version }}</span>
                     </div>
                     <div
-                      v-if="node.uuid"
+v-if="node.database_shard_name || node.database_replica_name"
                       class="mt-1 flex items-center gap-1 group"
                     >
                       <code
                         class="text-[10px] font-mono text-blue-400 bg-ch-hover/60 px-1 py-0.5 rounded cursor-pointer truncate flex-1"
-                        :title="node.uuid + ' (Ctrl+点击插入编辑器)'"
-                        @click="insertClusterUUID(node.uuid)"
-                      >{{ node.uuid.slice(0, 8) }}…{{ node.uuid.slice(-4) }}</code>
+                        :title="(node.database_shard_name || '') + ' / ' + (node.database_replica_name || '')"
+                        @click="insertClusterIdentifier(node.database_shard_name || node.database_replica_name || '')"
+                      >{{ node.database_shard_name }}{{ node.database_replica_name ? ' / ' + node.database_replica_name : '' }}</code>
                       <button
                         class="shrink-0 opacity-0 group-hover:opacity-100 text-ch-muted hover:text-ch-accent transition-opacity"
-                        :title="copiedUUID === node.uuid ? t('editor.uuidCopied') : t('editor.copyUUID')"
-                        @click.stop="copyUUID(node.uuid)"
+                        :title="copiedText === (node.database_shard_name || node.database_replica_name) ? t('editor.copied') : t('editor.copyIdentifier')"
+                        @click.stop="copyText(node.database_shard_name || node.database_replica_name || '')"
                       >
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                       </button>

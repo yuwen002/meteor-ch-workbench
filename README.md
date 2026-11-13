@@ -13,10 +13,10 @@
 - ⚡ **SQL 编辑器** — Monaco Editor，语法高亮，Ctrl/Cmd + Enter 快捷执行
 - 📊 **实时查询结果** — 表格渲染、耗时统计、行数统计，错误即时提示
 - 🗄️ **数据库 / 数据库表浏览** — 侧边栏树状结构，双击快速 SELECT
-- 🌩️ **集群信息面板** — 一键查看 cluster、shard、replica、UUID，点击插入 SQL
+- 🌩️ **集群信息面板** — 一键查看 cluster、shard、replica、节点版本与副本标识，点击插入集群名
 - ↔️ **可拖拽侧边栏** — 宽度自由调整，记忆上次状态
 - 🔌 **连接测试** — 创建前验证连通性
-- 🔐 **TLS / LZ4 压缩** — 支持加密传输与 Native Protocol 压缩
+- 🔐 **TLS / LZ4 压缩** — 默认严格校验服务端证书；自签证书集群需显式勾选"跳过证书校验"
 
 ## 架构
 
@@ -35,9 +35,11 @@
 
 ### 前置依赖
 
-- Go >= 1.22
+- Go >= 1.26（与 go.mod 中的 `go 1.26.0` 对齐）
 - Node.js >= 18
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation) v3
+
+> `main.go` 用 `//go:embed all:frontend/dist` 打包前端，因此**必须先构建前端**（`npm run build` 或直接用 `wails dev` / `wails build`），否则 `go build .` 会报 `no matching files found`。仅编译后端业务包（`go build ./internal/...`）不需要前端产物。
 
 ### 开发模式
 
@@ -59,6 +61,14 @@ npm install
 npm run dev      # Vite dev server
 npm run build    # 产物输出到 frontend/dist
 ```
+
+## 数据契约要点
+
+- 查询结果 `columns` 是**列名字符串数组**（Go `[]string` ↔ TS `string[]`），不要返回对象数组，否则表头会渲染成 `[object Object]`
+- `elapsed_ms` 由后端统计（从发起查询到取完全部结果行），单位毫秒
+- 集群面板的字段全部来自 `system.clusters` 的真实列；`version` 由 `clusterAllReplicas(<cluster>, system.one)` 逐集群尽力获取，取不到即为空字符串，前端必须容忍空值
+- `insecure_skip_verify` 默认 false。生产默认严格校验证书，只有自签集群才由用户显式勾选
+- 修改或删除连接后，后端会丢弃缓存的 driver 连接，保证新参数立即生效
 
 ## 配置文件位置
 
@@ -120,7 +130,7 @@ await Call.ByName('main.App.Query', connectionID, sql)
 | 层 | 技术 |
 |----|------|
 | 桌面框架 | [Wails v3](https://wails.io/) |
-| 后端 | Go 1.22+，[clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go) |
+| 后端 | Go 1.26+，[clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go) |
 | 前端 | Vue 3 `<script setup>` + TypeScript |
 | UI | Tailwind CSS |
 | 编辑器 | Monaco Editor |

@@ -28,7 +28,8 @@ export default {
   connection: {
     titleNew: "新建连接", titleEdit: "编辑连接", name: "名称", folder: "所属分组",
     noFolder: "— 不分组 —", host: "主机", port: "端口", user: "用户",
-    password: "密码", database: "数据库", secure: "加密连接 (TLS)", compress: "数据压缩",
+    password: "密码", database: "数据库", secure: "加密连接 (TLS)", compress: "数据压缩", insecure: "跳过证书校验（不安全）",
+    insecureHint: "仅在使用自签证书的内网集群时勾选。开启后 TLS 不再验证服务端身份，存在被中间人窃取账号密码的风险。",
     testConnection: "测试连接", testing: "测试中...", create: "创建", save: "保存",
     cancel: "取消", deleteBtn: "删除", confirmDelete: "确定删除此连接？",
     testSuccess: "连接成功！", testFailed: "连接失败"
@@ -46,7 +47,9 @@ export default {
     queryHint: "在上方输入 SQL，点击执行 (Ctrl+Enter) 运行",
     noConnection: "请先选择一个连接", queryFailed: "查询失败",
     clusters: "集群", noClusters: "暂无集群信息",
-    copyUUID: "复制 UUID", uuidCopied: "UUID 已复制",
+    copyIdentifier: "复制副本标识", copied: "已复制到剪贴板",
+    copyCluster: "复制集群名", insertCluster: "插入集群名",
+    errors: "连接失败次数",
     shard: "分片", replica: "副本", local: "本地"
   },
   common: { close: "关闭", unknown: "未知" }

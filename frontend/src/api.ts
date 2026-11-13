@@ -1,5 +1,5 @@
 import { Call } from '@wailsio/runtime'
-import type { Connection, Folder, DataFile, QueryResult, TableInfo, ClusterInfo } from './types'
+import type { Connection, Folder, DataFile, QueryResult, TableInfo, ClusterInfo, ColumnInfo } from './types'
 
 type AnyError = { message?: string; cause?: unknown; name?: string }
 
@@ -53,6 +53,10 @@ export const api = {
 
   GetClusters(connectionID: string): Promise<ClusterInfo[]> {
     return call<ClusterInfo[]>('main.App.GetClusters', connectionID)
+      },
+
+      GetTableSchema(connectionID: string, database: string, table: string): Promise<ColumnInfo[]> {
+        return call<ColumnInfo[]>('main.App.GetTableSchema', connectionID, database, table)
   },
 
   OpenConfigFolder(): Promise<void> {

@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -39,10 +39,19 @@ func (a *App) GetConnections() ([]config.Connection, error) {
 }
 
 func (a *App) SaveConnection(conn config.Connection) error {
-	return a.conf.SaveConnection(conn)
+	if err := a.conf.SaveConnection(conn); err != nil {
+		return err
+	}
+	// 配置可能已变更（主机/端口/密码/TLS），必须让缓存的连接失效，
+	// 否则下一次查询仍然沿用旧参数建立的连接。
+	if conn.ID != "" {
+		a.chSvc.Close(conn.ID)
+	}
+	return nil
 }
 
 func (a *App) DeleteConnection(id string) error {
+	a.chSvc.Close(id) // 连接已删除，同步丢弃缓存的 driver 连接
 	return a.conf.DeleteConnection(id)
 }
 

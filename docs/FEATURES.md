@@ -33,7 +33,7 @@
 | 用户 | 默认 `default` |
 | 密码 | 明文存储在配置文件中 |
 | 数据库 | 可选，登录后默认 DB |
-| 加密连接 (TLS) | 使用 TLS 协议（`opts.TLS`） |
+| 加密连接 (TLS) | 使用 TLS 协议（`opts.TLS`），默认严格校验服务端证书 |
 | 数据压缩 | 启用 Native Protocol **LZ4 压缩** |
 
 ### 测试连接
@@ -142,16 +142,17 @@ interface QueryResult {
 | Shard | 分片编号 |
 | Replica | 副本编号 |
 | Version | ClickHouse 版本 |
-| UUID | 集群 / 节点 UUID |
+| version | 节点 ClickHouse 版本（best-effort，取不到为空） |
+| shard_name / database_shard_name / database_replica_name | Replicated 库场景下的分片与副本标识 |
 
 ### 与 SQL 编辑器联动
 
-- **点击 UUID** → 自动插入到编辑器当前光标位置（写 ON CLUSTER、CLUSTER BY 语句时非常方便）
-- **hover UUID** → 显示复制按钮，一键复制到剪贴板
+- **点击集群名旁的插入按钮** → 把集群名插入到编辑器当前光标位置（写 ON CLUSTER、CLUSTER BY 语句时非常方便）
+- **hover 集群行 / 副本标识** → 显示复制按钮，一键复制到剪贴板
 
 ### 为什么需要这个
 
-写 CLUSTER 相关 SQL（`ON CLUSTER xxx`、`CREATE TABLE ON CLUSTER`、`CLUSTER BY`）时，你不需要再手动去查 UUID 或 cluster 名，侧边栏直接点一下就插入。
+写 CLUSTER 相关 SQL（`ON CLUSTER xxx`、`CREATE TABLE ON CLUSTER`、`CLUSTER BY`）时，不需要再手动去查集群名，侧边栏直接点一下就插入。
 
 ---
 
