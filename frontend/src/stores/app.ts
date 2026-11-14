@@ -3,12 +3,16 @@ import { ref, computed } from 'vue'
 import { api } from '../api'
 import type { Connection, Folder, DataFile } from '../types'
 
+export type ConnectionStatus = 'unknown' | 'connecting' | 'connected' | 'failed'
+
 export const useAppStore = defineStore('app', () => {
   const folders = ref<Folder[]>([])
   const connections = ref<Connection[]>([])
   const activeConnectionId = ref<string | null>(null)
   const collapsedFolders = ref<Set<string>>(new Set())
   const sidebarCollapsed = ref(false)
+  const connectionStatus = ref<Map<string, ConnectionStatus>>(new Map())
+  const connectionError = ref<Map<string, string>>(new Map())
 
   const activeConnection = computed(() =>
     connections.value.find((c) => c.id === activeConnectionId.value) || null
@@ -86,6 +90,37 @@ export const useAppStore = defineStore('app', () => {
     sidebarCollapsed.value = !sidebarCollapsed.value
   }
 
+  function getConnectionStatus(id: string): ConnectionStatus {
+    return connectionStatus.value.get(id) || 'unknown'
+  }
+
+  function getConnectionError(id: string): string {
+    return connectionError.value.get(id) || ''
+  }
+
+  async function checkConnection(id: string) {
+    const conn = connections.value.find((c) => c.id === id)
+    if (!conn) return
+    connectionStatus.value.set(id, 'connecting')
+    connectionError.value.delete(id)
+    connectionStatus.value = new Map(connectionStatus.value)
+    try {
+      await api.TestConnection(conn)
+      connectionStatus.value.set(id, 'connected')
+      connectionError.value.delete(id)
+    } catch (e: any) {
+      connectionStatus.value.set(id, 'failed')
+      connectionError.value.set(id, e?.message || 'Connection failed')
+    }
+    connectionStatus.value = new Map(connectionStatus.value)
+  }
+
+  async function checkAllConnections() {
+    for (const c of connections.value) {
+      checkConnection(c.id)
+    }
+  }
+
   return {
     folders,
     connections,
@@ -93,6 +128,7 @@ export const useAppStore = defineStore('app', () => {
     activeConnection,
     collapsedFolders,
     sidebarCollapsed,
+    connectionStatus,
     groupedConnections,
     loadAll,
     saveConnection,
@@ -101,5 +137,9 @@ export const useAppStore = defineStore('app', () => {
     deleteFolder,
     toggleFolder,
     toggleSidebar,
+    getConnectionStatus,
+    getConnectionError,
+    checkConnection,
+    checkAllConnections,
   }
 })

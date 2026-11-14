@@ -1,102 +1,186 @@
-﻿package clickhouse
+// Package clickhouse 封装 ClickHouse 的连接管理与查询能力。
+//
+// 本包刻意通过标准库 database/sql + DSN 的方式建连，而不是使用驱动的
+// 不变式 API（clickhouse.Open + Options.Protocol）。原因是该 API 在某些版本下
+// 存在协议路由缺陷：即使指定 Protocol 为 HTTP，实际仍会发送 Native 握手包，
+// 导致只开放 HTTP 端口的服务端返回 "HTTP/1.1 400 Bad Request"，
+// 客户端解析到首字节 'H'(72) 后抛出 [handshake] unexpected packet [72] from server。
+// 而 DSN 的 scheme（http/https/clickhouse/clickhouse+secure）能可靠地决定协议。
+package clickhouse
 
 import (
 	"context"
-	"crypto/tls"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/url"
+	"strings"
 	"sync"
 
-	ch "github.com/ClickHouse/clickhouse-go/v2"
-	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 )
 
+// ColumnInfo 描述表的一列结构信息。
 type ColumnInfo struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Comment string `json:"comment"`
+	Name    string `json:"name"`    // 列名
+	Type    string `json:"type"`    // 列类型（如 String、UInt64、DateTime）
+	Comment string `json:"comment"` // 列注释
 }
 
+// TableInfo 描述一张表的基本信息。
 type TableInfo struct {
-	Name    string `json:"name"`
-	Engine  string `json:"engine"`
-	Comment string `json:"comment"`
+	Name    string `json:"name"`    // 表名
+	Engine  string `json:"engine"`  // 表引擎（如 MergeTree、Memory）
+	Comment string `json:"comment"` // 表注释
 }
 
+// ClusterInfo 描述 system.clusters 中的一条集群节点记录。
 type ClusterInfo struct {
-	Cluster    string `json:"cluster"`
-	Version    string `json:"version"`
-	HostName   string `json:"host_name"`
-	HostAddress string `json:"host_address"`
-	Port       int    `json:"port"`
-	IsLocal    bool   `json:"is_local"`
-	ShardNum   int    `json:"shard_num"`
-	ReplicaNum int    `json:"replica_num"`
-	UUID       string `json:"uuid"`
+	Cluster     string `json:"cluster"`      // 集群名称
+	Version     string `json:"version"`      // 节点 ClickHouse 版本
+	HostName    string `json:"host_name"`    // 节点主机名
+	HostAddress string `json:"host_address"` // 节点主机地址
+	Port        int    `json:"port"`         // 节点端口
+	IsLocal     bool   `json:"is_local"`     // 是否为当前连接所在节点
+	ShardNum    int    `json:"shard_num"`    // 分片编号
+	ReplicaNum  int    `json:"replica_num"`  // 副本编号
+	UUID        string `json:"uuid"`         // 节点唯一标识
 }
 
+// QueryResult 是一次 SQL 查询的执行结果。
+// 注意：SQL 语法错误等执行期错误放在 Error 字段而非方法返回值，
+// 这样前端仍然能拿到结构化的结果对象。
 type QueryResult struct {
-	Columns  []ColumnInfo    `json:"columns"`
-	Rows     [][]interface{} `json:"rows"`
-	RowCount int64           `json:"row_count"`
-	Error    string          `json:"error,omitempty"`
+	Columns  []ColumnInfo    `json:"columns"`         // 结果列信息
+	Rows     [][]interface{} `json:"rows"`            // 结果行，行内元素按列顺序排列
+	RowCount int64           `json:"row_count"`       // 结果行数
+	Error    string          `json:"error,omitempty"` // 执行错误信息，正常时为空
 }
 
+// Service 是 ClickHouse 服务，按连接 ID 缓存 database/sql 连接池。
+// sql.DB 本身即是并发安全的连接池，因此缓存它比缓存单条连接更合适。
 type Service struct {
-	mu    sync.Mutex
-	conns map[string]chdriver.Conn
+	mu  sync.Mutex         // 保护 dbs 映射的互斥锁
+	dbs map[string]*sql.DB // 连接 ID -> 连接池
 }
 
+// NewService 创建 ClickHouse 服务实例，初始化空的连接池映射。
 func NewService() *Service {
 	return &Service{
-		conns: make(map[string]chdriver.Conn),
+		dbs: make(map[string]*sql.DB),
 	}
 }
 
-func (s *Service) getConn(conn config.Connection) (chdriver.Conn, error) {
+// buildDSN 根据连接配置拼装 database/sql 使用的 DSN 字符串。
+//
+// 协议由 URL scheme 决定：
+//   - HTTP 明文：http://
+//   - HTTP 加密：https://
+//   - Native 明文：clickhouse://
+//   - Native 加密：clickhouse+secure://
+//
+// 数据库名为空时不写入 path，以便用户以「大账号」访问所有库。
+func buildDSN(conn config.Connection) string {
+	u := &url.URL{}
+	if conn.Protocol == "http" {
+		if conn.Secure {
+			u.Scheme = "https"
+		} else {
+			u.Scheme = "http"
+		}
+	} else {
+		if conn.Secure {
+			u.Scheme = "clickhouse+secure"
+		} else {
+			u.Scheme = "clickhouse"
+		}
+	}
+	username := conn.User
+	if username == "" {
+		username = "default"
+	}
+	u.User = url.UserPassword(username, conn.Password)
+	u.Host = fmt.Sprintf("%s:%d", conn.Host, conn.Port)
+	u.Path = "/" + conn.Database
+
+	q := u.Query()
+	if conn.UseCompress {
+		q.Set("compress", "true")
+	}
+	if conn.Database != "" {
+		q.Set("database", conn.Database)
+	}
+	if conn.Secure {
+		q.Set("secure", "true")
+		q.Set("skip_verify", "true")
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// getDB 获取指定连接对应的连接池，不存在时惰性创建。
+// sql.Open 不会立即建连，真正的握手发生在首次 Ping 或执行查询时。
+func (s *Service) getDB(conn config.Connection) (*sql.DB, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if c, ok := s.conns[conn.ID]; ok {
-		return c, nil
+	if db, ok := s.dbs[conn.ID]; ok {
+		return db, nil
 	}
 
-	opts := &ch.Options{
-		Addr:     []string{fmt.Sprintf("%s:%d", conn.Host, conn.Port)},
-		Protocol: ch.Native,
-		Auth: ch.Auth{
-			Database: conn.Database,
-			Username: conn.User,
-			Password: conn.Password,
-		},
-	}
-	if conn.Secure {
-		opts.TLS = &tls.Config{InsecureSkipVerify: true}
-	}
-	if conn.UseCompress {
-		opts.Compression = &ch.Compression{Method: ch.CompressionLZ4}
-	}
-
-	c, err := ch.Open(opts)
+	db, err := sql.Open("clickhouse", buildDSN(conn))
 	if err != nil {
 		return nil, err
 	}
-	s.conns[conn.ID] = c
-	return c, nil
+	db.SetMaxOpenConns(5)
+	db.SetMaxIdleConns(2)
+	s.dbs[conn.ID] = db
+	return db, nil
 }
 
+// TestConnection 使用给定参数做一次真实连接测试。
+// 先丢弃该 ID 下的旧连接池，确保测试的是最新参数而不是缓存结果。
+// 测试失败时同样清理连接池，避免把坏连接留在缓存里。
 func (s *Service) TestConnection(conn config.Connection) error {
-	c, err := s.getConn(conn)
+	s.Invalidate(conn.ID)
+
+	log.Printf("[TestConnection] id=%q host=%q port=%d protocol=%q database=%q secure=%v compress=%v",
+		conn.ID, conn.Host, conn.Port, conn.Protocol, conn.Database, conn.Secure, conn.UseCompress)
+
+	db, err := s.getDB(conn)
 	if err != nil {
+		s.Invalidate(conn.ID)
 		return err
 	}
-	return c.Ping(context.Background())
+	if err := db.Ping(); err != nil {
+		s.Invalidate(conn.ID)
+		return err
+	}
+	return nil
 }
 
-func scanRows(rows chdriver.Rows) ([][]interface{}, error) {
+// Invalidate 关闭并移除指定连接的连接池。
+// 连接参数变更、删除连接或测试失败时调用，确保后续操作重新建连。
+func (s *Service) Invalidate(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if db, ok := s.dbs[id]; ok {
+		_ = db.Close()
+		delete(s.dbs, id)
+	}
+}
+
+// scanRows 把 sql.Rows 全部读入二维切片。
+// 每个值都经过 serializeValue 处理，保证结果可安全地序列化为 JSON 传给前端。
+func scanRows(rows *sql.Rows) ([][]interface{}, error) {
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
 	var result [][]interface{}
-	colCount := len(rows.Columns())
+	colCount := len(cols)
 	for rows.Next() {
 		vals := make([]interface{}, colCount)
 		ptrs := make([]interface{}, colCount)
@@ -112,24 +196,34 @@ func scanRows(rows chdriver.Rows) ([][]interface{}, error) {
 		}
 		result = append(result, row)
 	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 	return result, nil
 }
 
-func (s *Service) Query(conn config.Connection, sql string) (*QueryResult, error) {
-	c, err := s.getConn(conn)
+// Query 在指定连接上执行 SQL 并返回完整结果集。
+// SQL 执行期错误不会向上返回 error，而是写入 QueryResult.Error，
+// 前端据此在结果面板内展示错误；只有连接/列读取等基础设施错误才返回 error。
+func (s *Service) Query(conn config.Connection, sqlText string) (*QueryResult, error) {
+	db, err := s.getDB(conn)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx := context.Background()
-	rows, err := c.Query(ctx, sql)
+	rows, err := db.QueryContext(ctx, sqlText)
 	if err != nil {
 		return &QueryResult{Error: err.Error()}, nil
 	}
 	defer rows.Close()
 
 	result := &QueryResult{}
-	for _, col := range rows.Columns() {
+	cols, err := rows.Columns()
+	if err != nil {
+		return result, err
+	}
+	for _, col := range cols {
 		result.Columns = append(result.Columns, ColumnInfo{Name: col})
 	}
 
@@ -142,14 +236,16 @@ func (s *Service) Query(conn config.Connection, sql string) (*QueryResult, error
 	return result, nil
 }
 
+// GetDatabases 返回该连接可见的全部数据库名（SHOW DATABASES）。
+// 使用大权限账号且未指定默认库时，前端可据此在侧边栏列出所有库。
 func (s *Service) GetDatabases(conn config.Connection) ([]string, error) {
-	c, err := s.getConn(conn)
+	db, err := s.getDB(conn)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx := context.Background()
-	rows, err := c.Query(ctx, "SHOW DATABASES")
+	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
 	if err != nil {
 		return nil, err
 	}
@@ -163,18 +259,23 @@ func (s *Service) GetDatabases(conn config.Connection) ([]string, error) {
 		}
 		dbs = append(dbs, name)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return dbs, nil
 }
 
+// GetTables 返回指定数据库下的全部表信息（名称、引擎、注释）。
+// 数据库名通过 quoteLiteral 转义后拼入 SQL，避免特殊字符导致语句异常。
 func (s *Service) GetTables(conn config.Connection, database string) ([]TableInfo, error) {
-	c, err := s.getConn(conn)
+	db, err := s.getDB(conn)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx := context.Background()
-	query := fmt.Sprintf("SELECT name, engine, comment FROM system.tables WHERE database = '%s'", database)
-	rows, err := c.Query(ctx, query)
+	query := "SELECT name, engine, comment FROM system.tables WHERE database = " + quoteLiteral(database)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -192,40 +293,68 @@ func (s *Service) GetTables(conn config.Connection, database string) ([]TableInf
 			Comment: comment,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return tables, nil
 }
 
+// GetTableSchema 返回指定表的列结构。
+// 按结果列名（name/type/comment）匹配取值，而不是按固定列序，
+// 这样在不同 ClickHouse 版本上（DESCRIBE 返回的列数可能不同）都能正确解析。
 func (s *Service) GetTableSchema(conn config.Connection, database string, table string) ([]ColumnInfo, error) {
-	c, err := s.getConn(conn)
+	db, err := s.getDB(conn)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx := context.Background()
-	query := fmt.Sprintf("DESCRIBE TABLE %s.%s", database, table)
-	rows, err := c.Query(ctx, query)
+	query := fmt.Sprintf("DESCRIBE TABLE %s.%s", quoteIdent(database), quoteIdent(table))
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var cols []ColumnInfo
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	var schema []ColumnInfo
 	for rows.Next() {
-		var name, typ, defaultVal, comment string
-		if err := rows.Scan(&name, &typ, &defaultVal, &comment); err != nil {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
 			return nil, err
 		}
-		cols = append(cols, ColumnInfo{
-			Name:    name,
-			Type:    typ,
-			Comment: comment,
-		})
+		info := ColumnInfo{}
+		for i, name := range cols {
+			sval, _ := vals[i].(string)
+			switch name {
+			case "name":
+				info.Name = sval
+			case "type":
+				info.Type = sval
+			case "comment":
+				info.Comment = sval
+			}
+		}
+		schema = append(schema, info)
 	}
-	return cols, nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return schema, nil
 }
 
+// GetClusters 返回 system.clusters 中的集群拓扑信息。
+// 库内 port、shard_num、replica_num 为无符号类型，这里先按 uint64 读取再转 int，
+// 避免类型不匹配导致扫描失败。
 func (s *Service) GetClusters(conn config.Connection) ([]ClusterInfo, error) {
-	c, err := s.getConn(conn)
+	db, err := s.getDB(conn)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +371,7 @@ func (s *Service) GetClusters(conn config.Connection) ([]ClusterInfo, error) {
 		replica_num,
 		uuid
 	FROM system.clusters`
-	rows, err := c.Query(ctx, query)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -252,9 +381,9 @@ func (s *Service) GetClusters(conn config.Connection) ([]ClusterInfo, error) {
 	for rows.Next() {
 		var (
 			cluster, version, hostName, hostAddress string
-			port, shardNum, replicaNum             uint64
-			isLocal                                bool
-			uuid                                   string
+			port, shardNum, replicaNum              uint64
+			isLocal                                 bool
+			uuid                                    string
 		)
 		if err := rows.Scan(&cluster, &version, &hostName, &hostAddress, &port, &isLocal, &shardNum, &replicaNum, &uuid); err != nil {
 			return nil, err
@@ -271,18 +400,37 @@ func (s *Service) GetClusters(conn config.Connection) ([]ClusterInfo, error) {
 			UUID:        uuid,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return clusters, nil
 }
 
+// CloseAll 关闭并清空全部缓存的连接池，应用退出时调用。
 func (s *Service) CloseAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, c := range s.conns {
-		_ = c.Close()
-		delete(s.conns, id)
+	for id, db := range s.dbs {
+		_ = db.Close()
+		delete(s.dbs, id)
 	}
 }
 
+// quoteLiteral 把字符串转义为合法的 ClickHouse 字符串字面量：
+// 外层加单引号，内部单引号按 SQL 标准双写。
+func quoteLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// quoteIdent 把标识符（库名/表名）转义为合法的反引号标识符，
+// 内部反引号按 ClickHouse 规则加反斜杠转义。
+func quoteIdent(s string) string {
+	return "`" + strings.ReplaceAll(s, "`", "\\`") + "`"
+}
+
+// serializeValue 把数据库驱动返回的原始值转换成可 JSON 序列化的值。
+// 先尝试 JSON 编解码归一化（可处理数组、日期等特殊类型），失败则退化为字符串输出。
+// nil 保持为 nil，前端可据此渲染为 NULL。
 func serializeValue(v interface{}) interface{} {
 	if v == nil {
 		return nil

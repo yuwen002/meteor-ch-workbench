@@ -23,15 +23,18 @@ export default {
     new: "新建", newConnection: "新建连接", newFolder: "新建分组",
     noConnections: "暂无连接。", clickNewToAdd: "点击 新建 按钮添加。",
     ungrouped: "未分组", expand: "展开", collapse: "收起",
-    rename: "重命名", delete: "删除", emptyFolder: "暂无连接"
+    rename: "重命名", delete: "删除", emptyFolder: "暂无连接",
+    newConnectionHere: "在此新建连接", newFolderHere: "在此新建分组",
+    open: "打开连接", testConnection: "测试连接"
   },
   connection: {
     titleNew: "新建连接", titleEdit: "编辑连接", name: "名称", folder: "所属分组",
-    noFolder: "— 不分组 —", host: "主机", port: "端口", user: "用户",
+    noFolder: "— 不分组 —", protocol: "协议", host: "主机", port: "端口", user: "用户",
     password: "密码", database: "数据库", secure: "加密连接 (TLS)", compress: "数据压缩",
     testConnection: "测试连接", testing: "测试中...", create: "创建", save: "保存",
     cancel: "取消", deleteBtn: "删除", confirmDelete: "确定删除此连接？",
-    testSuccess: "连接成功！", testFailed: "连接失败"
+    testSuccess: "连接成功！", testFailed: "连接失败",
+    showPassword: "显示密码", hidePassword: "隐藏密码"
   },
   folder: {
     titleNew: "新建分组", titleEdit: "重命名分组", name: "分组名称",
@@ -49,5 +52,10 @@ export default {
     copyUUID: "复制 UUID", uuidCopied: "UUID 已复制",
     shard: "分片", replica: "副本", local: "本地"
   },
-  common: { close: "关闭", unknown: "未知" }
+  common: { close: "关闭", unknown: "未知" },
+  status: {
+    unknown: "未知状态", connecting: "连接中...",
+    connected: "已连接", failed: "连接失败",
+    refresh: "刷新状态"
+  }
 }

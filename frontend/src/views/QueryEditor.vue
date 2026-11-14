@@ -205,11 +205,8 @@ onMounted(async () => {
     };
   `
   const blob = new Blob([workerCode], { type: 'application/javascript' })
-  self.MonacoEnvironment = {
-    getWorkerUrl(_moduleId: string, label: string) {
-      if (label === 'sql') {
-        return URL.createObjectURL(blob)
-      }
+  ;(self as any).MonacoEnvironment = {
+    getWorkerUrl(_moduleId: string, _label: string) {
       return URL.createObjectURL(blob)
     },
   }
@@ -272,7 +269,24 @@ onBeforeUnmount(() => {
   <div class="h-full w-full flex flex-col">
     <div class="flex items-center gap-2 px-3 py-2 border-b border-ch-border h-11 bg-ch-panel shrink-0">
       <div v-if="store.activeConnection" class="flex items-center gap-2 text-sm">
-        <span class="w-2 h-2 rounded-full bg-green-500"></span>
+        <span
+          class="w-2 h-2 rounded-full shrink-0 cursor-pointer"
+          :class="{
+            'bg-yellow-500 animate-pulse': store.getConnectionStatus(store.activeConnection.id) === 'connecting',
+            'bg-green-500': store.getConnectionStatus(store.activeConnection.id) === 'connected',
+            'bg-red-500': store.getConnectionStatus(store.activeConnection.id) === 'failed',
+            'bg-ch-muted/50': store.getConnectionStatus(store.activeConnection.id) === 'unknown',
+          }"
+          :title="
+            store.getConnectionError(store.activeConnection.id)
+              ? t('status.failed') + ': ' + store.getConnectionError(store.activeConnection.id)
+              : store.getConnectionStatus(store.activeConnection.id) === 'connected' ? t('status.connected')
+              : store.getConnectionStatus(store.activeConnection.id) === 'connecting' ? t('status.connecting')
+              : store.getConnectionStatus(store.activeConnection.id) === 'failed' ? t('status.failed')
+              : t('status.unknown')
+          "
+          @click="store.checkConnection(store.activeConnection!.id)"
+        ></span>
         <span class="text-ch-text font-medium">{{ store.activeConnection.name }}</span>
         <span class="text-ch-muted text-xs">{{ store.activeConnection.host }}:{{ store.activeConnection.port }}</span>
         <span v-if="store.activeConnection.database" class="text-ch-muted text-xs bg-ch-hover px-1.5 py-0.5 rounded">{{ store.activeConnection.database }}</span>

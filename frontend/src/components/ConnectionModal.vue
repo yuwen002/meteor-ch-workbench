@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../api'
 import type { Connection, Folder } from '../types'
@@ -21,10 +21,11 @@ const form = reactive<Connection>({
   folder_id: '',
   name: '',
   host: 'localhost',
-  port: 9000,
+  port: 8123,
+  protocol: 'http',
   user: 'default',
   password: '',
-  database: 'default',
+  database: '',
   secure: false,
   use_compress: true,
 })
@@ -32,17 +33,34 @@ const form = reactive<Connection>({
 const testing = ref(false)
 const testMsg = ref('')
 const testOk = ref(false)
+const showPassword = ref(false)
+
+const defaultPortByProtocol = { native: 9000, http: 8123 }
+
+watch(
+  () => form.protocol,
+  (val) => {
+    const defaults = defaultPortByProtocol as Record<string, number>
+    const prevNative = form.port === defaultPortByProtocol.native
+    const prevHttp = form.port === defaultPortByProtocol.http
+    if (prevNative || prevHttp) {
+      form.port = defaults[val] ?? defaultPortByProtocol.http
+    }
+  }
+)
 
 watch(
   () => props.connection,
   (val) => {
+    showPassword.value = false
     if (val) {
       Object.assign(form, val)
+      if (!form.protocol) form.protocol = 'http'
     } else {
       Object.assign(form, {
         id: '', folder_id: '', name: '',
-        host: 'localhost', port: 9000, user: 'default',
-        password: '', database: 'default',
+        host: 'localhost', port: 8123, protocol: 'http', user: 'default',
+        password: '', database: '',
         secure: false, use_compress: true,
       })
     }
@@ -69,11 +87,26 @@ function submit() {
   if (!form.name.trim()) return
   emit('save', { ...form })
 }
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    e.stopPropagation()
+    emit('close')
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="emit('close')">
-    <div class="bg-ch-panel border border-ch-border rounded-lg w-full max-w-md shadow-xl">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @contextmenu.prevent>
+    <div class="bg-ch-panel border border-ch-border rounded-lg w-full max-w-md shadow-xl" @click.stop>
       <div class="flex items-center justify-between px-4 py-3 border-b border-ch-border">
         <h3 class="font-semibold text-ch-text">
           {{ connection ? t('connection.titleEdit') : t('connection.titleNew') }}
@@ -97,7 +130,14 @@ function submit() {
           </select>
         </div>
 
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-4 gap-2">
+          <div>
+            <label class="block text-xs text-ch-muted mb-1">{{ t('connection.protocol') }}</label>
+            <select v-model="form.protocol" class="w-full">
+              <option value="native">Native (TCP)</option>
+              <option value="http">HTTP</option>
+            </select>
+          </div>
           <div class="col-span-2">
             <label class="block text-xs text-ch-muted mb-1">{{ t('connection.host') }}</label>
             <input v-model="form.host" class="w-full" placeholder="localhost" />
@@ -115,7 +155,30 @@ function submit() {
           </div>
           <div>
             <label class="block text-xs text-ch-muted mb-1">{{ t('connection.password') }}</label>
-            <input v-model="form.password" type="password" class="w-full" />
+            <div class="relative">
+              <input
+                v-model="form.password"
+                :type="showPassword ? 'text' : 'password'"
+                class="w-full pr-8"
+              />
+              <button
+                type="button"
+                @click="showPassword = !showPassword"
+                class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-ch-muted hover:text-ch-text rounded"
+                :title="showPassword ? t('connection.hidePassword') : t('connection.showPassword')"
+              >
+                <svg v-if="showPassword" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                  <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { reactive, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Folder } from '../types'
 
@@ -23,11 +23,26 @@ function submit() {
   if (!form.name.trim()) return
   emit('save', { ...form })
 }
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    e.stopPropagation()
+    emit('close')
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="emit('close')">
-    <div class="bg-ch-panel border border-ch-border rounded-lg w-full max-w-xs shadow-xl">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @contextmenu.prevent>
+    <div class="bg-ch-panel border border-ch-border rounded-lg w-full max-w-xs shadow-xl" @click.stop>
       <div class="flex items-center justify-between px-4 py-3 border-b border-ch-border">
         <h3 class="font-semibold text-ch-text text-sm">
           {{ folder ? t('folder.titleEdit') : t('folder.titleNew') }}

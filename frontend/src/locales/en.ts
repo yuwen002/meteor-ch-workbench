@@ -52,6 +52,10 @@ export default {
     rename: 'Rename',
     delete: 'Delete',
     emptyFolder: 'No connections',
+    newConnectionHere: 'New Connection Here',
+    newFolderHere: 'New Folder Here',
+    open: 'Open Connection',
+    testConnection: 'Test Connection',
   },
   connection: {
     titleNew: 'New Connection',
@@ -59,6 +63,7 @@ export default {
     name: 'Name',
     folder: 'Folder',
     noFolder: '— No folder —',
+    protocol: 'Protocol',
     host: 'Host',
     port: 'Port',
     user: 'User',
@@ -75,6 +80,8 @@ export default {
     confirmDelete: 'Delete this connection?',
     testSuccess: 'Connection successful!',
     testFailed: 'Connection failed',
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
   },
   folder: {
     titleNew: 'New Folder',
@@ -110,5 +117,12 @@ export default {
   common: {
     close: 'Close',
     unknown: 'Unknown',
+  },
+  status: {
+    unknown: 'Unknown',
+    connecting: 'Connecting...',
+    connected: 'Connected',
+    failed: 'Connection failed',
+    refresh: 'Refresh Status',
   },
 }

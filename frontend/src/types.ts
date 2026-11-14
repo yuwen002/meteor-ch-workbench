@@ -4,6 +4,7 @@ export interface Connection {
   name: string
   host: string
   port: number
+  protocol: 'native' | 'http'
   user: string
   password: string
   database: string

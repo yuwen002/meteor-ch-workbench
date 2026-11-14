@@ -1,3 +1,5 @@
+// Package config 负责应用配置的持久化，包括连接列表与文件夹分组的读写。
+// 配置以 JSON 文件形式保存在用户配置目录下的 connections.json 中。
 package config
 
 import (
@@ -10,48 +12,82 @@ import (
 	"sync"
 )
 
+// Folder 表示侧边栏中的一个连接分组，用于把多个连接归类管理。
 type Folder struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID   string `json:"id"`   // 文件夹唯一标识，由 GenID 生成的 16 位十六进制串
+	Name string `json:"name"` // 文件夹显示名称
 }
 
+// Connection 表示一条 ClickHouse 连接配置。
+// 字段名与前端 TypeScript 类型保持一致，通过 JSON tag 序列化到配置文件。
 type Connection struct {
-	ID          string `json:"id"`
-	FolderID    string `json:"folder_id,omitempty"`
-	Name        string `json:"name"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	User        string `json:"user"`
-	Password    string `json:"password"`
-	Database    string `json:"database"`
-	Secure      bool   `json:"secure"`
-	UseCompress bool   `json:"use_compress"`
+	ID          string `json:"id"`                  // 连接唯一标识
+	FolderID    string `json:"folder_id,omitempty"` // 所属文件夹 ID，为空表示位于根级
+	Name        string `json:"name"`                // 连接显示名称
+	Host        string `json:"host"`                // 主机地址
+	Port        int    `json:"port"`                // 端口，决定默认协议（9000/9440 为 native）
+	Protocol    string `json:"protocol"`            // 连接协议：native（TCP）或 http
+	User        string `json:"user"`                // 用户名
+	Password    string `json:"password"`            // 密码（明文保存，仅存放于本机配置目录）
+	Database    string `json:"database"`            // 默认数据库，可为空
+	Secure      bool   `json:"secure"`              // 是否启用加密连接（TLS）
+	UseCompress bool   `json:"use_compress"`        // 是否启用传输压缩
 }
 
+// GenID 为连接生成一个随机的 16 位十六进制 ID。
+// 使用加密安全随机源，避免多台机器间出现 ID 冲突。
 func (c *Connection) GenID() {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	c.ID = hex.EncodeToString(b)
 }
 
+// Normalize 对连接配置做兼容性归一化。
+// 早期版本的配置没有 protocol 字段，这里根据端口自动推断，保证旧配置开箱可用，
+// 用户无需手动修改即可正常连接。
+func (c *Connection) Normalize() {
+	if c.Protocol == "" {
+		c.Protocol = GuessProtocolByPort(c.Port)
+	}
+}
+
+// GuessProtocolByPort 根据端口推断连接协议（仅在旧配置缺少 protocol 时作为兜底）。
+// 9000/9440 是 ClickHouse 的默认 Native TCP 端口，其余端口（如 8123/8443 或自定义端口）
+// 一律按 HTTP 处理，因为绝大多数对外暴露的自定义端口都是 HTTP 接口。
+// 注意：这里只是「猜」，用户显式选择的协议始终以配置中的 protocol 字段为准，不会被覆盖。
+func GuessProtocolByPort(port int) string {
+	switch port {
+	case 9000, 9440:
+		return "native"
+	default:
+		return "http"
+	}
+}
+
+// GenID 为文件夹生成一个随机的 16 位十六进制 ID。
 func (f *Folder) GenID() {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	f.ID = hex.EncodeToString(b)
 }
 
+// DataFile 是 connections.json 的完整数据结构，即一个配置文件对应一份数据。
 type DataFile struct {
-	Folders     []Folder     `json:"folders"`
-	Connections []Connection `json:"connections"`
+	Folders     []Folder     `json:"folders"`     // 文件夹分组列表
+	Connections []Connection `json:"connections"` // 连接列表
 }
 
+// Manager 是配置管理器，负责 connections.json 的读写与内存缓存。
+// 所有公开方法都通过读写锁保证并发安全（Wails 的每个前端调用可能来自不同 goroutine）。
 type Manager struct {
-	mu      sync.RWMutex
-	path    string
-	dir     string
-	data    DataFile
+	mu   sync.RWMutex // 保护 data 字段的读写锁
+	path string       // 配置文件完整路径
+	dir  string       // 配置目录，用于「打开配置目录」功能
+	data DataFile     // 内存中的配置缓存
 }
 
+// NewManager 创建配置管理器，并确保配置目录存在。
+// 配置目录位于系统用户配置目录下（如 Windows 的 %APPDATA%），子目录名为 meteor-ch-workbench。
 func NewManager() *Manager {
 	dir, _ := os.UserConfigDir()
 	if dir == "" {
@@ -69,10 +105,15 @@ func NewManager() *Manager {
 	}
 }
 
+// ConfigDir 返回配置文件所在目录，供「打开配置目录」按钮使用。
 func (m *Manager) ConfigDir() string {
 	return m.dir
 }
 
+// LoadAll 从磁盘读取配置文件并刷新内存缓存。
+// 若文件不存在或内容为空，则返回空数据结构而不报错（首次启动的正常情况）。
+// 加载过程中会对缺失 protocol 的旧连接做自动补全，并在确有变更时回写磁盘，
+// 实现旧配置的自动升级。
 func (m *Manager) LoadAll() (*DataFile, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -97,9 +138,20 @@ func (m *Manager) LoadAll() (*DataFile, error) {
 	if m.data.Connections == nil {
 		m.data.Connections = []Connection{}
 	}
+	changed := false
+	for i := range m.data.Connections {
+		if m.data.Connections[i].Protocol == "" {
+			m.data.Connections[i].Normalize()
+			changed = true
+		}
+	}
+	if changed {
+		_ = m.flush()
+	}
 	return &m.data, nil
 }
 
+// ListConnections 返回全部连接配置，加载失败时返回错误。
 func (m *Manager) ListConnections() ([]Connection, error) {
 	_, err := m.LoadAll()
 	if err != nil {
@@ -108,6 +160,8 @@ func (m *Manager) ListConnections() ([]Connection, error) {
 	return m.data.Connections, nil
 }
 
+// GetConnection 按 ID 查找连接配置，返回副本以避免调用方误改缓存数据。
+// 找不到时返回错误。
 func (m *Manager) GetConnection(id string) (*Connection, error) {
 	if _, err := m.LoadAll(); err != nil {
 		return nil, err
@@ -121,6 +175,8 @@ func (m *Manager) GetConnection(id string) (*Connection, error) {
 	return nil, errors.New("connection not found: " + id)
 }
 
+// SaveConnection 保存一条连接配置：ID 为空时自动生成，已存在则覆盖，否则追加。
+// 保存前会执行 Normalize 以确保协议字段完整，最后写回磁盘。
 func (m *Manager) SaveConnection(conn Connection) error {
 	if _, err := m.LoadAll(); err != nil {
 		return err
@@ -130,6 +186,7 @@ func (m *Manager) SaveConnection(conn Connection) error {
 	if conn.ID == "" {
 		conn.GenID()
 	}
+	conn.Normalize()
 	idx := -1
 	for i, c := range m.data.Connections {
 		if c.ID == conn.ID {
@@ -145,6 +202,7 @@ func (m *Manager) SaveConnection(conn Connection) error {
 	return m.flush()
 }
 
+// DeleteConnection 按 ID 删除连接配置并写回磁盘。
 func (m *Manager) DeleteConnection(id string) error {
 	if _, err := m.LoadAll(); err != nil {
 		return err
@@ -161,6 +219,7 @@ func (m *Manager) DeleteConnection(id string) error {
 	return m.flush()
 }
 
+// ListFolders 返回全部文件夹分组。
 func (m *Manager) ListFolders() ([]Folder, error) {
 	if _, err := m.LoadAll(); err != nil {
 		return nil, err
@@ -168,6 +227,7 @@ func (m *Manager) ListFolders() ([]Folder, error) {
 	return m.data.Folders, nil
 }
 
+// SaveFolder 保存一个文件夹分组：ID 为空时自动生成，已存在则覆盖，否则追加。
 func (m *Manager) SaveFolder(f Folder) error {
 	if _, err := m.LoadAll(); err != nil {
 		return err
@@ -192,6 +252,8 @@ func (m *Manager) SaveFolder(f Folder) error {
 	return m.flush()
 }
 
+// DeleteFolder 删除文件夹分组，并把原本归属它的连接移动回根级，
+// 避免连接因分组被删而丢失。
 func (m *Manager) DeleteFolder(id string) error {
 	if _, err := m.LoadAll(); err != nil {
 		return err
@@ -213,6 +275,8 @@ func (m *Manager) DeleteFolder(id string) error {
 	return m.flush()
 }
 
+// flush 把内存中的配置以缩进 JSON 格式写回磁盘。
+// 调用方需自行持有写锁，本方法不做额外加锁。
 func (m *Manager) flush() error {
 	data, err := json.MarshalIndent(m.data, "", "  ")
 	if err != nil {

@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from './stores/app'
 import ConnectionModal from './components/ConnectionModal.vue'
@@ -15,6 +15,15 @@ const editingConnection = ref<any>(null)
 const showFolderModal = ref(false)
 const editingFolder = ref<any>(null)
 const showLangMenu = ref(false)
+
+interface ContextMenuState {
+  visible: boolean
+  x: number
+  y: number
+  type: 'folder' | 'connection' | null
+  target: any
+}
+const ctxMenu = ref<ContextMenuState>({ visible: false, x: 0, y: 0, type: null, target: null })
 
 const SIDEBAR_MIN = 160
 const SIDEBAR_MAX = 480
@@ -57,15 +66,21 @@ function onResizeEnd() {
   localStorage.setItem('meteor-ch.sidebarWidth', String(sidebarWidth.value))
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadSidebarWidth()
   window.addEventListener('mousemove', onResizeMove)
   window.addEventListener('mouseup', onResizeEnd)
+  window.addEventListener('click', onGlobalClick)
+  window.addEventListener('contextmenu', hideContextMenu)
+  await store.loadAll()
+  store.checkAllConnections()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mouseup', onResizeEnd)
+  window.removeEventListener('click', onGlobalClick)
+  window.removeEventListener('contextmenu', hideContextMenu)
 })
 
 function newConnection() {
@@ -109,6 +124,62 @@ function resetSidebarWidth() {
   sidebarWidth.value = SIDEBAR_DEFAULT
   localStorage.setItem('meteor-ch.sidebarWidth', String(SIDEBAR_DEFAULT))
 }
+
+function showContextMenu(e: MouseEvent, type: 'folder' | 'connection', target: any) {
+  e.preventDefault()
+  e.stopPropagation()
+  ctxMenu.value = { visible: true, x: e.clientX, y: e.clientY, type, target }
+}
+
+function hideContextMenu() {
+  ctxMenu.value.visible = false
+}
+
+function onGlobalClick() {
+  hideContextMenu()
+  showLangMenu.value = false
+}
+
+function ctxEdit() {
+  if (ctxMenu.value.type === 'folder') editFolder(ctxMenu.value.target)
+  else if (ctxMenu.value.type === 'connection') editConnection(ctxMenu.value.target)
+  hideContextMenu()
+}
+
+function ctxDelete() {
+  if (ctxMenu.value.type === 'folder') handleDeleteFolder(ctxMenu.value.target.id)
+  else if (ctxMenu.value.type === 'connection') handleDeleteConnection(ctxMenu.value.target.id)
+  hideContextMenu()
+}
+
+function ctxOpen() {
+  if (ctxMenu.value.type === 'connection') store.activeConnectionId = ctxMenu.value.target.id
+  hideContextMenu()
+}
+
+function statusDotClass(id: string) {
+  const s = store.getConnectionStatus(id)
+  if (s === 'connecting') return 'bg-yellow-500 animate-pulse'
+  if (s === 'connected') return 'bg-green-500'
+  if (s === 'failed') return 'bg-red-500'
+  return 'bg-ch-muted/50'
+}
+
+function statusTitle(id: string) {
+  const s = store.getConnectionStatus(id)
+  const err = store.getConnectionError(id)
+  if (s === 'connecting') return t('status.connecting')
+  if (s === 'connected') return t('status.connected')
+  if (s === 'failed') return t('status.failed') + (err ? ': ' + err : '')
+  return t('status.unknown')
+}
+
+watch(
+  () => store.activeConnectionId,
+  (id) => {
+    if (id) store.checkConnection(id)
+  }
+)
 </script>
 
 <template>
@@ -199,6 +270,7 @@ function resetSidebarWidth() {
             v-if="group.folder"
             class="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-ch-muted uppercase tracking-wide cursor-pointer hover:bg-ch-hover select-none group-header"
             @click="store.toggleFolder(group.folder!.id)"
+            @contextmenu.prevent="showContextMenu($event, 'folder', group.folder)"
           >
             <svg
               width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -237,7 +309,14 @@ function resetSidebarWidth() {
                   : 'text-ch-text hover:bg-ch-hover',
               ]"
               @click="store.activeConnectionId = conn.id"
+              @contextmenu.prevent="showContextMenu($event, 'connection', conn)"
             >
+              <span
+                class="w-2 h-2 rounded-full shrink-0"
+                :class="statusDotClass(conn.id)"
+                :title="statusTitle(conn.id)"
+                @click.stop="store.checkConnection(conn.id)"
+              ></span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-ch-muted shrink-0"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
               <span class="flex-1 truncate">{{ conn.name }}</span>
               <span class="text-xs text-ch-muted opacity-60 group-hover:opacity-100" v-if="!group.folder">
@@ -305,7 +384,7 @@ function resetSidebarWidth() {
     </div>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-hidden min-w-0" @click="showLangMenu = false">
+    <main class="flex-1 overflow-hidden min-w-0">
       <router-view />
     </main>
     </div>
@@ -325,6 +404,42 @@ function resetSidebarWidth() {
       @close="showFolderModal = false"
       @save="async (f) => { await store.saveFolder(f); showFolderModal = false }"
     />
+
+    <!-- Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="ctxMenu.visible"
+        class="fixed z-[1000] bg-ch-panel border border-ch-border rounded-md shadow-xl py-1 min-w-[160px] select-none"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <template v-if="ctxMenu.type === 'connection'">
+          <button
+            @click="ctxOpen"
+            class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            {{ t('sidebar.open') }}
+          </button>
+          <div class="my-1 border-t border-ch-border"></div>
+        </template>
+        <button
+          @click="ctxEdit"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+          {{ t('sidebar.rename') }}
+        </button>
+        <button
+          @click="ctxDelete"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-accent hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          {{ t('sidebar.delete') }}
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
