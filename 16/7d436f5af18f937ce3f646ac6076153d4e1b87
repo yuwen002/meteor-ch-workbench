@@ -1,0 +1,30 @@
+internal/clickhouse/service.go
+  h_a3f313f3d96276 62-69,247-266,382-385,393-439,446-450,453-458,461-484,486,494-518
+frontend/src/locales/zh.ts
+  h_a3f313f3d96276 28-29,54-56
+frontend/src/locales/en.ts
+  h_a3f313f3d96276 59-60,118-120
+frontend/src/types.ts
+  h_a3f313f3d96276 56-60
+frontend/src/views/QueryEditor.vue
+  h_a3f313f3d96276 30-41,112-161,276-278,329-330,423,574-649
+frontend/src/stores/app.ts
+  h_a3f313f3d96276 124-130,151
+frontend/src/App.vue
+  h_a3f313f3d96276 160-171,437-450
+app.go
+  h_a3f313f3d96276 82-87,114-123
+frontend/src/api.ts
+  h_a3f313f3d96276 2,34-37,50-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "167d436f5af18f937ce3f646ac6076153d4e1b87",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
