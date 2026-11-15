@@ -79,6 +79,12 @@ func (a *App) TestConnection(conn config.Connection) error {
 	return a.chSvc.TestConnection(conn)
 }
 
+// Disconnect 断开指定连接的连接池，释放所有底层 TCP 连接。
+// 下次再查询时会自动重新建连。
+func (a *App) Disconnect(connectionID string) {
+	a.chSvc.Invalidate(connectionID)
+}
+
 // GetFolders 返回所有连接文件夹（侧边栏分组）。
 func (a *App) GetFolders() ([]config.Folder, error) {
 	return a.conf.ListFolders()
@@ -103,6 +109,16 @@ func (a *App) Query(connectionID string, sql string) (*clickhouse.QueryResult, e
 		return nil, err
 	}
 	return a.chSvc.Query(*conn, sql)
+}
+
+// Execute 在指定连接上执行一条 DDL/DML 语句（CREATE/ALTER/DROP/INSERT 等）。
+// SQL 执行失败不会返回 error，而是把错误信息放在 ExecResult.Error 中。
+func (a *App) Execute(connectionID string, sql string) (*clickhouse.ExecResult, error) {
+	conn, err := a.conf.GetConnection(connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.chSvc.Exec(*conn, sql)
 }
 
 // GetDatabases 查询指定连接上的数据库列表（SHOW DATABASES），用于侧边栏自动展开。

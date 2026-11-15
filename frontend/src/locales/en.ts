@@ -56,6 +56,8 @@ export default {
     newFolderHere: 'New Folder Here',
     open: 'Open Connection',
     testConnection: 'Test Connection',
+    refresh: 'Refresh Status',
+    disconnect: 'Disconnect',
   },
   connection: {
     titleNew: 'New Connection',
@@ -113,6 +115,9 @@ export default {
     shard: 'Shard',
     replica: 'Replica',
     local: 'Local',
+    viewDDL: 'View DDL',
+    ddlCopied: 'DDL copied',
+    tableActions: 'Table Actions',
   },
   common: {
     close: 'Close',

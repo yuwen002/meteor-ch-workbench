@@ -1,5 +1,5 @@
 import { Call } from '@wailsio/runtime'
-import type { Connection, Folder, DataFile, QueryResult, TableInfo, ClusterInfo } from './types'
+import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ClusterInfo } from './types'
 
 type AnyError = { message?: string; cause?: unknown; name?: string }
 
@@ -31,6 +31,10 @@ export const api = {
     return call<void>('main.App.TestConnection', conn)
   },
 
+  Disconnect(connectionID: string): Promise<void> {
+    return call<void>('main.App.Disconnect', connectionID)
+  },
+
   SaveFolder(folder: Folder): Promise<void> {
     return call<void>('main.App.SaveFolder', folder)
   },
@@ -41,6 +45,10 @@ export const api = {
 
   Query(connectionID: string, sql: string): Promise<QueryResult> {
     return call<QueryResult>('main.App.Query', connectionID, sql)
+  },
+
+  Execute(connectionID: string, sql: string): Promise<ExecResult> {
+    return call<ExecResult>('main.App.Execute', connectionID, sql)
   },
 
   GetDatabases(connectionID: string): Promise<string[]> {

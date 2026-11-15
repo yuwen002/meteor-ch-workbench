@@ -59,6 +59,14 @@ type QueryResult struct {
 	Error    string          `json:"error,omitempty"` // 执行错误信息，正常时为空
 }
 
+// ExecResult 是一次 DDL/DML（CREATE/ALTER/DROP/INSERT 等）的执行结果。
+// ClickHouse 的 DDL 通常不影响行数，RowsAffected 多为 0；
+// INSERT 时可能反映实际写入的行数。
+type ExecResult struct {
+	RowsAffected int64  `json:"rows_affected"`  // 受影响的行数
+	Error        string `json:"error,omitempty"` // 执行错误信息，正常时为空
+}
+
 // Service 是 ClickHouse 服务，按连接 ID 缓存 database/sql 连接池。
 // sql.DB 本身即是并发安全的连接池，因此缓存它比缓存单条连接更合适。
 type Service struct {
@@ -236,6 +244,26 @@ func (s *Service) Query(conn config.Connection, sqlText string) (*QueryResult, e
 	return result, nil
 }
 
+// Exec 执行一条不返回结果集的 SQL（DDL / DML）。
+// 包括 CREATE / ALTER / DROP / TRUNCATE / INSERT / RENAME 等。
+// 与 Query 保持一致：SQL 执行期错误写入 ExecResult.Error，
+// 只有连接等基础设施错误才作为 error 返回。
+func (s *Service) Exec(conn config.Connection, sqlText string) (*ExecResult, error) {
+	db, err := s.getDB(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	res, err := db.ExecContext(ctx, sqlText)
+	if err != nil {
+		return &ExecResult{Error: err.Error()}, nil
+	}
+
+	affected, _ := res.RowsAffected()
+	return &ExecResult{RowsAffected: affected}, nil
+}
+
 // GetDatabases 返回该连接可见的全部数据库名（SHOW DATABASES）。
 // 使用大权限账号且未指定默认库时，前端可据此在侧边栏列出所有库。
 func (s *Service) GetDatabases(conn config.Connection) ([]string, error) {
@@ -351,8 +379,10 @@ func (s *Service) GetTableSchema(conn config.Connection, database string, table 
 }
 
 // GetClusters 返回 system.clusters 中的集群拓扑信息。
-// 库内 port、shard_num、replica_num 为无符号类型，这里先按 uint64 读取再转 int，
-// 避免类型不匹配导致扫描失败。
+// 不同版本的 ClickHouse 在 system.clusters 表中提供的列略有差异
+// （例如 version、uuid 是较新版本才加入的），这里先通过 introspect
+// 确认有哪些列可用，再动态构建 SELECT，保证对老版本（如 22.5）兼容。
+// 库内 port、shard_num、replica_num 为无符号类型，这里先按 uint64 读取再转 int。
 func (s *Service) GetClusters(conn config.Connection) ([]ClusterInfo, error) {
 	db, err := s.getDB(conn)
 	if err != nil {
@@ -360,50 +390,132 @@ func (s *Service) GetClusters(conn config.Connection) ([]ClusterInfo, error) {
 	}
 
 	ctx := context.Background()
-	query := `SELECT
-		cluster,
-		version,
-		host_name,
-		host_address,
-		port,
-		is_local,
-		shard_num,
-		replica_num,
-		uuid
-	FROM system.clusters`
+
+	colRows, err := db.QueryContext(ctx,
+		"SELECT name FROM system.columns WHERE database = 'system' AND table = 'clusters'")
+	if err != nil {
+		return nil, err
+	}
+	defer colRows.Close()
+
+	available := map[string]bool{}
+	for colRows.Next() {
+		var name string
+		if err := colRows.Scan(&name); err != nil {
+			return nil, err
+		}
+		available[name] = true
+	}
+	if err := colRows.Err(); err != nil {
+		return nil, err
+	}
+
+	type colSpec struct {
+		name     string
+		required bool
+	}
+	desired := []colSpec{
+		{"cluster", true},
+		{"host_name", true},
+		{"host_address", true},
+		{"port", true},
+		{"is_local", true},
+		{"shard_num", true},
+		{"replica_num", true},
+		{"version", false},
+		{"uuid", false},
+	}
+
+	var selectCols []string
+	for _, c := range desired {
+		if c.required && !available[c.name] {
+			return nil, fmt.Errorf("system.clusters 缺少必要列 %q，无法获取集群信息", c.name)
+		}
+		if available[c.name] {
+			selectCols = append(selectCols, c.name)
+		}
+	}
+
+	query := "SELECT " + strings.Join(selectCols, ", ") + " FROM system.clusters"
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
 	var clusters []ClusterInfo
 	for rows.Next() {
-		var (
-			cluster, version, hostName, hostAddress string
-			port, shardNum, replicaNum              uint64
-			isLocal                                 bool
-			uuid                                    string
-		)
-		if err := rows.Scan(&cluster, &version, &hostName, &hostAddress, &port, &isLocal, &shardNum, &replicaNum, &uuid); err != nil {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
 			return nil, err
 		}
-		clusters = append(clusters, ClusterInfo{
-			Cluster:     cluster,
-			Version:     version,
-			HostName:    hostName,
-			HostAddress: hostAddress,
-			Port:        int(port),
-			IsLocal:     isLocal,
-			ShardNum:    int(shardNum),
-			ReplicaNum:  int(replicaNum),
-			UUID:        uuid,
-		})
+		info := ClusterInfo{}
+		for i, name := range cols {
+			switch name {
+			case "cluster":
+				info.Cluster = toString(vals[i])
+			case "version":
+				info.Version = toString(vals[i])
+			case "host_name":
+				info.HostName = toString(vals[i])
+			case "host_address":
+				info.HostAddress = toString(vals[i])
+			case "port":
+				info.Port = toInt(vals[i])
+			case "is_local":
+				if b, ok := vals[i].(bool); ok {
+					info.IsLocal = b
+				}
+			case "shard_num":
+				info.ShardNum = toInt(vals[i])
+			case "replica_num":
+				info.ReplicaNum = toInt(vals[i])
+			case "uuid":
+				info.UUID = toString(vals[i])
+			}
+		}
+		clusters = append(clusters, info)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return clusters, nil
+}
+
+func toString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func toInt(v interface{}) int {
+	if v == nil {
+		return 0
+	}
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case uint64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 // CloseAll 关闭并清空全部缓存的连接池，应用退出时调用。

@@ -25,7 +25,8 @@ export default {
     ungrouped: "未分组", expand: "展开", collapse: "收起",
     rename: "重命名", delete: "删除", emptyFolder: "暂无连接",
     newConnectionHere: "在此新建连接", newFolderHere: "在此新建分组",
-    open: "打开连接", testConnection: "测试连接"
+    open: "打开连接", testConnection: "测试连接",
+    refresh: "刷新状态", disconnect: "断开连接"
   },
   connection: {
     titleNew: "新建连接", titleEdit: "编辑连接", name: "名称", folder: "所属分组",
@@ -50,7 +51,9 @@ export default {
     noConnection: "请先选择一个连接", queryFailed: "查询失败",
     clusters: "集群", noClusters: "暂无集群信息",
     copyUUID: "复制 UUID", uuidCopied: "UUID 已复制",
-    shard: "分片", replica: "副本", local: "本地"
+    shard: "分片", replica: "副本", local: "本地",
+    viewDDL: "查看 DDL", ddlCopied: "DDL 已复制",
+    tableActions: "表操作"
   },
   common: { close: "关闭", unknown: "未知" },
   status: {

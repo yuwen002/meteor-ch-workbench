@@ -157,6 +157,18 @@ function ctxOpen() {
   hideContextMenu()
 }
 
+function ctxRefresh() {
+  if (ctxMenu.value.type === 'connection') store.checkConnection(ctxMenu.value.target.id)
+  hideContextMenu()
+}
+
+async function ctxDisconnect() {
+  if (ctxMenu.value.type === 'connection') {
+    await store.disconnectConnection(ctxMenu.value.target.id)
+  }
+  hideContextMenu()
+}
+
 function statusDotClass(id: string) {
   const s = store.getConnectionStatus(id)
   if (s === 'connecting') return 'bg-yellow-500 animate-pulse'
@@ -421,6 +433,20 @@ watch(
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             {{ t('sidebar.open') }}
+          </button>
+          <button
+            @click="ctxRefresh"
+            class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            {{ t('sidebar.refresh') }}
+          </button>
+          <button
+            @click="ctxDisconnect"
+            class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            {{ t('sidebar.disconnect') }}
           </button>
           <div class="my-1 border-t border-ch-border"></div>
         </template>

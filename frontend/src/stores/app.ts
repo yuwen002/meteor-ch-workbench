@@ -121,6 +121,13 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function disconnectConnection(id: string) {
+    await api.Disconnect(id)
+    connectionStatus.value.delete(id)
+    connectionError.value.delete(id)
+    connectionStatus.value = new Map(connectionStatus.value)
+  }
+
   return {
     folders,
     connections,
@@ -141,5 +148,6 @@ export const useAppStore = defineStore('app', () => {
     getConnectionError,
     checkConnection,
     checkAllConnections,
+    disconnectConnection,
   }
 })

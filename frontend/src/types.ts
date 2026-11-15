@@ -54,3 +54,8 @@ export interface QueryResult {
   elapsed_ms: number
   error?: string
 }
+
+export interface ExecResult {
+  rows_affected: number
+  error?: string
+}

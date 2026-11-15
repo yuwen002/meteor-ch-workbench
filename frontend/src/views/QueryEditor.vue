@@ -27,6 +27,18 @@ const result = ref<QueryResult | null>(null)
 const querying = ref(false)
 const error = ref<string | null>(null)
 
+const tableMenu = ref<{ visible: boolean; x: number; y: number; db: string; table: string }>({
+  visible: false, x: 0, y: 0, db: '', table: '',
+})
+
+const ddlModal = ref<{ visible: boolean; loading: boolean; sql: string; copied: boolean; error: string }>({
+  visible: false, loading: false, sql: '', copied: false, error: '',
+})
+
+function closeAllMenus() {
+  tableMenu.value.visible = false
+}
+
 async function loadDatabases() {
   if (!store.activeConnectionId) return
   loadingMeta.value = true
@@ -95,6 +107,56 @@ async function copyUUID(uuid: string) {
   } catch {
     // ignore
   }
+}
+
+function showTableMenu(e: MouseEvent, db: string, table: string) {
+  e.preventDefault()
+  e.stopPropagation()
+  tableMenu.value = { visible: true, x: e.clientX, y: e.clientY, db, table }
+}
+
+function closeTableMenu() {
+  tableMenu.value.visible = false
+}
+
+async function openTableDDL(db: string, table: string) {
+  closeTableMenu()
+  ddlModal.value = { visible: true, loading: true, sql: '', copied: false, error: '' }
+  try {
+    const r: QueryResult = await api.Query(
+      store.activeConnectionId!,
+      `SHOW CREATE TABLE \`${db.replace(/`/g, '``')}\`.\`${table.replace(/`/g, '``')}\``
+    )
+    if (r.error) {
+      ddlModal.value.error = r.error
+    } else if (r.rows.length > 0 && r.rows[0].length > 0) {
+      const val = r.rows[0][0]
+      ddlModal.value.sql = typeof val === 'string' ? val : JSON.stringify(val)
+    } else {
+      ddlModal.value.error = t('editor.noResults')
+    }
+  } catch (e: any) {
+    ddlModal.value.error = e?.message || t('editor.queryFailed')
+  } finally {
+    ddlModal.value.loading = false
+  }
+}
+
+async function copyDDL() {
+  if (!ddlModal.value.sql) return
+  try {
+    await navigator.clipboard.writeText(ddlModal.value.sql)
+    ddlModal.value.copied = true
+    setTimeout(() => { ddlModal.value.copied = false }, 1500)
+  } catch {
+    // ignore
+  }
+}
+
+function ddlToEditor() {
+  if (!ddlModal.value.sql || !editor) return
+  editor.setValue(ddlModal.value.sql)
+  ddlModal.value.visible = false
 }
 
 async function runQuery() {
@@ -211,6 +273,9 @@ onMounted(async () => {
     },
   }
 
+  window.addEventListener('click', closeAllMenus)
+  window.addEventListener('contextmenu', closeAllMenus)
+
   editor = monaco.editor.create(editorRef.value, {
     value: '-- ClickHouse SQL\nSELECT version()',
     language: 'sql',
@@ -261,6 +326,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('click', closeAllMenus)
+  window.removeEventListener('contextmenu', closeAllMenus)
   editor?.dispose()
 })
 </script>
@@ -353,6 +420,7 @@ onBeforeUnmount(() => {
                   class="flex items-center gap-1 px-2 py-1 hover:bg-ch-hover cursor-pointer text-ch-text text-xs"
                   @dblclick="insertTable(db, t.name)"
                   @click="insertTableName(t.name)"
+                  @contextmenu.prevent="showTableMenu($event, db, t.name)"
                   :title="t.engine || ''"
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-ch-muted"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
@@ -503,5 +571,81 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <!-- Table Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="tableMenu.visible"
+        class="fixed z-[1000] bg-ch-panel border border-ch-border rounded-md shadow-xl py-1 min-w-[140px] select-none"
+        :style="{ left: tableMenu.x + 'px', top: tableMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button
+          @click="openTableDDL(tableMenu.db, tableMenu.table)"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          {{ t('editor.viewDDL') }}
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- DDL Modal -->
+    <Teleport to="body">
+      <div
+        v-if="ddlModal.visible"
+        class="fixed inset-0 z-[2000] flex items-center justify-center"
+        @click.self="ddlModal.visible = false"
+      >
+        <div class="absolute inset-0 bg-black/50"></div>
+        <div class="relative bg-ch-panel border border-ch-border rounded-lg shadow-2xl w-[720px] max-w-[90vw] max-h-[80vh] flex flex-col">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-ch-border shrink-0">
+            <h3 class="text-sm font-semibold text-ch-text">{{ t('editor.viewDDL') }}: `{{ tableMenu.db }}`.`{{ tableMenu.table }}`</h3>
+            <button
+              @click="ddlModal.visible = false"
+              class="p-1 rounded hover:bg-ch-hover text-ch-muted hover:text-ch-text"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+
+          <div class="flex-1 overflow-auto p-4 min-h-[200px]">
+            <div v-if="ddlModal.loading" class="flex items-center justify-center h-full text-ch-muted text-sm gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+              {{ t('editor.loading') }}
+            </div>
+            <div v-else-if="ddlModal.error" class="bg-red-900/30 border border-red-700 rounded-md p-3 text-red-300 text-xs font-mono whitespace-pre-wrap">
+              {{ ddlModal.error }}
+            </div>
+            <pre v-else class="text-xs font-mono text-ch-text whitespace-pre-wrap break-all">{{ ddlModal.sql }}</pre>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-ch-border shrink-0">
+            <button
+              v-if="!ddlModal.loading && !ddlModal.error"
+              @click="copyDDL"
+              class="btn-ghost btn-sm flex items-center gap-1"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              {{ ddlModal.copied ? t('editor.ddlCopied') : 'Copy' }}
+            </button>
+            <button
+              v-if="!ddlModal.loading && !ddlModal.error"
+              @click="ddlToEditor"
+              class="btn-primary btn-sm"
+            >
+              → Editor
+            </button>
+            <button
+              @click="ddlModal.visible = false"
+              class="btn-ghost btn-sm"
+            >
+              {{ t('common.close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
