@@ -12,7 +12,10 @@
 - 🗂️ **多连接管理** — 连接分组、重命名、拖拽分组，一目了然
 - ⚡ **SQL 编辑器** — Monaco Editor，语法高亮，Ctrl/Cmd + Enter 快捷执行
 - 📊 **实时查询结果** — 表格渲染、耗时统计、行数统计，错误即时提示
-- 🗄️ **数据库 / 数据库表浏览** — 侧边栏树状结构，双击快速 SELECT
+- 🗄️ **数据库 / 表浏览** — 侧边栏树状结构，双击快速 SELECT
+- ➕ **可视化建表** — 表单化定义列、引擎、ORDER BY，实时 SQL 预览
+- ✏️ **可视化编辑表** — 修改列类型 / 默认值 / 注释、重命名、新增、删除
+- 🗑️ **表删除** — 右键一键删除带确认弹窗
 - 🌩️ **集群信息面板** — 一键查看 cluster、shard、replica、UUID，点击插入 SQL
 - ↔️ **可拖拽侧边栏** — 宽度自由调整，记忆上次状态
 - 🔌 **连接测试** — 创建前验证连通性
@@ -80,6 +83,9 @@ npm run build    # 产物输出到 frontend/dist
 ├── internal/
 │   ├── clickhouse/service.go   # ClickHouse 连接、查询、集群、表元数据
 │   └── config/manager.go       # JSON 配置读写、Folder/Connection 管理
+├── docs/
+│   ├── API.md                  # 前后端接口文档（Go 方法 → TS 封装）
+│   └── FEATURES.md             # 详细功能说明与操作指南
 └── frontend/
     ├── src/
     │   ├── App.vue             # 主框架：侧边栏 + 语言切换 + 拖拽分屏
@@ -88,14 +94,17 @@ npm run build    # 产物输出到 frontend/dist
     │   ├── api.ts              # 所有 Wails Call.ByName 封装
     │   ├── types.ts            # 共享类型定义
     │   ├── stores/app.ts       # Pinia 全局状态
+    │   ├── utils/ddl.ts        # CREATE/ALTER/DROP TABLE SQL 构建工具
     │   ├── locales/            # 语言包
     │   │   ├── zh.ts
     │   │   └── en.ts
     │   ├── components/
-    │   │   ├── ConnectionModal.vue
-    │   │   └── FolderModal.vue
+    │   │   ├── ConnectionModal.vue   # 新建/编辑连接
+    │   │   ├── FolderModal.vue       # 新建/编辑分组
+    │   │   ├── CreateTableModal.vue  # 可视化建表
+    │   │   └── EditTableModal.vue    # 可视化编辑表结构
     │   └── views/
-    │       └── QueryEditor.vue # SQL 编辑器 + 数据库/集群面板 + 结果表
+    │       └── QueryEditor.vue       # SQL 编辑器 + 数据库/集群面板 + 结果表
     ├── vite.config.ts
     ├── tailwind.config.js
     └── package.json

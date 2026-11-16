@@ -5,6 +5,9 @@ import * as monaco from 'monaco-editor'
 import { useAppStore } from '../stores/app'
 import { api } from '../api'
 import type { QueryResult, ClusterInfo } from '../types'
+import CreateTableModal from '../components/CreateTableModal.vue'
+import EditTableModal from '../components/EditTableModal.vue'
+import { buildDropTableSQL } from '../utils/ddl'
 
 const { t } = useI18n()
 const store = useAppStore()
@@ -31,12 +34,22 @@ const tableMenu = ref<{ visible: boolean; x: number; y: number; db: string; tabl
   visible: false, x: 0, y: 0, db: '', table: '',
 })
 
-const ddlModal = ref<{ visible: boolean; loading: boolean; sql: string; copied: boolean; error: string }>({
-  visible: false, loading: false, sql: '', copied: false, error: '',
+const dbMenu = ref<{ visible: boolean; x: number; y: number; db: string }>({
+  visible: false, x: 0, y: 0, db: '',
 })
+
+const ddlModal = ref<{ visible: boolean; loading: boolean; sql: string; copied: boolean; error: string; db: string; table: string }>({
+  visible: false, loading: false, sql: '', copied: false, error: '', db: '', table: '',
+})
+
+const createModal = ref<{ visible: boolean; database: string }>({ visible: false, database: '' })
+const editModal = ref<{ visible: boolean; database: string; table: string }>({ visible: false, database: '', table: '' })
+
+const dropConfirm = ref<{ visible: boolean; db: string; table: string }>({ visible: false, db: '', table: '' })
 
 function closeAllMenus() {
   tableMenu.value.visible = false
+  dbMenu.value.visible = false
 }
 
 async function loadDatabases() {
@@ -119,9 +132,19 @@ function closeTableMenu() {
   tableMenu.value.visible = false
 }
 
+function showDBMenu(e: MouseEvent, db: string) {
+  e.preventDefault()
+  e.stopPropagation()
+  dbMenu.value = { visible: true, x: e.clientX, y: e.clientY, db }
+}
+
+function closeDBMenu() {
+  dbMenu.value.visible = false
+}
+
 async function openTableDDL(db: string, table: string) {
   closeTableMenu()
-  ddlModal.value = { visible: true, loading: true, sql: '', copied: false, error: '' }
+  ddlModal.value = { visible: true, loading: true, sql: '', copied: false, error: '', db, table }
   try {
     const r: QueryResult = await api.Query(
       store.activeConnectionId!,
@@ -157,6 +180,46 @@ function ddlToEditor() {
   if (!ddlModal.value.sql || !editor) return
   editor.setValue(ddlModal.value.sql)
   ddlModal.value.visible = false
+}
+
+function openCreateTable(db: string) {
+  closeDBMenu()
+  closeTableMenu()
+  createModal.value = { visible: true, database: db }
+}
+
+function openEditTable(db: string, table: string) {
+  closeTableMenu()
+  editModal.value = { visible: true, database: db, table }
+}
+
+function confirmDropTable(db: string, table: string) {
+  closeTableMenu()
+  dropConfirm.value = { visible: true, db, table }
+}
+
+async function doDropTable() {
+  if (!store.activeConnectionId) return
+  const { db, table } = dropConfirm.value
+  const sql = buildDropTableSQL(db, table)
+  try {
+    const r = await api.Execute(store.activeConnectionId, sql)
+    if (r.error) {
+      error.value = r.error
+    } else {
+      dropConfirm.value.visible = false
+      tablesByDB.value.delete(db)
+      tablesByDB.value = new Map(tablesByDB.value)
+    }
+  } catch (e: any) {
+    error.value = e?.message || 'Drop table failed'
+  }
+}
+
+function refreshTables(db: string) {
+  tablesByDB.value.delete(db)
+  tablesByDB.value = new Map(tablesByDB.value)
+  toggleDB(db)
 }
 
 async function runQuery() {
@@ -228,19 +291,6 @@ const gridStyle = computed(() => {
   const cols = result.value.columns
   const widths = cols.map(() => 'minmax(120px, 1fr)').join(' ')
   return `grid-template-columns: ${widths};`
-})
-
-const isSelectQuery = computed(() => {
-  if (!editor) return false
-  const sel = editor.getSelection()
-  let sql: string
-  if (sel && !sel.isEmpty()) {
-    const model = editor.getModel()
-    sql = model?.getValueInRange(sel) || editor.getValue()
-  } else {
-    sql = editor.getValue()
-  }
-  return /^\s*(select|show|describe|explain|with)\b/i.test(sql)
 })
 
 const groupedClusters = computed(() => {
@@ -396,11 +446,12 @@ onBeforeUnmount(() => {
             <div
               v-for="db in databases"
               :key="db"
-              class="cursor-pointer"
+              class="cursor-pointer group"
             >
               <div
                 class="flex items-center gap-1 px-3 py-1 hover:bg-ch-hover text-ch-text"
                 @click="toggleDB(db)"
+                @contextmenu.prevent="showDBMenu($event, db)"
               >
                 <svg
                   width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -410,7 +461,14 @@ onBeforeUnmount(() => {
                   <polyline points="9 18 15 12 9 6"/>
                 </svg>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-ch-muted shrink-0"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
-                <span class="truncate">{{ db }}</span>
+                <span class="truncate flex-1">{{ db }}</span>
+                <button
+                  class="opacity-0 group-hover:opacity-100 hover:opacity-100 text-ch-muted hover:text-ch-accent transition-opacity p-0.5"
+                  :title="t('editor.addTable')"
+                  @click.stop="openCreateTable(db)"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
               </div>
               <div v-show="expandedDBs.has(db)" class="pl-5">
                 <div v-if="loadingTables === db" class="px-3 py-1 text-xs text-ch-muted">{{ t('editor.loading') }}</div>
@@ -425,6 +483,9 @@ onBeforeUnmount(() => {
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-ch-muted"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
                   <span class="truncate">{{ t.name }}</span>
+                </div>
+                <div v-if="(tablesByDB.get(db) || []).length === 0 && loadingTables !== db" class="px-3 py-1 text-[10px] text-ch-muted italic">
+                  {{ t('editor.noResults') }}
                 </div>
               </div>
             </div>
@@ -572,21 +633,68 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- DB Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="dbMenu.visible"
+        class="fixed z-[1000] bg-ch-panel border border-ch-border rounded-md shadow-xl py-1 min-w-[160px] select-none"
+        :style="{ left: dbMenu.x + 'px', top: dbMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <div class="px-3 py-1 text-[10px] text-ch-muted uppercase tracking-wide border-b border-ch-border/50">
+          {{ dbMenu.db }}
+        </div>
+        <button
+          @click="openCreateTable(dbMenu.db)"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          {{ t('editor.createTableHere') }}
+        </button>
+      </div>
+    </Teleport>
+
     <!-- Table Context Menu -->
     <Teleport to="body">
       <div
         v-if="tableMenu.visible"
-        class="fixed z-[1000] bg-ch-panel border border-ch-border rounded-md shadow-xl py-1 min-w-[140px] select-none"
+        class="fixed z-[1000] bg-ch-panel border border-ch-border rounded-md shadow-xl py-1 min-w-[160px] select-none"
         :style="{ left: tableMenu.x + 'px', top: tableMenu.y + 'px' }"
         @click.stop
         @contextmenu.prevent
       >
+        <div class="px-3 py-1 text-[10px] text-ch-muted uppercase tracking-wide border-b border-ch-border/50">
+          {{ tableMenu.db }}.{{ tableMenu.table }}
+        </div>
+        <button
+          @click="insertTable(tableMenu.db, tableMenu.table)"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          SELECT * LIMIT 10
+        </button>
         <button
           @click="openTableDDL(tableMenu.db, tableMenu.table)"
           class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           {{ t('editor.viewDDL') }}
+        </button>
+        <button
+          @click="openEditTable(tableMenu.db, tableMenu.table)"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          {{ t('editor.editTable') }}
+        </button>
+        <div class="border-t border-ch-border/50 my-1"></div>
+        <button
+          @click="confirmDropTable(tableMenu.db, tableMenu.table)"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-900/20"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          {{ t('editor.dropTable') }}
         </button>
       </div>
     </Teleport>
@@ -601,7 +709,7 @@ onBeforeUnmount(() => {
         <div class="absolute inset-0 bg-black/50"></div>
         <div class="relative bg-ch-panel border border-ch-border rounded-lg shadow-2xl w-[720px] max-w-[90vw] max-h-[80vh] flex flex-col">
           <div class="flex items-center justify-between px-4 py-3 border-b border-ch-border shrink-0">
-            <h3 class="text-sm font-semibold text-ch-text">{{ t('editor.viewDDL') }}: `{{ tableMenu.db }}`.`{{ tableMenu.table }}`</h3>
+            <h3 class="text-sm font-semibold text-ch-text">{{ t('editor.viewDDL') }}: `{{ ddlModal.db }}`.`{{ ddlModal.table }}`</h3>
             <button
               @click="ddlModal.visible = false"
               class="p-1 rounded hover:bg-ch-hover text-ch-muted hover:text-ch-text"
@@ -642,6 +750,51 @@ onBeforeUnmount(() => {
               class="btn-ghost btn-sm"
             >
               {{ t('common.close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Create Table Modal -->
+    <CreateTableModal
+      :visible="createModal.visible"
+      :database="createModal.database"
+      @close="createModal.visible = false"
+      @created="refreshTables(createModal.database)"
+    />
+
+    <!-- Edit Table Modal -->
+    <EditTableModal
+      :visible="editModal.visible"
+      :database="editModal.database"
+      :table="editModal.table"
+      @close="editModal.visible = false"
+      @altered="refreshTables(editModal.database)"
+    />
+
+    <!-- Drop Table Confirm -->
+    <Teleport to="body">
+      <div
+        v-if="dropConfirm.visible"
+        class="fixed inset-0 z-[3000] flex items-center justify-center"
+        @click.self="dropConfirm.visible = false"
+      >
+        <div class="absolute inset-0 bg-black/50"></div>
+        <div class="relative bg-ch-panel border border-red-700 rounded-lg shadow-2xl w-[420px] max-w-[90vw]">
+          <div class="px-4 py-3 border-b border-ch-border">
+            <h3 class="text-sm font-semibold text-red-400 flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              {{ t('editor.dropTable') }}
+            </h3>
+          </div>
+          <div class="px-4 py-4 text-sm text-ch-text">
+            <p class="whitespace-pre-line">{{ t('editor.confirmDrop').replace('{db}', dropConfirm.db).replace('{table}', dropConfirm.table) }}</p>
+          </div>
+          <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-ch-border">
+            <button @click="dropConfirm.visible = false" class="btn-ghost btn-sm">{{ t('common.close') }}</button>
+            <button @click="doDropTable" class="btn-primary btn-sm bg-red-600 hover:bg-red-700">
+              {{ t('editor.dropTable') }}
             </button>
           </div>
         </div>
