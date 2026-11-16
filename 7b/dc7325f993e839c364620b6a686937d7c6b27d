@@ -1,0 +1,20 @@
+README.md
+  h_a3f313f3d96276 15,84
+docs/FEATURES.md
+  h_a3f313f3d96276 17,19-21
+docs/API.md
+  h_a3f313f3d96276 209,225-238
+.trae/PROJECT.md
+  h_a3f313f3d96276 46-47,65-66,83,98,136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "7bdc7325f993e839c364620b6a686937d7c6b27d",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
