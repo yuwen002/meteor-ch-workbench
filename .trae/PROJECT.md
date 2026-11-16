@@ -43,8 +43,8 @@ Wails v3
 
 ```
 main.go                          入口，注册 App Service
-app.go                           18 个公开方法 → 前端可调用
-internal/clickhouse/service.go   Query / Exec / GetDatabases / GetTables / GetTableSchema / GetClusters / TestConnection
+app.go                           19 个公开方法 → 前端可调用
+internal/clickhouse/service.go   Query / Exec / GetDatabases / GetTables / GetViews / GetTableSchema / GetClusters / TestConnection
 internal/config/manager.go       LoadAll / SaveConnection / DeleteConnection / SaveFolder / DeleteFolder
 ```
 
@@ -62,7 +62,8 @@ internal/config/manager.go       LoadAll / SaveConnection / DeleteConnection / S
 | `Query(id, sql)` | SELECT/SHOW | `QueryResult{columns, rows, row_count, elapsed_ms, error?}` |
 | `Execute(id, sql)` | DDL/DML | `ExecResult{rows_affected, error?}` |
 | `GetDatabases(id)` | SHOW DATABASES | `string[]` |
-| `GetTables(id, db)` | 库下表名+引擎+注释 | `TableInfo[]{name, engine?, comment?}` |
+| `GetTables(id, db)` | 库下表名+引擎+注释（排除视图） | `TableInfo[]{name, engine?, comment?}` |
+| `GetViews(id, db)` | 库下视图（引擎以 View 结尾） | `TableInfo[]` |
 | `GetTableSchema(id, db, table)` | 表结构（编辑表用） | `ColumnInfo[]{name, type, default?, comment?}` |
 | `GetClusters(id)` | system.clusters | `ClusterInfo[]` |
 | `OpenConfigFolder` | 打开配置目录 | |
@@ -79,7 +80,7 @@ src/
 ├── App.vue                      主框架：顶栏 MenuBar + 侧边栏 + 路由出口
 ├── main.ts                      入口（createApp + registerPinia + registerI18n + mount）
 ├── i18n.ts                      vue-i18n 初始化 + 语言检测
-├── api.ts                       16 个 Call.ByName 封装（与 App 方法一一对应）
+├── api.ts                       17 个 Call.ByName 封装（与 App 方法一一对应）
 ├── types.ts                     共享接口：Connection, Folder, DataFile, ColumnInfo, TableInfo, ClusterInfo, QueryResult, ExecResult
 ├── style.css                    Tailwind + 全局样式 + .btn-primary / .btn-ghost / .btn-sm
 ├── stores/app.ts                唯一 Pinia store：folders / connections / activeConnectionId / connectionStatus / groupedConnections / loadAll / checkConnection ...
@@ -94,7 +95,7 @@ src/
 │   └── EditTableModal.vue       可视化编辑表（加载 schema → MOD/REN/DROP/ADD → ALTER 执行）
 └── views/
     ├── ConnectionManager.vue    连接管理视图（初始路由）
-    └── QueryEditor.vue ★       核心：Monaco SQL 编辑器 + 数据库树 + 集群面板 + 结果表 + 右键菜单 + 所有 Modal 的宿主
+    └── QueryEditor.vue ★       核心：Monaco SQL 编辑器 + 数据库树（表/视图） + 集群面板 + 结果表 + 右键菜单 + 所有 Modal 的宿主
 ```
 
 ### QueryEditor.vue — 核心视图承载清单
@@ -132,7 +133,7 @@ dropConfirm = { visible, db, table }         → 删除表确认
 
 - 全局 root 用 `<Teleport to="body">` 渲染 Modal（z-index `2000` 或 `3000`）
 - 数据库树外层需要 `group` 类才能让内层 `group-hover:opacity-100` 的按钮显示
-- 表名行点击 → 插入名到编辑器；双击 → `SELECT * LIMIT 10 {table}`；右键 → 菜单
+- 表名 / 视图名行点击 → 直接用 `SELECT * ... LIMIT 10` **预览数据**（右下角红底高亮标识选中项）；右键 → 菜单
 - SQL 编辑器快捷键：`Ctrl/Cmd + Enter` 执行选中/全部
 - 侧边栏宽度可拖拽，状态存 Pinia
 - 所有 Modal 关闭动画靠 `v-if + @click.self + Esc`

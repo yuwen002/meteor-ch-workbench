@@ -206,7 +206,7 @@ interface ExecResult {
 ---
 
 ### GetTables(connectionID, database)
-获取指定数据库下的表列表。
+获取指定数据库下的表列表（不含视图）。
 
 | | |
 |---|---|
@@ -221,6 +221,20 @@ interface TableInfo {
   comment?: string
 }
 ```
+
+> 实现按 `system.tables` 中引擎 `engine NOT LIKE '%View'` 过滤，只返回真实表，视图由 `GetViews` 单独返回，避免重复。
+
+---
+
+### GetViews(connectionID, database)
+获取指定数据库下的所有视图信息（普通 `View`、`MaterializedView`、`LiveView` 等，按引擎以 `View` 结尾匹配）。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetViews(connectionID, database string) ([]clickhouse.TableInfo, error)` |
+| TS | `api.GetViews(connectionID: string, database: string): Promise<TableInfo[]>` |
+
+返回结构与 `TableInfo` 相同（`name / engine / comment`），前端据此在左侧导航中单独渲染「视图」分区。
 
 ---
 

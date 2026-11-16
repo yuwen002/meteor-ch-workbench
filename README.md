@@ -12,7 +12,7 @@
 - 🗂️ **多连接管理** — 连接分组、重命名、拖拽分组，一目了然
 - ⚡ **SQL 编辑器** — Monaco Editor，语法高亮，Ctrl/Cmd + Enter 快捷执行
 - 📊 **实时查询结果** — 表格渲染、耗时统计、行数统计，错误即时提示
-- 🗄️ **数据库 / 表浏览** — 侧边栏树状结构，双击快速 SELECT
+- 🗄️ **数据库 / 表 / 视图浏览** — 侧边栏树状结构，单击直接预览数据，视图单独分区
 - ➕ **可视化建表** — 表单化定义列、引擎、ORDER BY，实时 SQL 预览
 - ✏️ **可视化编辑表** — 修改列类型 / 默认值 / 注释、重命名、新增、删除
 - 🗑️ **表删除** — 右键一键删除带确认弹窗
@@ -81,7 +81,7 @@ npm run build    # 产物输出到 frontend/dist
 ├── main.go                     # 入口，注册 Wails Service
 ├── wails.json                  # Wails 项目配置
 ├── internal/
-│   ├── clickhouse/service.go   # ClickHouse 连接、查询、集群、表元数据
+│   ├── clickhouse/service.go   # ClickHouse 连接、查询、集群、表/视图元数据
 │   └── config/manager.go       # JSON 配置读写、Folder/Connection 管理
 ├── docs/
 │   ├── API.md                  # 前后端接口文档（Go 方法 → TS 封装）
