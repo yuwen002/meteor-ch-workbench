@@ -63,7 +63,7 @@ type QueryResult struct {
 // ClickHouse 的 DDL 通常不影响行数，RowsAffected 多为 0；
 // INSERT 时可能反映实际写入的行数。
 type ExecResult struct {
-	RowsAffected int64  `json:"rows_affected"`  // 受影响的行数
+	RowsAffected int64  `json:"rows_affected"`   // 受影响的行数
 	Error        string `json:"error,omitempty"` // 执行错误信息，正常时为空
 }
 
@@ -302,7 +302,8 @@ func (s *Service) GetTables(conn config.Connection, database string) ([]TableInf
 	}
 
 	ctx := context.Background()
-	query := "SELECT name, engine, comment FROM system.tables WHERE database = " + quoteLiteral(database)
+	query := "SELECT name, engine, comment FROM system.tables WHERE database = " + quoteLiteral(database) +
+		" AND engine NOT LIKE '%View'"
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -325,6 +326,41 @@ func (s *Service) GetTables(conn config.Connection, database string) ([]TableInf
 		return nil, err
 	}
 	return tables, nil
+}
+
+// GetViews 返回指定数据库下的全部视图信息（名称、引擎、注释）。
+// 视图同样存储在 system.tables 中，通过引擎以 View 结尾来区分。
+func (s *Service) GetViews(conn config.Connection, database string) ([]TableInfo, error) {
+	db, err := s.getDB(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	query := "SELECT name, engine, comment FROM system.tables WHERE database = " + quoteLiteral(database) +
+		" AND engine LIKE '%View'"
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var views []TableInfo
+	for rows.Next() {
+		var name, engine, comment string
+		if err := rows.Scan(&name, &engine, &comment); err != nil {
+			return nil, err
+		}
+		views = append(views, TableInfo{
+			Name:    name,
+			Engine:  engine,
+			Comment: comment,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return views, nil
 }
 
 // GetTableSchema 返回指定表的列结构。

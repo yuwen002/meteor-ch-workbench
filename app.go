@@ -139,6 +139,15 @@ func (a *App) GetTables(connectionID string, database string) ([]clickhouse.Tabl
 	return a.chSvc.GetTables(*conn, database)
 }
 
+// GetViews 查询指定数据库下的所有视图信息（名称、引擎、注释）。
+func (a *App) GetViews(connectionID string, database string) ([]clickhouse.TableInfo, error) {
+	conn, err := a.conf.GetConnection(connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.chSvc.GetViews(*conn, database)
+}
+
 // GetTableSchema 查询指定表的列结构（列名、类型、注释）。
 func (a *App) GetTableSchema(connectionID string, database string, table string) ([]clickhouse.ColumnInfo, error) {
 	conn, err := a.conf.GetConnection(connectionID)

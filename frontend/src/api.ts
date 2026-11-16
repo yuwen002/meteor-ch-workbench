@@ -59,6 +59,10 @@ export const api = {
     return call<TableInfo[]>('main.App.GetTables', connectionID, database)
   },
 
+  GetViews(connectionID: string, database: string): Promise<TableInfo[]> {
+    return call<TableInfo[]>('main.App.GetViews', connectionID, database)
+  },
+
   GetTableSchema(connectionID: string, database: string, table: string): Promise<ColumnInfo[]> {
     return call<ColumnInfo[]>('main.App.GetTableSchema', connectionID, database, table)
   },

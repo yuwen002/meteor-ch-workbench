@@ -18,6 +18,7 @@ let editor: monaco.editor.IStandaloneCodeEditor | null = null
 const databases = ref<string[]>([])
 const expandedDBs = ref<Set<string>>(new Set())
 const tablesByDB = ref<Map<string, { name: string; engine?: string }[]>>(new Map())
+const viewsByDB = ref<Map<string, { name: string; engine?: string }[]>>(new Map())
 const loadingTables = ref<string | null>(null)
 const loadingMeta = ref(false)
 
@@ -25,6 +26,10 @@ const clusters = ref<ClusterInfo[]>([])
 const expandedClusters = ref<Set<string>>(new Set())
 const loadingClusters = ref(false)
 const copiedUUID = ref<string | null>(null)
+
+const selectedDB = ref<string | null>(null)
+const selectedTable = ref<string | null>(null)
+const selectedCluster = ref<string | null>(null)
 
 const result = ref<QueryResult | null>(null)
 const querying = ref(false)
@@ -79,6 +84,8 @@ async function loadClusters() {
 }
 
 async function toggleDB(db: string) {
+  selectedDB.value = db
+  selectedTable.value = null
   if (expandedDBs.value.has(db)) {
     expandedDBs.value.delete(db)
     expandedDBs.value = new Set(expandedDBs.value)
@@ -96,13 +103,19 @@ async function toggleDB(db: string) {
     tablesByDB.value.set(db, tables || [])
     tablesByDB.value = new Map(tablesByDB.value)
   } catch (e: any) {
-    // swallow
+  }
+  try {
+    const views: any[] = await api.GetViews(store.activeConnectionId, db)
+    viewsByDB.value.set(db, views || [])
+    viewsByDB.value = new Map(viewsByDB.value)
+  } catch (e: any) {
   } finally {
     loadingTables.value = null
   }
 }
 
 function toggleCluster(cluster: string) {
+  selectedCluster.value = cluster
   if (expandedClusters.value.has(cluster)) {
     expandedClusters.value.delete(cluster)
   } else {
@@ -219,6 +232,8 @@ async function doDropTable() {
 function refreshTables(db: string) {
   tablesByDB.value.delete(db)
   tablesByDB.value = new Map(tablesByDB.value)
+  viewsByDB.value.delete(db)
+  viewsByDB.value = new Map(viewsByDB.value)
   toggleDB(db)
 }
 
@@ -256,22 +271,12 @@ async function runQuery() {
 }
 
 function insertTable(db: string, table: string) {
+  selectedDB.value = db
+  selectedTable.value = table
   if (!editor) return
   const snippet = `SELECT * FROM ${db}.${table} LIMIT 10`
   editor.setValue(snippet)
   runQuery()
-}
-
-function insertTableName(table: string) {
-  if (!editor) return
-  const model = editor.getModel()
-  const sel = editor.getSelection()
-  if (model && sel) {
-    model.pushEditOperations([], [
-      { range: sel, text: table },
-    ], () => null)
-    editor.focus()
-  }
 }
 
 function insertClusterUUID(uuid: string) {
@@ -449,7 +454,8 @@ onBeforeUnmount(() => {
               class="cursor-pointer group"
             >
               <div
-                class="flex items-center gap-1 px-3 py-1 hover:bg-ch-hover text-ch-text"
+                class="flex items-center gap-1 px-3 py-1 hover:bg-ch-hover border-l-2 border-l-transparent"
+                :class="selectedDB === db ? 'bg-ch-accent/15 border-l-ch-accent text-ch-accent' : 'text-ch-text'"
                 @click="toggleDB(db)"
                 @contextmenu.prevent="showDBMenu($event, db)"
               >
@@ -473,19 +479,35 @@ onBeforeUnmount(() => {
               <div v-show="expandedDBs.has(db)" class="pl-5">
                 <div v-if="loadingTables === db" class="px-3 py-1 text-xs text-ch-muted">{{ t('editor.loading') }}</div>
                 <div
-                  v-for="t in (tablesByDB.get(db) || [])"
-                  :key="t.name"
-                  class="flex items-center gap-1 px-2 py-1 hover:bg-ch-hover cursor-pointer text-ch-text text-xs"
-                  @dblclick="insertTable(db, t.name)"
-                  @click="insertTableName(t.name)"
-                  @contextmenu.prevent="showTableMenu($event, db, t.name)"
-                  :title="t.engine || ''"
+                  v-for="tb in (tablesByDB.get(db) || [])"
+                  :key="tb.name"
+                  class="flex items-center gap-1 px-2 py-1 hover:bg-ch-hover cursor-pointer text-xs border-l-2 border-l-transparent"
+                  :class="selectedDB === db && selectedTable === tb.name ? 'bg-ch-accent/15 border-l-ch-accent text-ch-accent' : 'text-ch-text'"
+                  @click="insertTable(db, tb.name)"
+                  @contextmenu.prevent="showTableMenu($event, db, tb.name)"
+                  :title="tb.engine || (t('editor.clickToPreview'))"
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-ch-muted"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-                  <span class="truncate">{{ t.name }}</span>
+                  <span class="truncate">{{ tb.name }}</span>
                 </div>
                 <div v-if="(tablesByDB.get(db) || []).length === 0 && loadingTables !== db" class="px-3 py-1 text-[10px] text-ch-muted italic">
                   {{ t('editor.noResults') }}
+                </div>
+                <div v-if="(viewsByDB.get(db) || []).length > 0" class="mt-1 px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-ch-muted flex items-center gap-1">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  {{ t('editor.views') }}
+                </div>
+                <div
+                  v-for="v in (viewsByDB.get(db) || [])"
+                  :key="'v-' + v.name"
+                  class="flex items-center gap-1 px-2 py-1 hover:bg-ch-hover cursor-pointer text-xs border-l-2 border-l-transparent"
+                  :class="selectedDB === db && selectedTable === v.name ? 'bg-ch-accent/15 border-l-ch-accent text-ch-accent' : 'text-ch-text'"
+                  @click="insertTable(db, v.name)"
+                  @contextmenu.prevent="showTableMenu($event, db, v.name)"
+                  :title="v.engine || (t('editor.clickToPreview'))"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-ch-muted"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span class="truncate">{{ v.name }}</span>
                 </div>
               </div>
             </div>
