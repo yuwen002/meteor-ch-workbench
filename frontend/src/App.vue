@@ -6,6 +6,7 @@ import ConnectionModal from './components/ConnectionModal.vue'
 import FolderModal from './components/FolderModal.vue'
 import MenuBar from './components/MenuBar.vue'
 import { setLocale, getCurrentLocale, type Locale } from './i18n'
+import type { Connection } from './types'
 
 const { t } = useI18n()
 const store = useAppStore()
@@ -192,6 +193,202 @@ watch(
     if (id) store.checkConnection(id)
   }
 )
+
+// 导入配置后重新拉取全部数据并刷新连接状态
+async function onConfigImported() {
+  await store.loadAll()
+  store.activeConnectionId = null
+  store.checkAllConnections()
+}
+
+// ---- 拖拽排序 ----
+// 采用自绘指针拖拽（不用 HTML5 DnD，规避 webview 下 DnD 不稳定问题）：
+// 按下超过阈值后进入拖拽态，实时根据指针命中元素计算目标分组与插入位置，
+// release 后一次性落盘。支持连接组内排序 / 跨分组拖拽，以及分组排序。
+interface DragItem {
+  kind: 'folder' | 'connection'
+  id: string
+  folderId: string | null
+  active: boolean
+  moved: boolean
+  startX: number
+  startY: number
+}
+interface DropTarget {
+  kind: 'folder' | 'connection'
+  folderId: string | null
+  index: number // -1 表示追加到分组末尾；否则为目标分组内第 index 个元素之前
+}
+const treeEl = ref<HTMLElement | null>(null)
+const dragItem = ref<DragItem | null>(null)
+const dropTarget = ref<DropTarget | null>(null)
+const indicatorY = ref(12)
+const indicatorVisible = ref(false)
+const suppressNextClick = ref(false)
+
+// 按下：记录候选拖拽项（移动超过阈值后才真正进入拖拽态）
+// 注意：此处不调 preventDefault —— 在 webview 里它会阻断后续 mousemove。
+// 文本选择靠 CSS user-select: none 兜底，mousemove 里再 preventDefault 双重保险。
+function onDragStartHandle(e: MouseEvent, kind: DragItem['kind'], id: string, folderId: string | null) {
+  if (e.button !== 0) return
+  dragItem.value = { kind, id, folderId, active: true, moved: false, startX: e.clientX, startY: e.clientY }
+  window.addEventListener('mousemove', onPointerMove)
+  window.addEventListener('mouseup', onPointerUp)
+}
+
+function onPointerMove(e: MouseEvent) {
+  const item = dragItem.value
+  if (!item || !item.active) return
+  if (!item.moved) {
+    if (Math.hypot(e.clientX - item.startX, e.clientY - item.startY) < 4) return
+    item.moved = true
+    suppressNextClick.value = true
+    document.body.style.cursor = 'grabbing'
+  }
+  if (e.cancelable) e.preventDefault()
+  updateDropTarget(e)
+}
+
+function onPointerUp(e: MouseEvent) {
+  const item = dragItem.value
+  if (!item) return
+  if (item.active && item.moved) {
+    performDrop()
+  }
+  document.body.style.cursor = ''
+  dragItem.value = null
+  dropTarget.value = null
+  indicatorVisible.value = false
+  window.removeEventListener('mousemove', onPointerMove)
+  window.removeEventListener('mouseup', onPointerUp)
+}
+
+// 拖拽结束后若误触发所在行点击，则抑制（避免拖拽时切换选中 / 折叠分组）
+function onClickSelect(connId: string) {
+  if (suppressNextClick.value) {
+    suppressNextClick.value = false
+    return
+  }
+  store.activeConnectionId = connId
+}
+function onClickToggleFolder(folderId: string) {
+  if (suppressNextClick.value) {
+    suppressNextClick.value = false
+    return
+  }
+  store.toggleFolder(folderId)
+}
+
+function updateDropTarget(e: MouseEvent) {
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  const tree = treeEl.value
+  if (!tree || !el || !tree.contains(el)) {
+    dropTarget.value = null
+    indicatorVisible.value = false
+    return
+  }
+  const item = dragItem.value!
+  const treeRect = tree.getBoundingClientRect()
+  const connRow = el.closest('.connection-item') as HTMLElement | null
+  const header = el.closest('.folder-header') as HTMLElement | null
+
+  if (connRow) {
+    if (item.kind !== 'connection') return
+    const rect = connRow.getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    const folderId = connRow.getAttribute('data-folder') || null
+    const container = connRow.parentElement as HTMLElement
+    const rows = Array.from(container.querySelectorAll(':scope > .connection-item'))
+    const rowIndex = rows.indexOf(connRow)
+    dropTarget.value = { kind: 'connection', folderId, index: before ? rowIndex : rowIndex + 1 }
+    indicatorY.value = (before ? rect.top : rect.bottom) - treeRect.top + tree.scrollTop
+    indicatorVisible.value = true
+    return
+  }
+
+  if (header) {
+    const headerFolderId = header.getAttribute('data-folder') || null
+    if (item.kind === 'connection') {
+      // 拖到分组头 → 移动到该分组末尾
+      dropTarget.value = { kind: 'connection', folderId: headerFolderId, index: -1 }
+      indicatorY.value = header.getBoundingClientRect().top - treeRect.top + tree.scrollTop
+      indicatorVisible.value = true
+      return
+    }
+    const headers = Array.from(tree.querySelectorAll('.folder-header'))
+    const headerIndex = headers.indexOf(header)
+    const rect = header.getBoundingClientRect()
+    const before = e.clientY < rect.top + rect.height / 2
+    dropTarget.value = { kind: 'folder', folderId: null, index: before ? headerIndex : headerIndex + 1 }
+    indicatorY.value = (before ? rect.top : rect.bottom) - treeRect.top + tree.scrollTop
+    indicatorVisible.value = true
+    return
+  }
+
+  // 悬停在树内空白区域：连接拖到未分组；分组拖拽取消
+  if (item.kind === 'connection') {
+    dropTarget.value = { kind: 'connection', folderId: null, index: 0 }
+    indicatorVisible.value = false
+  } else {
+    dropTarget.value = null
+    indicatorVisible.value = false
+  }
+}
+
+async function performDrop() {
+  const drag = dragItem.value
+  const target = dropTarget.value
+  if (!drag || !target || !drag.moved) return
+  if (drag.kind === 'connection' && target.kind === 'connection') {
+    const dragConn = store.connections.find((c) => c.id === drag.id)
+    if (!dragConn) return
+    const moved = { ...dragConn, folder_id: target.folderId ?? undefined }
+    if (drag.folderId !== target.folderId) {
+      await store.saveConnection(moved)
+    }
+    const order = buildNewConnOrder(moved, target)
+    await store.reorderConnections(order.map((c) => c.id))
+  } else if (drag.kind === 'folder' && target.kind === 'folder') {
+    await store.reorderFolders(buildNewFolderOrder(drag.id, target.index))
+  }
+}
+
+// 根据目标分组与目标插入位置重建连接扁平顺序（组内顺序=扁平顺序）
+function buildNewConnOrder(moved: Connection, target: DropTarget): Connection[] {
+  const groups = store.groupedConnections
+  const result: Connection[] = []
+  for (const group of groups) {
+    const groupFolderId = group.folder ? group.folder.id : null
+    let conns = group.conns.filter((c) => c.id !== moved.id)
+    if (groupFolderId === target.folderId) {
+      if (target.index === -1) {
+        conns = [...conns, moved]
+      } else {
+        const dragDispIndex = group.conns.findIndex((c) => c.id === moved.id)
+        let ins = target.index
+        if (dragDispIndex >= 0 && dragDispIndex < ins) ins -= 1
+        ins = Math.max(0, Math.min(ins, conns.length))
+        conns = [...conns.slice(0, ins), moved, ...conns.slice(ins)]
+      }
+    }
+    result.push(...conns)
+  }
+  // 拖到未分组但当前没有未分组连接时不显示该分组，最后补上
+  if (!result.some((c) => c.id === moved.id) && target.folderId === null) {
+    result.push(moved)
+  }
+  return result
+}
+
+function buildNewFolderOrder(dragId: string, index: number): string[] {
+  const full = store.folders.map((f) => f.id)
+  const dragIdx = full.indexOf(dragId)
+  let ins = index
+  if (dragIdx >= 0 && dragIdx < ins) ins -= 1
+  const ids = full.filter((id) => id !== dragId)
+  ins = Math.max(0, Math.min(ins, ids.length))
+  return [...ids.slice(0, ins), dragId, ...ids.slice(ins)]
+}
 </script>
 
 <template>
@@ -201,6 +398,7 @@ watch(
       @new-folder="newFolder"
       @toggle-sidebar="store.toggleSidebar()"
       @reset-sidebar="resetSidebarWidth"
+      @config-imported="onConfigImported"
     />
     <div ref="appEl" class="flex flex-1 min-h-0">
     <!-- Sidebar -->
@@ -275,13 +473,16 @@ watch(
       </div>
 
       <!-- Connection Tree -->
-      <div class="flex-1 overflow-y-auto py-1" v-if="!store.sidebarCollapsed">
+      <div ref="treeEl" class="flex-1 overflow-y-auto py-1 relative select-none" v-if="!store.sidebarCollapsed">
+        <div v-show="indicatorVisible" class="drop-line" :style="{ top: indicatorY + 'px' }"></div>
         <template v-for="group in store.groupedConnections" :key="group.folder?.id || 'ungrouped'">
           <!-- Folder Header -->
           <div
             v-if="group.folder"
-            class="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-ch-muted uppercase tracking-wide cursor-pointer hover:bg-ch-hover select-none group-header"
-            @click="store.toggleFolder(group.folder!.id)"
+            class="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-ch-muted uppercase tracking-wide cursor-pointer hover:bg-ch-hover select-none group-header folder-header"
+            :data-folder="group.folder.id"
+            @click="onClickToggleFolder(group.folder.id)"
+            @mousedown.stop="onDragStartHandle($event, 'folder', group.folder.id, null)"
             @contextmenu.prevent="showContextMenu($event, 'folder', group.folder)"
           >
             <svg
@@ -314,13 +515,16 @@ watch(
             <div
               v-for="conn in group.conns"
               :key="conn.id"
+              :data-folder="group.folder?.id || ''"
+              :data-conn-id="conn.id"
               :class="[
-                'flex items-center gap-2 px-3 py-1.5 cursor-pointer text-sm transition-colors connection-item',
+                'flex items-center gap-2 px-3 py-1.5 cursor-pointer text-sm transition-colors connection-item select-none',
                 store.activeConnectionId === conn.id
                   ? 'bg-ch-active text-ch-text'
                   : 'text-ch-text hover:bg-ch-hover',
               ]"
-              @click="store.activeConnectionId = conn.id"
+              @click="onClickSelect(conn.id)"
+              @mousedown.stop="onDragStartHandle($event, 'connection', conn.id, group.folder?.id || null)"
               @contextmenu.prevent="showContextMenu($event, 'connection', conn)"
             >
               <span
@@ -470,7 +674,20 @@ watch(
 </template>
 
 <style>
+aside, aside * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
 .connection-item:hover .connection-actions {
   display: inline-block;
+}
+.drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 20;
+  background: #e74c3c;
+  pointer-events: none;
 }
 </style>

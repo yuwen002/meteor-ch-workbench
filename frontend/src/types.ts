@@ -22,6 +22,35 @@ export interface DataFile {
   connections: Connection[]
 }
 
+export interface ExportFormat {
+  id: string
+  name: string
+  extension: string
+  mime: string
+  description: string
+}
+
+export interface ImportFormat {
+  id: string
+  name: string
+  extension: string
+  description: string
+}
+
+export interface ImportOptions {
+  format: string
+  mode: 'replace' | 'merge'
+}
+
+export interface ImportResult {
+  mode: string
+  format: string
+  importedFolders: number
+  importedConns: number
+  totalFolders: number
+  totalConns: number
+}
+
 export interface ColumnInfo {
   name: string
   type: string

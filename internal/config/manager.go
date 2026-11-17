@@ -110,6 +110,51 @@ func (m *Manager) ConfigDir() string {
 	return m.dir
 }
 
+// ExportData 导出当前全部配置，序列化为带缩进的 JSON 文本，供前端下载为文件。
+func (m *Manager) ExportData() (string, error) {
+	if _, err := m.LoadAll(); err != nil {
+		return "", err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	data, err := json.MarshalIndent(m.data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// ImportData 导入 JSON 配置文本，覆盖当前全部连接与文件夹并写回磁盘。
+// 导入前会校验 JSON 格式，并对缺失 ID 的条目自动生成 ID、对缺失 protocol 的连接做归一化，
+// 避免导入后出现无法使用的配置。空字段（folders/connections）按空列表处理。
+func (m *Manager) ImportData(raw string) error {
+	var df DataFile
+	if err := json.Unmarshal([]byte(raw), &df); err != nil {
+		return errors.New("invalid config file: " + err.Error())
+	}
+	if df.Folders == nil {
+		df.Folders = []Folder{}
+	}
+	if df.Connections == nil {
+		df.Connections = []Connection{}
+	}
+	for i := range df.Folders {
+		if df.Folders[i].ID == "" {
+			df.Folders[i].GenID()
+		}
+	}
+	for i := range df.Connections {
+		if df.Connections[i].ID == "" {
+			df.Connections[i].GenID()
+		}
+		df.Connections[i].Normalize()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data = df
+	return m.flush()
+}
+
 // LoadAll 从磁盘读取配置文件并刷新内存缓存。
 // 若文件不存在或内容为空，则返回空数据结构而不报错（首次启动的正常情况）。
 // 加载过程中会对缺失 protocol 的旧连接做自动补全，并在确有变更时回写磁盘，
@@ -249,6 +294,70 @@ func (m *Manager) SaveFolder(f Folder) error {
 	} else {
 		m.data.Folders = append(m.data.Folders, f)
 	}
+	return m.flush()
+}
+
+// ReorderFolders 按传入的 ID 顺序重排文件夹列表，用于侧边栏拖拽排序。
+// 传入列表未覆盖的文件夹（理论上不会发生）会保留原相对顺序追加到末尾。
+func (m *Manager) ReorderFolders(ids []string) error {
+	if _, err := m.LoadAll(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	byID := make(map[string]Folder, len(m.data.Folders))
+	for _, f := range m.data.Folders {
+		byID[f.ID] = f
+	}
+	seen := make(map[string]bool, len(ids))
+	ordered := make([]Folder, 0, len(m.data.Folders))
+	for _, id := range ids {
+		f, ok := byID[id]
+		if !ok || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ordered = append(ordered, f)
+	}
+	for _, f := range m.data.Folders {
+		if !seen[f.ID] {
+			ordered = append(ordered, f)
+		}
+	}
+	m.data.Folders = ordered
+	return m.flush()
+}
+
+// ReorderConnections 按传入的 ID 顺序重排连接列表，用于侧边栏拖拽排序。
+// 连接以扁平数组存储，其相对顺序即侧边栏分组内的展示顺序，
+// 因此重排数组即可实现组内的排序以及跨组时的先后关系。
+// 传入列表未覆盖的连接会保留原相对顺序追加到末尾。
+func (m *Manager) ReorderConnections(ids []string) error {
+	if _, err := m.LoadAll(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	byID := make(map[string]Connection, len(m.data.Connections))
+	for _, c := range m.data.Connections {
+		byID[c.ID] = c
+	}
+	seen := make(map[string]bool, len(ids))
+	ordered := make([]Connection, 0, len(m.data.Connections))
+	for _, id := range ids {
+		c, ok := byID[id]
+		if !ok || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ordered = append(ordered, c)
+	}
+	for _, c := range m.data.Connections {
+		if !seen[c.ID] {
+			ordered = append(ordered, c)
+		}
+	}
+	m.data.Connections = ordered
 	return m.flush()
 }
 

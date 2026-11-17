@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 )
@@ -98,6 +101,102 @@ func (a *App) SaveFolder(f config.Folder) error {
 // DeleteFolder 删除文件夹分组，其下的连接会被移动到根级（不会删除连接本身）。
 func (a *App) DeleteFolder(id string) error {
 	return a.conf.DeleteFolder(id)
+}
+
+// ReorderFolders 按指定 ID 顺序重排文件夹分组，用于侧边栏拖拽排序。
+func (a *App) ReorderFolders(ids []string) error {
+	return a.conf.ReorderFolders(ids)
+}
+
+// ReorderConnections 按指定 ID 顺序重排连接列表，用于侧边栏拖拽排序。
+func (a *App) ReorderConnections(ids []string) error {
+	return a.conf.ReorderConnections(ids)
+}
+
+// ExportConfig 导出当前全部配置为 JSON 文本，供前端下载为配置文件。
+func (a *App) ExportConfig() (string, error) {
+	return a.conf.ExportData()
+}
+
+// GetExportFormats 返回支持的全部导出格式元信息，供前端渲染格式选择。
+func (a *App) GetExportFormats() []config.ExportFormat {
+	return config.ExportFormats()
+}
+
+// ExportConfigByFormat 按指定格式导出配置文本，返回内容、建议扩展名。
+// includePassword 为 false 时会清空密码，便于安全分享。
+func (a *App) ExportConfigByFormat(format string, includePassword bool) (string, string, error) {
+	return a.conf.ExportByFormat(format, includePassword)
+}
+
+// SaveExportAs 弹出系统「另存为」对话框，让用户选择保存位置后写入导出内容。
+// 返回实际保存的完整路径；用户取消时返回空字符串。
+func (a *App) SaveExportAs(format string, includePassword bool) (string, error) {
+	content, ext, err := a.conf.ExportByFormat(format, includePassword)
+	if err != nil {
+		return "", err
+	}
+	dialog := application.Get().Dialog.SaveFile()
+	dialog.SetMessage("选择配置文件的保存位置")
+	dialog.SetFilename("meteor-ch-config." + ext)
+	dialog.SetButtonText("保存")
+	if ext != "" {
+		dialog.AddFilter(strings.ToUpper(ext), "*."+ext)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		return "", nil
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ImportConfig 导入 JSON 配置文本，覆盖现有全部连接与文件夹。
+func (a *App) ImportConfig(raw string) error {
+	return a.conf.ImportData(raw)
+}
+
+// GetImportFormats 返回支持的全部导入格式元信息。
+func (a *App) GetImportFormats() []config.ImportFormat {
+	return config.ImportFormats()
+}
+
+// PickImportFile 弹出系统文件选择对话框，读取所选文件内容并返回文本与文件名。
+// 用户取消时返回空字符串，不视为错误。
+func (a *App) PickImportFile() (string, string, error) {
+	dialog := application.Get().Dialog.OpenFile()
+	dialog.SetMessage("选择要导入的配置文件")
+	dialog.AddFilter("配置文件", "*.json;*.yaml;*.yml;*.csv;*.txt")
+	dialog.AddFilter("所有文件", "*.*")
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		if strings.Contains(err.Error(), "cancelled") {
+			return "", "", nil
+		}
+		return "", "", err
+	}
+	if path == "" {
+		return "", "", nil
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	name := path
+	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
+		name = path[i+1:]
+	}
+	return string(content), name, nil
+}
+
+// ImportConfigWithOptions 按指定格式与模式（覆盖/合并）导入配置文本，返回导入结果概要。
+func (a *App) ImportConfigWithOptions(raw string, opts config.ImportOptions) (config.ImportResult, error) {
+	return a.conf.ImportDataWithOptions(raw, opts)
 }
 
 // Query 在指定连接上执行一段 SQL，返回列名与全部结果行。

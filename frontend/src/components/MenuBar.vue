@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../api'
+import type { ExportFormat, ImportFormat, ImportResult } from '../types'
 import { setLocale, getCurrentLocale, type Locale } from '../i18n'
 
 const { t } = useI18n()
@@ -11,12 +12,28 @@ const emit = defineEmits<{
   (e: 'newFolder'): void
   (e: 'toggleSidebar'): void
   (e: 'resetSidebar'): void
+  (e: 'configImported'): void
 }>()
 
 const openMenu = ref<string | null>(null)
 const showShortcuts = ref(false)
 const showAbout = ref(false)
 const appVersion = ref('')
+const importing = ref(false)
+const importError = ref('')
+const pendingImport = ref<{ fileName: string; raw: string } | null>(null)
+const importFormats = ref<ImportFormat[]>([])
+const importFormatId = ref('')
+const importMode = ref<'replace' | 'merge'>('replace')
+const importSummary = ref<ImportResult | null>(null)
+
+const showExport = ref(false)
+const exportFormats = ref<ExportFormat[]>([])
+const exportFormatId = ref('json')
+const exportIncludePassword = ref(false)
+const exporting = ref(false)
+const copyDone = ref(false)
+const savedPath = ref('')
 
 const isMac = navigator.platform.toLowerCase().includes('mac')
 const mod = isMac ? '⌘' : 'Ctrl'
@@ -71,6 +88,139 @@ function onGlobalKeydown(e: KeyboardEvent) {
 function actionOpenConfig() {
   api.OpenConfigFolder().catch(() => {})
   closeMenu()
+}
+
+// 打开导出面板：拉取支持的格式列表后弹窗
+async function actionExportConfig() {
+  closeMenu()
+  copyDone.value = false
+  showExport.value = true
+  try {
+    const list = await api.GetExportFormats()
+    exportFormats.value = list
+    if (list.length && !list.some((f) => f.id === exportFormatId.value)) {
+      exportFormatId.value = list[0].id
+    }
+  } catch (e: any) {
+    alert(t('menu.exportFailed') + ': ' + (e?.message || e))
+    showExport.value = false
+  }
+}
+
+async function generateExport(): Promise<[string, string]> {
+  return api.ExportConfigByFormat(exportFormatId.value, exportIncludePassword.value)
+}
+
+// 弹系统「另存为」对话框，用户选择保存位置后由后端写入
+async function saveExportAs() {
+  exporting.value = true
+  savedPath.value = ''
+  try {
+    const path = await api.SaveExportAs(exportFormatId.value, exportIncludePassword.value)
+    if (path) {
+      savedPath.value = path
+      showExport.value = false
+      setTimeout(() => { savedPath.value = '' }, 6000)
+    }
+  } catch (e: any) {
+    const msg = String(e?.message || e)
+    if (msg.includes('cancelled by user')) {
+      return
+    }
+    alert(t('menu.exportFailed') + ': ' + msg)
+  } finally {
+    exporting.value = false
+  }
+}
+
+// 回退方案：浏览器下载到默认下载目录
+async function downloadExport() {
+  exporting.value = true
+  try {
+    const [content, ext] = await generateExport()
+    const fmt = exportFormats.value.find((f) => f.id === exportFormatId.value)
+    const mime = fmt?.mime || 'text/plain'
+    const blob = new Blob([content], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `meteor-ch-config.${ext || 'txt'}`
+    a.click()
+    URL.revokeObjectURL(url)
+    showExport.value = false
+  } catch (e: any) {
+    alert(t('menu.exportFailed') + ': ' + (e?.message || e))
+  } finally {
+    exporting.value = false
+  }
+}
+
+// 复制到剪贴板，不下载文件
+async function copyExport() {
+  exporting.value = true
+  copyDone.value = false
+  try {
+    const [content] = await generateExport()
+    await navigator.clipboard.writeText(content)
+    copyDone.value = true
+    setTimeout(() => { copyDone.value = false }, 2000)
+  } catch (e: any) {
+    alert(t('menu.exportFailed') + ': ' + (e?.message || e))
+  } finally {
+    exporting.value = false
+  }
+}
+
+// 打开系统文件选择框，选择后读取文件内容并进入确认流程
+async function actionImportConfig() {
+  closeMenu()
+  importing.value = true
+  importError.value = ''
+  try {
+    const [raw, fileName] = await api.PickImportFile()
+    if (!raw) return
+    pendingImport.value = { fileName, raw }
+    importMode.value = 'replace'
+    importFormatId.value = ''
+    if (importFormats.value.length === 0) {
+      api.GetImportFormats().then((list) => { importFormats.value = list }).catch(() => {})
+    }
+  } catch (e: any) {
+    const msg = String(e?.message || e)
+    if (!msg.includes('cancelled by user')) {
+      importError.value = msg
+      alert(t('menu.importFailed') + ': ' + msg)
+    }
+  } finally {
+    importing.value = false
+  }
+}
+
+// 用户确认为改变当前配置后，真正执行导入
+async function confirmImport() {
+  const pending = pendingImport.value
+  if (!pending) return
+  importing.value = true
+  importError.value = ''
+  try {
+    const result = await api.ImportConfigWithOptions(pending.raw, {
+      format: importFormatId.value,
+      mode: importMode.value,
+    })
+    pendingImport.value = null
+    importSummary.value = result
+    setTimeout(() => { importSummary.value = null }, 8000)
+    emit('configImported')
+  } catch (e: any) {
+    importError.value = e?.message || String(e)
+    alert(t('menu.importFailed') + ': ' + importError.value)
+  } finally {
+    importing.value = false
+  }
+}
+
+function cancelImport() {
+  pendingImport.value = null
 }
 
 function actionResetSidebar() {
@@ -138,6 +288,13 @@ onBeforeUnmount(() => {
         </button>
         <button @click.stop="emit('newFolder'); closeMenu()" class="menu-item w-full text-left px-3 py-1.5 hover:bg-ch-hover flex items-center justify-between">
           <span>{{ t('menu.newFolder') }}</span><span class="text-ch-muted text-xs">{{ modShift }}N</span>
+        </button>
+        <div class="h-px bg-ch-border my-1" />
+        <button @click.stop="actionImportConfig()" :disabled="importing" class="menu-item w-full text-left px-3 py-1.5 hover:bg-ch-hover flex items-center justify-between disabled:opacity-50">
+          <span>{{ importing ? t('menu.importing') : t('menu.importConfig') }}</span>
+        </button>
+        <button @click.stop="actionExportConfig()" class="menu-item w-full text-left px-3 py-1.5 hover:bg-ch-hover flex items-center justify-between">
+          <span>{{ t('menu.exportConfig') }}</span>
         </button>
         <div class="h-px bg-ch-border my-1" />
         <button @click.stop="actionOpenConfig()" class="menu-item w-full text-left px-3 py-1.5 hover:bg-ch-hover flex items-center justify-between">
@@ -280,6 +437,149 @@ onBeforeUnmount(() => {
             <button class="btn-primary btn-sm" @click="showAbout = false">{{ t('about.close') }}</button>
           </div>
         </div>
+      </div>
+    </Teleport>
+    <!-- Import Confirm Modal -->
+    <Teleport to="body">
+      <div v-if="pendingImport" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click="cancelImport">
+        <div class="bg-ch-panel border border-ch-border rounded-lg shadow-2xl w-[440px] max-w-[90vw]" @click.stop>
+          <div class="flex items-center justify-between px-4 py-3 border-b border-ch-border">
+            <h3 class="text-ch-text font-semibold">{{ t('menu.importConfirmTitle') }}</h3>
+            <button class="text-ch-muted hover:text-ch-text" @click="cancelImport">✕</button>
+          </div>
+          <div class="px-4 py-4 text-sm space-y-3">
+            <p class="text-ch-muted text-xs break-all">{{ t('menu.importFile') }}: {{ pendingImport.fileName }}</p>
+
+            <div>
+              <label class="block text-ch-muted text-xs mb-1.5">{{ t('menu.importFormat') }}</label>
+              <select
+                v-model="importFormatId"
+                class="w-full bg-ch-bg border border-ch-border rounded px-2 py-1.5 text-xs text-ch-text"
+              >
+                <option value="">{{ t('menu.importFormatAuto') }}</option>
+                <option v-for="f in importFormats" :key="f.id" :value="f.id">{{ f.name }} - {{ f.description }}</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-ch-muted text-xs mb-1.5">{{ t('menu.importMode') }}</label>
+              <div class="flex gap-2">
+                <button
+                  class="flex-1 px-2.5 py-2 rounded border text-xs text-left"
+                  :class="importMode === 'replace' ? 'border-ch-accent bg-ch-hover text-ch-text' : 'border-ch-border text-ch-muted hover:bg-ch-hover'"
+                  @click="importMode = 'replace'"
+                >
+                  <span class="font-medium block">{{ t('menu.modeReplace') }}</span>
+                  <span class="text-[11px] text-ch-muted">{{ t('menu.modeReplaceDesc') }}</span>
+                </button>
+                <button
+                  class="flex-1 px-2.5 py-2 rounded border text-xs text-left"
+                  :class="importMode === 'merge' ? 'border-ch-accent bg-ch-hover text-ch-text' : 'border-ch-border text-ch-muted hover:bg-ch-hover'"
+                  @click="importMode = 'merge'"
+                >
+                  <span class="font-medium block">{{ t('menu.modeMerge') }}</span>
+                  <span class="text-[11px] text-ch-muted">{{ t('menu.modeMergeDesc') }}</span>
+                </button>
+              </div>
+            </div>
+
+            <p v-if="importMode === 'replace'" class="text-ch-accent text-xs">{{ t('menu.importConfirmWarn') }}</p>
+            <p v-else class="text-ch-muted text-xs">{{ t('menu.importMergeHint') }}</p>
+            <p v-if="importError" class="text-red-400 text-xs break-all">{{ importError }}</p>
+          </div>
+          <div class="px-4 py-3 border-t border-ch-border flex justify-end gap-2">
+            <button class="btn-ghost btn-sm" @click="cancelImport">{{ t('common.cancel') }}</button>
+            <button class="btn-primary btn-sm" :disabled="importing" @click="confirmImport">
+              {{ importing ? t('menu.importing') : (importMode === 'merge' ? t('menu.modeMerge') : t('menu.importConfirmOk')) }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Export Format Modal -->
+    <Teleport to="body">
+      <div v-if="showExport" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click="showExport = false">
+        <div class="bg-ch-panel border border-ch-border rounded-lg shadow-2xl w-[480px] max-w-[92vw]" @click.stop>
+          <div class="flex items-center justify-between px-4 py-3 border-b border-ch-border">
+            <h3 class="text-ch-text font-semibold">{{ t('menu.exportConfig') }}</h3>
+            <button class="text-ch-muted hover:text-ch-text" @click="showExport = false">✕</button>
+          </div>
+          <div class="px-4 py-4 text-sm space-y-3">
+            <div>
+              <label class="block text-ch-muted text-xs mb-1.5">{{ t('menu.exportFormat') }}</label>
+              <div v-if="exportFormats.length === 0" class="text-ch-muted text-xs">{{ t('menu.loading') }}</div>
+              <div class="space-y-1.5">
+                <label
+                  v-for="f in exportFormats"
+                  :key="f.id"
+                  class="flex items-start gap-2 px-2.5 py-2 rounded border cursor-pointer"
+                  :class="exportFormatId === f.id ? 'border-ch-accent bg-ch-hover' : 'border-ch-border hover:bg-ch-hover'"
+                >
+                  <input type="radio" name="export-format" :value="f.id" v-model="exportFormatId" class="mt-0.5" />
+                  <span class="flex-1">
+                    <span class="text-ch-text font-medium">{{ f.name }}</span>
+                    <span class="block text-ch-muted text-xs">{{ f.description }}</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" v-model="exportIncludePassword" />
+              <span class="text-ch-text text-xs">{{ t('menu.exportIncludePassword') }}</span>
+            </label>
+            <p v-if="exportIncludePassword" class="text-ch-accent text-xs">{{ t('menu.exportPasswordWarn') }}</p>
+          </div>
+          <div class="px-4 py-3 border-t border-ch-border flex justify-between items-center gap-2">
+            <button class="btn-ghost btn-sm" :disabled="exporting" @click="copyExport">
+              {{ copyDone ? t('menu.copied') : t('menu.copyToClipboard') }}
+            </button>
+            <div class="flex gap-2">
+              <button class="btn-ghost btn-sm" :disabled="exporting" @click="downloadExport">{{ t('menu.quickDownload') }}</button>
+              <button class="btn-ghost btn-sm" @click="showExport = false">{{ t('common.cancel') }}</button>
+              <button class="btn-primary btn-sm" :disabled="exporting" @click="saveExportAs">
+                {{ exporting ? t('menu.exporting') : t('menu.saveAs') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+    <!-- Save Success Toast -->
+    <Teleport to="body">
+      <div
+        v-if="savedPath"
+        class="fixed bottom-6 right-6 z-[110] bg-ch-panel border border-ch-accent rounded-lg shadow-2xl px-4 py-3 max-w-[420px] flex items-start gap-3"
+      >
+        <span class="text-ch-accent">✓</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-ch-text text-sm font-medium">{{ t('menu.savedTo') }}</p>
+          <p class="text-ch-muted text-xs mt-1 break-all">{{ savedPath }}</p>
+        </div>
+        <button class="text-ch-muted hover:text-ch-text" @click="savedPath = ''">✕</button>
+      </div>
+    </Teleport>
+    <!-- Import Result Toast -->
+    <Teleport to="body">
+      <div
+        v-if="importSummary"
+        class="fixed bottom-6 right-6 z-[110] bg-ch-panel border border-ch-accent rounded-lg shadow-2xl px-4 py-3 max-w-[420px] flex items-start gap-3"
+      >
+        <span class="text-ch-accent">✓</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-ch-text text-sm font-medium">
+            {{ importSummary.mode === 'merge' ? t('menu.modeMerge') : t('menu.importConfirmOk') }} {{ t('menu.importDone') }}
+          </p>
+          <p class="text-ch-muted text-xs mt-1">
+            {{ t('menu.importResultDetail', {
+              folders: importSummary.importedFolders,
+              conns: importSummary.importedConns,
+              totalFolders: importSummary.totalFolders,
+              totalConns: importSummary.totalConns,
+            }) }}
+          </p>
+        </div>
+        <button class="text-ch-muted hover:text-ch-text" @click="importSummary = null">✕</button>
       </div>
     </Teleport>
   </div>

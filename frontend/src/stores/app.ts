@@ -78,6 +78,16 @@ export const useAppStore = defineStore('app', () => {
     await loadAll()
   }
 
+  async function reorderFolders(ids: string[]) {
+    await api.ReorderFolders(ids)
+    await loadAll()
+  }
+
+  async function reorderConnections(ids: string[]) {
+    await api.ReorderConnections(ids)
+    await loadAll()
+  }
+
   function toggleFolder(folderId: string) {
     if (collapsedFolders.value.has(folderId)) {
       collapsedFolders.value.delete(folderId)
@@ -142,6 +152,8 @@ export const useAppStore = defineStore('app', () => {
     deleteConnection,
     saveFolder,
     deleteFolder,
+    reorderFolders,
+    reorderConnections,
     toggleFolder,
     toggleSidebar,
     getConnectionStatus,

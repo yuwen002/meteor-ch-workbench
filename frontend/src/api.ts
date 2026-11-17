@@ -1,5 +1,5 @@
 import { Call } from '@wailsio/runtime'
-import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ColumnInfo, ClusterInfo } from './types'
+import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ColumnInfo, ClusterInfo, ExportFormat, ImportFormat, ImportOptions, ImportResult } from './types'
 
 type AnyError = { message?: string; cause?: unknown; name?: string }
 
@@ -41,6 +41,46 @@ export const api = {
 
   DeleteFolder(id: string): Promise<void> {
     return call<void>('main.App.DeleteFolder', id)
+  },
+
+  ReorderFolders(ids: string[]): Promise<void> {
+    return call<void>('main.App.ReorderFolders', ids)
+  },
+
+  ReorderConnections(ids: string[]): Promise<void> {
+    return call<void>('main.App.ReorderConnections', ids)
+  },
+
+  ExportConfig(): Promise<string> {
+    return call<string>('main.App.ExportConfig')
+  },
+
+  GetExportFormats(): Promise<ExportFormat[]> {
+    return call<ExportFormat[]>('main.App.GetExportFormats')
+  },
+
+  ExportConfigByFormat(format: string, includePassword: boolean): Promise<[string, string]> {
+    return call<[string, string]>('main.App.ExportConfigByFormat', format, includePassword)
+  },
+
+  SaveExportAs(format: string, includePassword: boolean): Promise<string> {
+    return call<string>('main.App.SaveExportAs', format, includePassword)
+  },
+
+  ImportConfig(raw: string): Promise<void> {
+    return call<void>('main.App.ImportConfig', raw)
+  },
+
+  GetImportFormats(): Promise<ImportFormat[]> {
+    return call<ImportFormat[]>('main.App.GetImportFormats')
+  },
+
+  PickImportFile(): Promise<[string, string]> {
+    return call<[string, string]>('main.App.PickImportFile')
+  },
+
+  ImportConfigWithOptions(raw: string, opts: ImportOptions): Promise<ImportResult> {
+    return call<ImportResult>('main.App.ImportConfigWithOptions', raw, opts)
   },
 
   Query(connectionID: string, sql: string): Promise<QueryResult> {
