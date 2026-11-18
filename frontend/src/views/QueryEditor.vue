@@ -1,10 +1,21 @@
 ﻿<script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import * as monaco from 'monaco-editor'
+import type * as Monaco from 'monaco-editor/editor/editor.api.js'
 import { useAppStore } from '../stores/app'
 import { api } from '../api'
-import type { QueryResult, ClusterInfo } from '../types'
+import type { QueryResult, ClusterInfo, ResultExportFormat, HistoryEntry } from '../types'
+import { useVirtualizer } from '@tanstack/vue-virtual'
+import { createTab, type QueryTab } from '../utils/tabs'
+import { ROW_HEIGHT as RESULT_ROW_HEIGHT, measureColWidths, buildGridStyle, shouldVirtualize } from '../utils/resultTable'
+import {
+  rowToTSV,
+  columnsToCSV,
+  buildInsertStatement,
+  buildInsertBatch,
+  insertTarget,
+  sqlLiteral,
+} from '../utils/sqlLiteral'
 import CreateTableModal from '../components/CreateTableModal.vue'
 import EditTableModal from '../components/EditTableModal.vue'
 import { buildDropTableSQL } from '../utils/ddl'
@@ -12,8 +23,10 @@ import { buildDropTableSQL } from '../utils/ddl'
 const { t } = useI18n()
 const store = useAppStore()
 
+const CANCELED_MESSAGE = '查询已取消'
+
 const editorRef = ref<HTMLElement | null>(null)
-let editor: monaco.editor.IStandaloneCodeEditor | null = null
+let editor: Monaco.editor.IStandaloneCodeEditor | null = null
 
 const databases = ref<string[]>([])
 const expandedDBs = ref<Set<string>>(new Set())
@@ -31,9 +44,23 @@ const selectedDB = ref<string | null>(null)
 const selectedTable = ref<string | null>(null)
 const selectedCluster = ref<string | null>(null)
 
-const result = ref<QueryResult | null>(null)
-const querying = ref(false)
-const error = ref<string | null>(null)
+const tabs = ref<QueryTab[]>([createTab(1)])
+const activeTabId = ref<string>(tabs.value[0].id)
+
+const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value) || tabs.value[0])
+const result = computed(() => activeTab.value?.result ?? null)
+const querying = computed(() => activeTab.value?.querying ?? false)
+const error = computed(() => activeTab.value?.error ?? null)
+const canceled = computed(() => activeTab.value?.canceled ?? false)
+
+const resultExportFormats = ref<ResultExportFormat[]>([])
+const exportingResult = ref(false)
+const exportedPath = ref<string | null>(null)
+const showHistory = ref(false)
+const historyEntries = ref<HistoryEntry[]>([])
+const historyLoading = ref(false)
+const renamingTabId = ref<string | null>(null)
+const renamingTitle = ref('')
 
 const tableMenu = ref<{ visible: boolean; x: number; y: number; db: string; table: string }>({
   visible: false, x: 0, y: 0, db: '', table: '',
@@ -52,9 +79,117 @@ const editModal = ref<{ visible: boolean; database: string; table: string }>({ v
 
 const dropConfirm = ref<{ visible: boolean; db: string; table: string }>({ visible: false, db: '', table: '' })
 
+const cellMenu = ref<{
+  visible: boolean
+  x: number
+  y: number
+  rowIndex: number
+  colIndex: number
+}>({ visible: false, x: 0, y: 0, rowIndex: 0, colIndex: 0 })
+
+const headerMenu = ref<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 })
+
+const copiedHint = ref<string | null>(null)
+let copiedHintTimer: number | undefined
+
+function showCopiedHint(label: string) {
+  copiedHint.value = label
+  if (copiedHintTimer) clearTimeout(copiedHintTimer)
+  copiedHintTimer = window.setTimeout(() => { copiedHint.value = null }, 1500)
+}
+
+function closeCellMenu() {
+  cellMenu.value.visible = false
+}
+
+function closeHeaderMenu() {
+  headerMenu.value.visible = false
+}
+
+function openCellMenu(e: MouseEvent, rowIndex: number, colIndex: number) {
+  e.stopPropagation()
+  closeAllMenus()
+  cellMenu.value = { visible: true, x: e.clientX, y: e.clientY, rowIndex, colIndex }
+}
+
+function openHeaderMenu(e: MouseEvent) {
+  e.stopPropagation()
+  closeAllMenus()
+  headerMenu.value = { visible: true, x: e.clientX, y: e.clientY }
+}
+
+function currentRow(): unknown[] | null {
+  const r = result.value
+  if (!r) return null
+  const row = r.rows[cellMenu.value.rowIndex]
+  return row ?? null
+}
+
+function insertPrefix(): string {
+  return insertTarget(selectedDB.value, selectedTable.value)
+}
+
+async function copyText(text: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    showCopiedHint(label)
+  } catch {
+    showCopiedHint(t('editor.copyFailed'))
+  }
+}
+
+async function copyCell() {
+  const row = currentRow()
+  if (!row) return
+  const val = row[cellMenu.value.colIndex]
+  const text = val === null || val === undefined ? '' : String(val)
+  closeCellMenu()
+  await copyText(text, t('editor.copyCell'))
+}
+
+async function copyRowTSV() {
+  const row = currentRow()
+  if (!row) return
+  closeCellMenu()
+  await copyText(rowToTSV(row), t('editor.copyRow'))
+}
+
+async function copyRowInsert() {
+  const row = currentRow()
+  const r = result.value
+  if (!row || !r) return
+  closeCellMenu()
+  const cols = r.columns.map((c) => c.name)
+  await copyText(buildInsertStatement(insertPrefix(), cols, row), t('editor.copyInsert'))
+}
+
+async function copyAllInsert() {
+  const r = result.value
+  if (!r || r.rows.length === 0) return
+  closeCellMenu()
+  const cols = r.columns.map((c) => c.name)
+  await copyText(buildInsertBatch(insertPrefix(), cols, r.rows), t('editor.copyInsertAll'))
+}
+
+async function copyCellLiteral() {
+  const row = currentRow()
+  if (!row) return
+  closeCellMenu()
+  await copyText(sqlLiteral(row[cellMenu.value.colIndex]), t('editor.copyCellLiteral'))
+}
+
+async function copyColumns() {
+  const r = result.value
+  if (!r) return
+  closeHeaderMenu()
+  await copyText(columnsToCSV(r.columns.map((c) => c.name)), t('editor.copyColumns'))
+}
+
 function closeAllMenus() {
   tableMenu.value.visible = false
   dbMenu.value.visible = false
+  cellMenu.value.visible = false
+  headerMenu.value.visible = false
 }
 
 async function loadDatabases() {
@@ -161,7 +296,8 @@ async function openTableDDL(db: string, table: string) {
   try {
     const r: QueryResult = await api.Query(
       store.activeConnectionId!,
-      `SHOW CREATE TABLE \`${db.replace(/`/g, '``')}\`.\`${table.replace(/`/g, '``')}\``
+      `SHOW CREATE TABLE \`${db.replace(/`/g, '``')}\`.\`${table.replace(/`/g, '``')}\``,
+      ''
     )
     if (r.error) {
       ddlModal.value.error = r.error
@@ -192,6 +328,7 @@ async function copyDDL() {
 function ddlToEditor() {
   if (!ddlModal.value.sql || !editor) return
   editor.setValue(ddlModal.value.sql)
+  syncTabSQL()
   ddlModal.value.visible = false
 }
 
@@ -218,14 +355,14 @@ async function doDropTable() {
   try {
     const r = await api.Execute(store.activeConnectionId, sql)
     if (r.error) {
-      error.value = r.error
+      activeTab.value.error = r.error
     } else {
       dropConfirm.value.visible = false
       tablesByDB.value.delete(db)
       tablesByDB.value = new Map(tablesByDB.value)
     }
   } catch (e: any) {
-    error.value = e?.message || 'Drop table failed'
+    activeTab.value.error = e?.message || 'Drop table failed'
   }
 }
 
@@ -238,8 +375,9 @@ function refreshTables(db: string) {
 }
 
 async function runQuery() {
+  const tab = activeTab.value
   if (!store.activeConnectionId) {
-    error.value = t('editor.noConnection')
+    tab.error = t('editor.noConnection')
     return
   }
   if (!editor) return
@@ -254,20 +392,247 @@ async function runQuery() {
   sql = sql.trim()
   if (!sql) return
 
-  querying.value = true
-  result.value = null
-  error.value = null
+  tab.querying = true
+  tab.result = null
+  tab.error = null
+  tab.canceled = false
+  tab.resultScrollTop = 0
+  tab.queryId = crypto.randomUUID()
+  const queryId = tab.queryId
   try {
-    const r: QueryResult = await api.Query(store.activeConnectionId, sql)
-    result.value = r
-    if (r.error) {
-      error.value = r.error
+    const r: QueryResult = await api.Query(store.activeConnectionId, sql, queryId)
+    if (tab.queryId !== queryId) return
+    if (r.error === CANCELED_MESSAGE) {
+      tab.canceled = true
+    } else {
+      tab.result = r
+      if (r.error) {
+        tab.error = r.error
+      }
     }
   } catch (e: any) {
-    error.value = e?.message || t('editor.queryFailed')
+    if (tab.queryId !== queryId) return
+    tab.error = e?.message || t('editor.queryFailed')
   } finally {
-    querying.value = false
+    if (tab.queryId === queryId) {
+      tab.querying = false
+      tab.queryId = null
+    }
   }
+}
+
+// 取消当前标签正在执行的查询；后端未找到该查询时静默忽略
+async function cancelQuery() {
+  const tab = activeTab.value
+  const queryId = tab.queryId
+  if (!queryId) return
+  try {
+    await api.CancelQuery(queryId)
+  } catch {
+    // 取消失败不阻塞界面，查询结束后 finally 会恢复状态
+  }
+}
+
+// 把当前结果集按指定格式导出，弹出系统「另存为」对话框
+async function exportResult(format: ResultExportFormat) {
+  if (!result.value || exportingResult.value) return
+  const r = result.value
+  exportingResult.value = true
+  try {
+    const path = await api.SaveQueryResultAs(format.id, r.columns.map((c) => c.name), r.rows)
+    if (path) {
+      exportedPath.value = path
+      setTimeout(() => { exportedPath.value = null }, 4000)
+    }
+  } catch (e: any) {
+    const msg = String(e?.message || e)
+    if (!msg.includes('cancelled by user')) {
+      activeTab.value.error = msg
+    }
+  } finally {
+    exportingResult.value = false
+  }
+}
+
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    historyEntries.value = await api.GetQueryHistory()
+  } catch {
+    historyEntries.value = []
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function toggleHistory() {
+  showHistory.value = !showHistory.value
+  if (showHistory.value) await loadHistory()
+}
+
+function applyHistory(entry: HistoryEntry) {
+  if (!editor) return
+  editor.setValue(entry.sql)
+  syncTabSQL()
+  showHistory.value = false
+}
+
+async function deleteHistory(entry: HistoryEntry, e: MouseEvent) {
+  e.stopPropagation()
+  try {
+    await api.DeleteQueryHistory(entry.id)
+    historyEntries.value = historyEntries.value.filter((h) => h.id !== entry.id)
+  } catch {
+  }
+}
+
+async function clearHistory() {
+  if (historyEntries.value.length === 0) return
+  if (!confirm(t('editor.clearHistoryConfirm'))) return
+  try {
+    await api.ClearQueryHistory()
+    historyEntries.value = []
+  } catch {
+  }
+}
+
+function formatHistoryTime(ts: string): string {
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+// 启动时从 tabs.json 恢复上次打开的标签与活动标签。
+// 首次启动（无快照）时保留默认标签，什么都不做。
+async function restorePersistedTabs() {
+  try {
+    const snapshot = await api.GetTabs()
+    if (!snapshot || !snapshot.tabs || snapshot.tabs.length === 0) return
+    const restored: QueryTab[] = snapshot.tabs.map((t, i) => ({
+      id: t.id || 'tab-' + i,
+      title: t.title || `Query ${i + 1}`,
+      sql: t.sql ?? '',
+      result: null,
+      error: null,
+      querying: false,
+      queryId: null,
+      canceled: false,
+      resultScrollTop: 0,
+      viewState: null,
+    }))
+    tabs.value = restored
+    const active = restored.find((t) => t.id === snapshot.active_tab_id)
+    activeTabId.value = (active || restored[0]).id
+    if (editor) restoreTab(active || restored[0])
+  } catch {
+    // 读取失败时保留默认标签，不打断用户
+  }
+}
+
+let persistTimer: number | undefined
+
+// 把当前标签列表与活动标签快照持久化，供下次启动恢复
+function persistTabs() {
+  window.clearTimeout(persistTimer)
+  persistTimer = window.setTimeout(() => {
+    const snapshot = {
+      tabs: tabs.value.map((t) => ({ id: t.id, title: t.title, sql: t.sql })),
+      active_tab_id: activeTabId.value,
+    }
+    api.SaveTabs(snapshot).catch(() => {})
+  }, 500)
+}
+
+function saveActiveTabState() {
+  const tab = activeTab.value
+  if (!tab || !editor) return
+  tab.sql = editor.getValue()
+  tab.viewState = editor.saveViewState()
+}
+
+function restoreTab(tab: QueryTab) {
+  if (!editor) return
+  editor.setValue(tab.sql)
+  if (tab.viewState) editor.restoreViewState(tab.viewState as Monaco.editor.ICodeEditorViewState)
+  editor.focus()
+  nextTick(() => {
+    if (resultBodyRef.value) resultBodyRef.value.scrollTop = tab.resultScrollTop || 0
+  })
+}
+
+function switchTab(id: string) {
+  if (id === activeTabId.value) return
+  saveActiveTabState()
+  activeTabId.value = id
+  nextTick(() => restoreTab(activeTab.value))
+  persistTabs()
+}
+
+function addTab() {
+  saveActiveTabState()
+  const tab = createTab(tabs.value.length + 1)
+  tabs.value.push(tab)
+  activeTabId.value = tab.id
+  nextTick(() => restoreTab(tab))
+  persistTabs()
+}
+
+function closeTab(id: string) {
+  if (tabs.value.length === 1) {
+    const tab = tabs.value[0]
+    if (tab.querying && tab.queryId) {
+      api.CancelQuery(tab.queryId).catch(() => {})
+    }
+    tab.sql = '-- ClickHouse SQL\nSELECT version()'
+    tab.result = null
+    tab.error = null
+    tab.canceled = false
+    tab.querying = false
+    tab.queryId = null
+    tab.resultScrollTop = 0
+    tab.viewState = null
+    editor?.setValue(tab.sql)
+    persistTabs()
+    return
+  }
+  const idx = tabs.value.findIndex((t) => t.id === id)
+  if (idx < 0) return
+  const closing = tabs.value[idx]
+  if (closing.querying && closing.queryId) {
+    api.CancelQuery(closing.queryId).catch(() => {})
+  }
+  tabs.value.splice(idx, 1)
+  if (activeTabId.value === id) {
+    const next = tabs.value[Math.min(idx, tabs.value.length - 1)]
+    activeTabId.value = next.id
+    nextTick(() => restoreTab(next))
+  }
+  persistTabs()
+}
+
+function startRenameTab(tab: QueryTab) {
+  renamingTabId.value = tab.id
+  renamingTitle.value = tab.title
+}
+
+function commitRenameTab() {
+  const id = renamingTabId.value
+  if (!id) return
+  const tab = tabs.value.find((t) => t.id === id)
+  const title = renamingTitle.value.trim()
+  if (tab && title) {
+    tab.title = title
+    persistTabs()
+  }
+  renamingTabId.value = null
+  renamingTitle.value = ''
+}
+
+function syncTabSQL() {
+  const tab = activeTab.value
+  if (!tab || !editor) return
+  tab.sql = editor.getValue()
 }
 
 function insertTable(db: string, table: string) {
@@ -276,6 +641,7 @@ function insertTable(db: string, table: string) {
   if (!editor) return
   const snippet = `SELECT * FROM ${db}.${table} LIMIT 10`
   editor.setValue(snippet)
+  syncTabSQL()
   runQuery()
 }
 
@@ -291,12 +657,76 @@ function insertClusterUUID(uuid: string) {
   }
 }
 
-const gridStyle = computed(() => {
-  if (!result.value) return ''
-  const cols = result.value.columns
-  const widths = cols.map(() => 'minmax(120px, 1fr)').join(' ')
-  return `grid-template-columns: ${widths};`
+const ROW_HEIGHT = RESULT_ROW_HEIGHT
+const resultBodyRef = ref<HTMLElement | null>(null)
+const resultHeaderRef = ref<HTMLElement | null>(null)
+
+let syncingScroll = false
+
+function syncScroll(from: HTMLElement | null, to: HTMLElement | null) {
+  if (syncingScroll || !from || !to) return
+  syncingScroll = true
+  to.scrollLeft = from.scrollLeft
+  requestAnimationFrame(() => { syncingScroll = false })
+}
+
+function onResultScroll() {
+  syncScroll(resultBodyRef.value, resultHeaderRef.value)
+  if (activeTab.value && resultBodyRef.value) {
+    activeTab.value.resultScrollTop = resultBodyRef.value.scrollTop
+  }
+}
+
+function onHeaderScroll() {
+  syncScroll(resultHeaderRef.value, resultBodyRef.value)
+}
+
+const isVirtual = computed(() => shouldVirtualize(result.value?.rows.length ?? 0))
+
+const colWidths = ref<number[]>([])
+
+const gridStyle = computed(() =>
+  result.value ? buildGridStyle(colWidths.value, result.value.columns.length) : ''
+)
+
+const totalGridWidth = computed(() => {
+  const n = result.value?.columns.length ?? 0
+  if (colWidths.value.length !== n) return null
+  return colWidths.value.reduce((a, b) => a + b, 0)
 })
+
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: result.value?.rows.length ?? 0,
+    getScrollElement: () => resultBodyRef.value,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  }))
+)
+
+const virtualRows = computed(() => (isVirtual.value ? virtualizer.value.getVirtualItems() : []))
+const virtualTotalSize = computed(() => (isVirtual.value ? virtualizer.value.getTotalSize() : 0))
+
+function visibleRows(): { ri: number; row: any[] }[] {
+  const rows = result.value?.rows ?? []
+  if (!isVirtual.value) {
+    return rows.map((row, ri) => ({ ri, row }))
+  }
+  return virtualRows.value.map((v) => ({ ri: v.index, row: rows[v.index] }))
+}
+
+watch(
+  () => [result.value?.rows.length, result.value?.columns.length],
+  () => {
+    const cols = result.value?.columns
+    colWidths.value = cols && cols.length ? measureColWidths(cols, result.value?.rows ?? []) : []
+    nextTick(() => {
+      virtualizer.value.measure()
+      if (resultBodyRef.value) resultBodyRef.value.scrollTop = 0
+    })
+  },
+  { immediate: true }
+)
 
 const groupedClusters = computed(() => {
   const map = new Map<string, ClusterInfo[]>()
@@ -308,6 +738,7 @@ const groupedClusters = computed(() => {
 })
 
 onMounted(async () => {
+  api.GetResultExportFormats().then((list) => { resultExportFormats.value = list }).catch(() => {})
   await nextTick()
   if (!editorRef.value) return
 
@@ -331,6 +762,13 @@ onMounted(async () => {
   window.addEventListener('click', closeAllMenus)
   window.addEventListener('contextmenu', closeAllMenus)
 
+  const [monacoApi] = await Promise.all([
+    import('monaco-editor/editor/editor.api.js'),
+    import('monaco-editor/languages/definitions/sql/register.js'),
+  ])
+  const monaco = monacoApi as unknown as typeof Monaco
+  if (!editorRef.value) return
+
   editor = monaco.editor.create(editorRef.value, {
     value: '-- ClickHouse SQL\nSELECT version()',
     language: 'sql',
@@ -352,6 +790,12 @@ onMounted(async () => {
     runQuery()
   })
 
+  tabs.value[0].sql = editor.getValue()
+  editor.onDidChangeModelContent(() => {
+    if (activeTab.value) activeTab.value.sql = editor!.getValue()
+    persistTabs()
+  })
+
   monaco.editor.defineTheme('ch-dark', {
     base: 'vs-dark',
     inherit: true,
@@ -368,6 +812,8 @@ onMounted(async () => {
   })
   monaco.editor.setTheme('ch-dark')
 
+  await restorePersistedTabs()
+
   watch(
     () => store.activeConnectionId,
     async (id) => {
@@ -381,6 +827,12 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.clearTimeout(persistTimer)
+  const snapshot = {
+    tabs: tabs.value.map((t) => ({ id: t.id, title: t.title, sql: t.sql })),
+    active_tab_id: activeTabId.value,
+  }
+  api.SaveTabs(snapshot).catch(() => {})
   window.removeEventListener('click', closeAllMenus)
   window.removeEventListener('contextmenu', closeAllMenus)
   editor?.dispose()
@@ -428,13 +880,59 @@ onBeforeUnmount(() => {
       </button>
       <button
         v-if="store.activeConnection"
-        @click="runQuery"
+        @click="toggleHistory"
+        class="btn-ghost btn-sm flex items-center gap-1"
+        :title="t('editor.history')"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+      </button>
+      <button
+        v-if="store.activeConnection"
+        @click="querying ? cancelQuery() : runQuery()"
         class="btn-primary btn-sm flex items-center gap-1"
-        :disabled="querying"
+        :class="querying ? 'btn-danger' : ''"
       >
         <svg v-if="!querying" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-        {{ querying ? t('editor.running') : t('editor.run') }}
+        <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+        {{ querying ? t('editor.cancel') : t('editor.run') }}
+      </button>
+    </div>
+
+    <div class="flex items-center gap-1 px-2 border-b border-ch-border bg-ch-panel shrink-0 h-9 overflow-x-auto">
+      <div
+        v-for="tab in tabs"
+        :key="tab.id"
+        class="group flex items-center gap-1 px-2 h-7 rounded text-xs cursor-pointer border shrink-0 max-w-[200px]"
+        :class="tab.id === activeTabId ? 'bg-ch-accent/15 border-ch-accent/60 text-ch-accent' : 'border-transparent text-ch-muted hover:bg-ch-hover'"
+        @click="switchTab(tab.id)"
+        @dblclick="startRenameTab(tab)"
+      >
+        <input
+          v-if="renamingTabId === tab.id"
+          v-model="renamingTitle"
+          class="bg-transparent border border-ch-accent rounded px-1 w-24 text-ch-text outline-none"
+          @click.stop
+          @keydown.enter="commitRenameTab"
+          @keydown.esc="renamingTabId = null"
+          @blur="commitRenameTab"
+          v-focus
+        />
+        <span v-else class="truncate">{{ tab.title }}</span>
+        <svg v-if="tab.querying" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin shrink-0"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        <button
+          class="shrink-0 p-0.5 rounded hover:bg-ch-border text-ch-muted hover:text-ch-text"
+          :title="t('common.close')"
+          @click.stop="closeTab(tab.id)"
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <button
+        class="flex items-center justify-center w-6 h-6 rounded text-ch-muted hover:bg-ch-hover hover:text-ch-text shrink-0"
+        :title="t('editor.newTab')"
+        @click="addTab"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
 
@@ -588,8 +1086,52 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="flex-1 flex flex-col min-w-0">
-        <div class="h-1/2 min-h-[180px] border-b border-ch-border">
+        <div :class="showHistory ? 'h-[35%]' : 'h-1/2'" class="min-h-[120px]">
           <div ref="editorRef" class="w-full h-full"></div>
+        </div>
+
+        <div v-if="showHistory" class="h-[28%] min-h-[140px] border-y border-ch-border bg-ch-panel flex flex-col">
+          <div class="flex items-center gap-2 px-3 py-1.5 border-b border-ch-border text-xs text-ch-muted shrink-0">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+            <span class="font-semibold">{{ t('editor.history') }}</span>
+            <span v-if="!historyLoading" class="text-ch-text">{{ historyEntries.length }}</span>
+            <div class="ml-auto flex items-center gap-1">
+              <button class="px-2 py-0.5 rounded hover:bg-ch-hover hover:text-ch-text" :title="t('editor.refresh')" @click="loadHistory">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'animate-spin': historyLoading }"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+              <button class="px-2 py-0.5 rounded hover:bg-ch-hover hover:text-ch-text disabled:opacity-40" :disabled="historyEntries.length === 0" @click="clearHistory">{{ t('editor.clearHistory') }}</button>
+              <button class="px-2 py-0.5 rounded hover:bg-ch-hover hover:text-ch-text" :title="t('common.close')" @click="showHistory = false">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="flex-1 overflow-auto">
+            <div v-if="historyLoading" class="px-3 py-2 text-xs text-ch-muted italic">{{ t('editor.loading') }}</div>
+            <div v-else-if="historyEntries.length === 0" class="px-3 py-2 text-xs text-ch-muted italic">{{ t('editor.historyEmpty') }}</div>
+            <div
+              v-for="h in historyEntries"
+              :key="h.id"
+              class="group flex items-start gap-2 px-3 py-1.5 border-b border-ch-border/50 cursor-pointer hover:bg-ch-hover"
+              @click="applyHistory(h)"
+            >
+              <span class="mt-0.5 w-1.5 h-1.5 rounded-full shrink-0" :class="h.success ? 'bg-green-500' : 'bg-red-500'"></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-xs text-ch-text font-mono truncate whitespace-pre" :title="h.sql">{{ h.sql.split('\n')[0] }}</div>
+                <div class="flex items-center gap-2 mt-0.5 text-[10px] text-ch-muted">
+                  <span>{{ formatHistoryTime(h.timestamp) }}</span>
+                  <span>·</span>
+                  <span>{{ h.duration_ms?.toFixed(2) }} ms</span>
+                </div>
+              </div>
+              <button
+                class="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-ch-border text-ch-muted hover:text-ch-text shrink-0"
+                :title="t('common.delete')"
+                @click="deleteHistory(h, $event)"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="flex-1 flex flex-col min-h-[120px]">
@@ -601,43 +1143,111 @@ onBeforeUnmount(() => {
               <span>·</span>
               <span class="text-ch-text">{{ result.elapsed_ms?.toFixed(2) }} ms</span>
             </template>
+            <div v-if="result && result.columns.length > 0" class="ml-auto flex items-center gap-1">
+              <span v-if="exportedPath" class="text-ch-accent text-xs truncate max-w-[240px]" :title="exportedPath">{{ t('editor.exported') }}</span>
+              <span v-if="copiedHint" class="text-ch-accent text-xs truncate max-w-[240px]">{{ copiedHint }}</span>
+              <button
+                v-for="f in resultExportFormats"
+                :key="f.id"
+                class="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-ch-hover text-ch-muted hover:text-ch-text disabled:opacity-50"
+                :disabled="exportingResult"
+                :title="f.description"
+                @click="exportResult(f)"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>{{ t('editor.exportAs') }} {{ f.name }}</span>
+              </button>
+            </div>
           </div>
 
-          <div v-if="error" class="flex-1 flex items-start justify-center p-6">
+          <div v-if="result && result.truncated" class="px-3 py-1.5 border-b border-ch-border bg-amber-900/25 text-amber-300 text-xs shrink-0">
+            {{ t('editor.truncatedHint', { limit: result.row_limit.toLocaleString() }) }}
+          </div>
+
+          <div v-if="canceled" class="flex-1 flex items-start justify-center p-6">
+            <div class="bg-ch-panel border border-ch-border rounded-md p-4 max-w-full w-full text-ch-muted text-sm whitespace-pre-wrap">
+              {{ t('editor.queryCanceled') }}
+            </div>
+          </div>
+
+          <div v-else-if="error" class="flex-1 flex items-start justify-center p-6">
             <div class="bg-red-900/30 border border-red-700 rounded-md p-4 max-w-full w-full text-red-300 text-sm font-mono whitespace-pre-wrap break-all">
               {{ error }}
             </div>
           </div>
 
-          <div v-else-if="result && result.columns.length > 0" class="flex-1 overflow-auto">
-            <div
-              class="grid border-b border-ch-border sticky top-0 bg-ch-panel z-10"
-              :style="gridStyle"
-            >
-              <div
-                v-for="col in result.columns"
-                :key="'h-' + col"
-                class="px-3 py-2 text-xs font-semibold text-ch-text bg-ch-panel border-r border-ch-border last:border-r-0 truncate sticky top-0"
-              >
-                {{ col }}
+          <div v-else-if="result && result.columns.length > 0" class="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div ref="resultHeaderRef" class="overflow-x-auto overflow-y-hidden shrink-0 bg-ch-panel border-b border-ch-border" @scroll="onHeaderScroll">
+              <div class="grid" :style="gridStyle" :class="totalGridWidth ? '' : 'min-w-full'">
+                <div
+                  v-for="(col, ci) in result.columns"
+                  :key="'h-' + ci"
+                  class="px-3 py-2 text-xs font-semibold text-ch-text bg-ch-panel border-r border-ch-border last:border-r-0 truncate flex items-center gap-1 select-none"
+                  :title="col.type ? col.name + ' · ' + col.type : col.name"
+                  @contextmenu.prevent="openHeaderMenu($event)"
+                >
+                  <span class="truncate">{{ col.name }}</span>
+                  <span v-if="col.type" class="text-[10px] font-normal text-ch-muted truncate shrink-0">{{ col.type }}</span>
+                </div>
               </div>
             </div>
+
             <div
-              v-for="(row, ri) in result.rows"
-              :key="'r-' + ri"
-              class="grid border-b border-ch-border/40 hover:bg-ch-hover"
-              :style="gridStyle"
+              ref="resultBodyRef"
+              class="flex-1 overflow-auto min-h-0"
+              @scroll="onResultScroll"
             >
-              <div
-                v-for="(val, ci) in row"
-                :key="'c-' + ci"
-                class="px-3 py-1.5 text-xs text-ch-text border-r border-ch-border/40 last:border-r-0 truncate font-mono"
-                :title="val !== null && val !== undefined ? String(val) : 'NULL'"
-              >
-                <span v-if="val === null || val === undefined" class="text-ch-muted italic">NULL</span>
+              <div class="relative" :style="{ height: isVirtual ? virtualTotalSize + 'px' : 'auto' }">
+                <div
+                  v-if="isVirtual"
+                  class="absolute top-0 left-0 w-full"
+                  :style="{ transform: `translateY(${virtualRows[0]?.start ?? 0}px)` }"
+                  :class="totalGridWidth ? '' : 'min-w-full'"
+                >
+                  <div
+                    v-for="item in visibleRows()"
+                    :key="'r-' + item.ri"
+                    class="grid border-b border-ch-border/40 hover:bg-ch-hover"
+                    :class="totalGridWidth ? '' : 'min-w-full'"
+                    :style="[{ height: ROW_HEIGHT + 'px' }, gridStyle]"
+                  >
+                    <div
+                      v-for="(val, ci) in item.row"
+                      :key="'c-' + ci"
+                      class="px-3 text-xs text-ch-text border-r border-ch-border/40 last:border-r-0 truncate font-mono leading-none flex items-center"
+                      :title="val !== null && val !== undefined ? String(val) : 'NULL'"
+                      @contextmenu.prevent="openCellMenu($event, item.ri, ci)"
+                    >
+                      <span v-if="val === null || val === undefined" class="text-ch-muted italic">NULL</span>
+                      <template v-else>
+                        <span v-if="typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))" class="text-blue-400">{{ String(val).slice(0, 100) }}</span>
+                        <span v-else>{{ String(val) }}</span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
                 <template v-else>
-                  <span v-if="typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))" class="text-blue-400">{{ String(val).slice(0, 100) }}</span>
-                  <span v-else>{{ String(val) }}</span>
+                  <div
+                    v-for="item in visibleRows()"
+                    :key="'r-' + item.ri"
+                    class="grid border-b border-ch-border/40 hover:bg-ch-hover"
+                    :style="gridStyle"
+                  >
+                    <div
+                      v-for="(val, ci) in item.row"
+                      :key="'c-' + ci"
+                      class="px-3 py-1.5 text-xs text-ch-text border-r border-ch-border/40 last:border-r-0 truncate font-mono"
+                      :title="val !== null && val !== undefined ? String(val) : 'NULL'"
+                      @contextmenu.prevent="openCellMenu($event, item.ri, ci)"
+                    >
+                      <span v-if="val === null || val === undefined" class="text-ch-muted italic">NULL</span>
+                      <template v-else>
+                        <span v-if="typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))" class="text-blue-400">{{ String(val).slice(0, 100) }}</span>
+                        <span v-else>{{ String(val) }}</span>
+                      </template>
+                    </div>
+                  </div>
                 </template>
               </div>
             </div>
@@ -673,6 +1283,73 @@ onBeforeUnmount(() => {
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           {{ t('editor.createTableHere') }}
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- Result Cell Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="cellMenu.visible"
+        class="fixed z-[1000] bg-ch-panel border border-ch-border rounded-md shadow-xl py-1 min-w-[200px] text-xs select-none"
+        :style="{ left: cellMenu.x + 'px', top: cellMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button
+          @click="copyCell"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          {{ t('editor.copyCell') }}
+        </button>
+        <button
+          @click="copyCellLiteral"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+          {{ t('editor.copyCellLiteral') }}
+        </button>
+        <button
+          @click="copyRowTSV"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          {{ t('editor.copyRow') }}
+        </button>
+        <div class="border-t border-ch-border/50 my-1"></div>
+        <button
+          @click="copyRowInsert"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          {{ t('editor.copyInsert') }}
+        </button>
+        <button
+          @click="copyAllInsert"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          {{ t('editor.copyInsertAll', { rows: result?.rows.length ?? 0 }) }}
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- Result Header Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="headerMenu.visible"
+        class="fixed z-[1000] bg-ch-panel border border-ch-border rounded-md shadow-xl py-1 min-w-[200px] text-xs select-none"
+        :style="{ left: headerMenu.x + 'px', top: headerMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button
+          @click="copyColumns"
+          class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-ch-text hover:bg-ch-hover"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          {{ t('editor.copyColumns') }}
         </button>
       </div>
     </Teleport>

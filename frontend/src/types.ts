@@ -77,11 +77,41 @@ export interface ClusterInfo {
 }
 
 export interface QueryResult {
-  columns: string[]
+  columns: ColumnInfo[]
   rows: any[][]
   row_count: number
   elapsed_ms: number
+  truncated: boolean
+  row_limit: number
   error?: string
+}
+
+export interface ResultExportFormat {
+  id: string
+  name: string
+  extension: string
+  mime: string
+  description: string
+}
+
+export interface TabState {
+  id: string
+  title: string
+  sql: string
+}
+
+export interface TabsFile {
+  tabs: TabState[]
+  active_tab_id: string
+}
+
+export interface HistoryEntry {
+  id: string
+  sql: string
+  connection_id: string
+  timestamp: string
+  duration_ms: number
+  success: boolean
 }
 
 export interface ExecResult {

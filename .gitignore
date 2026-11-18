@@ -11,3 +11,5 @@ dist/
 wailsjs/
 build/
 bin/
+*.log
+*.tsbuildinfo

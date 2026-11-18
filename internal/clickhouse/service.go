@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
@@ -53,10 +54,13 @@ type ClusterInfo struct {
 // 注意：SQL 语法错误等执行期错误放在 Error 字段而非方法返回值，
 // 这样前端仍然能拿到结构化的结果对象。
 type QueryResult struct {
-	Columns  []ColumnInfo    `json:"columns"`         // 结果列信息
-	Rows     [][]interface{} `json:"rows"`            // 结果行，行内元素按列顺序排列
-	RowCount int64           `json:"row_count"`       // 结果行数
-	Error    string          `json:"error,omitempty"` // 执行错误信息，正常时为空
+	Columns   []ColumnInfo    `json:"columns"`         // 结果列信息
+	Rows      [][]interface{} `json:"rows"`            // 结果行，行内元素按列顺序排列
+	RowCount  int64           `json:"row_count"`       // 结果行数
+	ElapsedMs float64         `json:"elapsed_ms"`      // 查询耗时（毫秒）
+	Truncated bool            `json:"truncated"`       // 是否因超过行数上限被截断
+	RowLimit  int             `json:"row_limit"`       // 本次生效的行数上限
+	Error     string          `json:"error,omitempty"` // 执行错误信息，正常时为空
 }
 
 // ExecResult 是一次 DDL/DML（CREATE/ALTER/DROP/INSERT 等）的执行结果。
@@ -69,16 +73,59 @@ type ExecResult struct {
 
 // Service 是 ClickHouse 服务，按连接 ID 缓存 database/sql 连接池。
 // sql.DB 本身即是并发安全的连接池，因此缓存它比缓存单条连接更合适。
+// running 保存正在执行中的查询的取消函数，使前端可以主动中止查询。
 type Service struct {
-	mu  sync.Mutex         // 保护 dbs 映射的互斥锁
-	dbs map[string]*sql.DB // 连接 ID -> 连接池
+	mu      sync.Mutex                    // 保护 dbs 与 running 映射的互斥锁
+	dbs     map[string]*sql.DB            // 连接 ID -> 连接池
+	running map[string]context.CancelFunc // 查询 ID -> 取消函数
 }
 
-// NewService 创建 ClickHouse 服务实例，初始化空的连接池映射。
+// NewService 创建 ClickHouse 服务实例，初始化空的连接池与运行中查询映射。
 func NewService() *Service {
 	return &Service{
-		dbs: make(map[string]*sql.DB),
+		dbs:     make(map[string]*sql.DB),
+		running: make(map[string]context.CancelFunc),
 	}
+}
+
+// register 为一个查询 ID 注册可取消的 context，返回该 context 与注销函数。
+// 未提供 queryID 时退化为不可取消的 context，保持向后兼容。
+func (s *Service) register(queryID string) (context.Context, func()) {
+	if queryID == "" {
+		return context.Background(), func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	if old, ok := s.running[queryID]; ok {
+		old()
+	}
+	s.running[queryID] = cancel
+	s.mu.Unlock()
+	return ctx, func() {
+		s.mu.Lock()
+		delete(s.running, queryID)
+		s.mu.Unlock()
+		cancel()
+	}
+}
+
+// CancelQuery 取消指定查询 ID 正在执行的查询。
+// 返回 true 表示确实找到了在跑的查询；查询已结束时返回 false。
+func (s *Service) CancelQuery(queryID string) bool {
+	if queryID == "" {
+		return false
+	}
+	s.mu.Lock()
+	cancel, ok := s.running[queryID]
+	if ok {
+		delete(s.running, queryID)
+	}
+	s.mu.Unlock()
+	if ok {
+		cancel()
+		log.Printf("[CancelQuery] queryID=%q 已取消", queryID)
+	}
+	return ok
 }
 
 // buildDSN 根据连接配置拼装 database/sql 使用的 DSN 字符串。
@@ -180,23 +227,33 @@ func (s *Service) Invalidate(id string) {
 	}
 }
 
-// scanRows 把 sql.Rows 全部读入二维切片。
+// scanRows 把 sql.Rows 读入二维切片，最多读取 limit 行（limit <= 0 表示不限制）。
 // 每个值都经过 serializeValue 处理，保证结果可安全地序列化为 JSON 传给前端。
-func scanRows(rows *sql.Rows) ([][]interface{}, error) {
+// 每读一行都会检查 ctx 是否已取消，使取消能在一行内及时生效，而不必等到驱动层超时。
+// 返回读取到的行、是否因达到上限而仍有剩余行（truncated）。
+func scanRows(ctx context.Context, rows *sql.Rows, limit int) ([][]interface{}, bool, error) {
 	cols, err := rows.Columns()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var result [][]interface{}
 	colCount := len(cols)
+	truncated := false
 	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
+		if limit > 0 && len(result) >= limit {
+			truncated = true
+			break
+		}
 		vals := make([]interface{}, colCount)
 		ptrs := make([]interface{}, colCount)
 		for i := range vals {
 			ptrs[i] = &vals[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		row := make([]interface{}, colCount)
 		for i, v := range vals {
@@ -205,28 +262,39 @@ func scanRows(rows *sql.Rows) ([][]interface{}, error) {
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
-		return result, err
+		return result, truncated, err
 	}
-	return result, nil
+	return result, truncated, nil
 }
 
-// Query 在指定连接上执行 SQL 并返回完整结果集。
+// Query 在指定连接上执行 SQL 并返回结果集。
+// 为避免超大结果拖垮前端，最多返回 DefaultQueryRowLimit 行，
+// 超出部分不会读取，并通过 Truncated 标记提示前端。
 // SQL 执行期错误不会向上返回 error，而是写入 QueryResult.Error，
 // 前端据此在结果面板内展示错误；只有连接/列读取等基础设施错误才返回 error。
-func (s *Service) Query(conn config.Connection, sqlText string) (*QueryResult, error) {
+//
+// queryID 用于支持主动取消：非空时注册可取消 context，调用 CancelQuery(queryID)
+// 会让本次查询立即返回，错误信息标记为「查询已取消」，已读取的部分结果被丢弃。
+func (s *Service) Query(conn config.Connection, sqlText string, queryID string) (*QueryResult, error) {
 	db, err := s.getDB(conn)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx := context.Background()
+	start := time.Now()
+	ctx, unregister := s.register(queryID)
+	defer unregister()
+
 	rows, err := db.QueryContext(ctx, sqlText)
 	if err != nil {
-		return &QueryResult{Error: err.Error()}, nil
+		if isCanceled(ctx) {
+			return &QueryResult{Error: errQueryCanceled, ElapsedMs: elapsedMs(start)}, nil
+		}
+		return &QueryResult{Error: err.Error(), ElapsedMs: elapsedMs(start)}, nil
 	}
 	defer rows.Close()
 
-	result := &QueryResult{}
+	result := &QueryResult{RowLimit: DefaultQueryRowLimit}
 	cols, err := rows.Columns()
 	if err != nil {
 		return result, err
@@ -235,13 +303,32 @@ func (s *Service) Query(conn config.Connection, sqlText string) (*QueryResult, e
 		result.Columns = append(result.Columns, ColumnInfo{Name: col})
 	}
 
-	data, err := scanRows(rows)
+	data, truncated, err := scanRows(ctx, rows, DefaultQueryRowLimit)
 	if err != nil {
+		if isCanceled(ctx) {
+			return &QueryResult{Error: errQueryCanceled, ElapsedMs: elapsedMs(start)}, nil
+		}
 		return result, err
 	}
 	result.Rows = data
 	result.RowCount = int64(len(data))
+	result.Truncated = truncated
+	result.ElapsedMs = elapsedMs(start)
 	return result, nil
+}
+
+// errQueryCanceled 是用户主动取消查询时写入 QueryResult.Error 的提示文本。
+const errQueryCanceled = "查询已取消"
+
+// isCanceled 判断 context 是否已被主动取消。
+// 只认 context.Canceled；由超时导致的 DeadlineExceeded 不算用户取消。
+func isCanceled(ctx context.Context) bool {
+	return ctx.Err() == context.Canceled
+}
+
+// elapsedMs 返回从 start 到当前时刻的毫秒数，保留两位小数。
+func elapsedMs(start time.Time) float64 {
+	return float64(time.Since(start).Microseconds()) / 1000.0
 }
 
 // Exec 执行一条不返回结果集的 SQL（DDL / DML）。

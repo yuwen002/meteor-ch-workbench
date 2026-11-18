@@ -1,5 +1,5 @@
 import { Call } from '@wailsio/runtime'
-import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ColumnInfo, ClusterInfo, ExportFormat, ImportFormat, ImportOptions, ImportResult } from './types'
+import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ColumnInfo, ClusterInfo, ExportFormat, ImportFormat, ImportOptions, ImportResult, ResultExportFormat, HistoryEntry, TabsFile } from './types'
 
 type AnyError = { message?: string; cause?: unknown; name?: string }
 
@@ -83,8 +83,11 @@ export const api = {
     return call<ImportResult>('main.App.ImportConfigWithOptions', raw, opts)
   },
 
-  Query(connectionID: string, sql: string): Promise<QueryResult> {
-    return call<QueryResult>('main.App.Query', connectionID, sql)
+  Query(connectionID: string, sql: string, queryID: string): Promise<QueryResult> {
+    return call<QueryResult>('main.App.Query', connectionID, sql, queryID)
+  },
+  CancelQuery(queryID: string): Promise<boolean> {
+    return call<boolean>('main.App.CancelQuery', queryID)
   },
 
   Execute(connectionID: string, sql: string): Promise<ExecResult> {
@@ -109,6 +112,34 @@ export const api = {
 
   GetClusters(connectionID: string): Promise<ClusterInfo[]> {
     return call<ClusterInfo[]>('main.App.GetClusters', connectionID)
+  },
+
+  GetResultExportFormats(): Promise<ResultExportFormat[]> {
+    return call<ResultExportFormat[]>('main.App.GetResultExportFormats')
+  },
+
+  SaveQueryResultAs(format: string, columns: string[], rows: any[][]): Promise<string> {
+    return call<string>('main.App.SaveQueryResultAs', format, columns, rows)
+  },
+
+  GetQueryHistory(): Promise<HistoryEntry[]> {
+    return call<HistoryEntry[]>('main.App.GetQueryHistory')
+  },
+
+  ClearQueryHistory(): Promise<void> {
+    return call<void>('main.App.ClearQueryHistory')
+  },
+
+  DeleteQueryHistory(id: string): Promise<void> {
+    return call<void>('main.App.DeleteQueryHistory', id)
+  },
+
+  SaveTabs(snapshot: TabsFile): Promise<void> {
+    return call<void>('main.App.SaveTabs', snapshot)
+  },
+
+  GetTabs(): Promise<TabsFile> {
+    return call<TabsFile>('main.App.GetTabs')
   },
 
   OpenConfigFolder(): Promise<void> {

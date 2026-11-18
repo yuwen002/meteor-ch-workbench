@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
@@ -16,16 +17,21 @@ import (
 // 它组合了配置管理器（负责连接与文件夹的读写）和 ClickHouse 服务（负责真正的查询交互），
 // 前端通过绑定生成的 JS 方法调用这里导出的每一个公开方法。
 type App struct {
-	ctx   context.Context     // Wails 注入的应用上下文，随应用生命周期结束而关闭
-	conf  *config.Manager     // 配置管理器，负责 connections.json 的读写
-	chSvc *clickhouse.Service // ClickHouse 连接池与查询服务
+	ctx   context.Context        // Wails 注入的应用上下文，随应用生命周期结束而关闭
+	conf  *config.Manager        // 配置管理器，负责 connections.json 的读写
+	hist  *config.HistoryManager // 查询历史管理器，负责 history.json 的读写
+	tabs  *config.TabsManager    // 标签页管理器，负责 tabs.json 的读写
+	chSvc *clickhouse.Service    // ClickHouse 连接池与查询服务
 }
 
-// NewApp 创建 App 实例，并初始化配置管理器和 ClickHouse 服务。
+// NewApp 创建 App 实例，并初始化配置管理器、查询历史管理器和 ClickHouse 服务。
 // 此时尚未连接数据库，连接是在首次调用查询类方法时惰性建立的。
 func NewApp() *App {
+	conf := config.NewManager()
 	return &App{
-		conf:  config.NewManager(),
+		conf:  conf,
+		hist:  config.NewHistoryManager(conf.ConfigDir()),
+		tabs:  config.NewTabsManager(conf.ConfigDir()),
 		chSvc: clickhouse.NewService(),
 	}
 }
@@ -202,12 +208,66 @@ func (a *App) ImportConfigWithOptions(raw string, opts config.ImportOptions) (co
 // Query 在指定连接上执行一段 SQL，返回列名与全部结果行。
 // SQL 执行失败（如语法错误）不会返回 error，而是把错误信息放在 QueryResult.Error 中，
 // 这样前端仍能正常渲染结果面板并展示错误文本。
-func (a *App) Query(connectionID string, sql string) (*clickhouse.QueryResult, error) {
+//
+// queryID 由前端生成并用于取消：调用 CancelQuery(queryID) 可立即中止本次查询，
+// 此时返回 QueryResult.Error = "查询已取消"，已读到的部分行被丢弃。
+func (a *App) Query(connectionID string, sql string, queryID string) (*clickhouse.QueryResult, error) {
 	conn, err := a.conf.GetConnection(connectionID)
 	if err != nil {
 		return nil, err
 	}
-	return a.chSvc.Query(*conn, sql)
+	res, err := a.chSvc.Query(*conn, sql, queryID)
+	if err != nil {
+		return nil, err
+	}
+	a.recordHistory(connectionID, sql, res.ElapsedMs, res.Error == "")
+	return res, nil
+}
+
+// CancelQuery 取消指定 queryID 正在执行的查询。
+// 返回 true 表示查询确实在运行并已被取消；查询已结束时返回 false。
+func (a *App) CancelQuery(queryID string) bool {
+	return a.chSvc.CancelQuery(queryID)
+}
+
+// recordHistory 把一次执行记录追加到查询历史。
+// 历史写入失败不影响查询本身的结果，因此错误被静默忽略。
+func (a *App) recordHistory(connectionID, sql string, durationMs float64, success bool) {
+	if strings.TrimSpace(sql) == "" {
+		return
+	}
+	_ = a.hist.Add(config.HistoryEntry{
+		SQL:          sql,
+		ConnectionID: connectionID,
+		Timestamp:    time.Now(),
+		DurationMs:   durationMs,
+		Success:      success,
+	})
+}
+
+// GetQueryHistory 返回全部查询历史，最新的排在最前。
+func (a *App) GetQueryHistory() ([]config.HistoryEntry, error) {
+	return a.hist.List()
+}
+
+// ClearQueryHistory 清空全部查询历史。
+func (a *App) ClearQueryHistory() error {
+	return a.hist.Clear()
+}
+
+// DeleteQueryHistory 删除指定 ID 的一条查询历史记录。
+func (a *App) DeleteQueryHistory(id string) error {
+	return a.hist.Delete(id)
+}
+
+// GetTabs 返回上次保存的标签页快照，供前端启动时恢复编辑器工作现场。
+func (a *App) GetTabs() (config.TabsFile, error) {
+	return a.tabs.Load()
+}
+
+// SaveTabs 保存当前全部标签页与活动标签，供下次启动恢复。
+func (a *App) SaveTabs(snapshot config.TabsFile) error {
+	return a.tabs.Save(snapshot)
 }
 
 // Execute 在指定连接上执行一条 DDL/DML 语句（CREATE/ALTER/DROP/INSERT 等）。
@@ -218,6 +278,38 @@ func (a *App) Execute(connectionID string, sql string) (*clickhouse.ExecResult, 
 		return nil, err
 	}
 	return a.chSvc.Exec(*conn, sql)
+}
+
+// GetResultExportFormats 返回支持的结果集导出格式元信息，供前端渲染格式选择。
+func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat {
+	return clickhouse.ResultExportFormats()
+}
+
+// SaveQueryResultAs 弹出系统「另存为」对话框，把结果集按指定格式导出到用户选择的位置。
+// 返回实际保存路径；用户取消时返回空字符串。
+func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}) (string, error) {
+	content, ext, err := clickhouse.ExportResultByFormat(format, columns, rows)
+	if err != nil {
+		return "", err
+	}
+	dialog := application.Get().Dialog.SaveFile()
+	dialog.SetMessage("选择查询结果的保存位置")
+	dialog.SetFilename("query-result." + ext)
+	dialog.SetButtonText("保存")
+	if ext != "" {
+		dialog.AddFilter(strings.ToUpper(ext), "*."+ext)
+	}
+	path, err := dialog.PromptForSingleSelection()
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		return "", nil
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // GetDatabases 查询指定连接上的数据库列表（SHOW DATABASES），用于侧边栏自动展开。

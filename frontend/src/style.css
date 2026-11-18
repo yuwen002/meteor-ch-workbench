@@ -70,6 +70,15 @@ button {
 .btn-primary:hover {
   background: #c0392b;
 }
+.btn-danger {
+  background: #3a3d45;
+  color: #fca5a5;
+  border: 1px solid #52525b;
+}
+.btn-danger:hover {
+  background: #4a4d55;
+  border-color: #71717a;
+}
 .btn-ghost {
   background: transparent;
   color: #d4d4d8;

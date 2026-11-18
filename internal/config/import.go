@@ -200,8 +200,9 @@ func mergeData(cur, incoming DataFile) DataFile {
 	}
 	remap := make(map[string]string)
 	for _, f := range incoming.Folders {
+		oldID := f.ID
 		if id, ok := byName[f.Name]; ok {
-			remap[f.ID] = id
+			remap[oldID] = id
 			continue
 		}
 		if f.ID == "" || folderIDs[f.ID] {
@@ -209,7 +210,7 @@ func mergeData(cur, incoming DataFile) DataFile {
 		}
 		folderIDs[f.ID] = true
 		byName[f.Name] = f.ID
-		remap[f.ID] = f.ID
+		remap[oldID] = f.ID
 		out.Folders = append(out.Folders, f)
 	}
 	for _, c := range incoming.Connections {
@@ -223,6 +224,26 @@ func mergeData(cur, incoming DataFile) DataFile {
 		out.Connections = append(out.Connections, c)
 	}
 	return out
+}
+
+// looseString 自定义 JSON 字符串类型，同时接受 JSON 字符串与数字字面量。
+// DBeaver 不同版本导出的 port 有的是 "8123"，有的是 8123，硬性要求单一类型会导致导入失败。
+type looseString string
+
+func (l *looseString) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "null" {
+		*l = ""
+		return nil
+	}
+	s = strings.Trim(s, `"`)
+	*l = looseString(s)
+	return nil
+}
+
+// String 返回底层字符串值。
+func (l looseString) String() string {
+	return string(l)
 }
 
 // ---- 各格式解析实现 ----
@@ -246,7 +267,9 @@ func parseJSONOrDBeaver(raw string) (DataFile, error) {
 		}
 	}
 
-	// 再尝试 DBeaver 结构
+	// 再尝试 DBeaver 结构。
+	// port 在不同 DBeaver 版本中可能是字符串或数字，用 json.Number 兼容两种写法，
+	// 避免单个字段类型不符就让整个文件解析失败。
 	type dbeaverConn struct {
 		Provider   string            `json:"provider"`
 		Driver     string            `json:"driver"`
@@ -254,7 +277,7 @@ func parseJSONOrDBeaver(raw string) (DataFile, error) {
 		Folder     string            `json:"folder"`
 		URL        string            `json:"url"`
 		Host       string            `json:"host"`
-		Port       string            `json:"port"`
+		Port       looseString       `json:"port"`
 		Database   string            `json:"database"`
 		User       string            `json:"user"`
 		Password   string            `json:"password"`
@@ -277,7 +300,11 @@ func parseJSONOrDBeaver(raw string) (DataFile, error) {
 		port := 0
 		db := dc.Database
 		if dc.URL != "" {
-			if u, err := url.Parse(dc.URL); err == nil {
+			// DBeaver 的 url 形如 jdbc:clickhouse://host:port/db。
+			// url.Parse 会把「jdbc:clickhouse://...」当成不透明 URI，Host 等字段全部为空，
+			// 因此必须先剥掉 jdbc: 前缀再解析，否则导出的配置无法回导。
+			jdbcURL := strings.TrimPrefix(dc.URL, "jdbc:")
+			if u, err := url.Parse(jdbcURL); err == nil {
 				if host == "" {
 					host = u.Hostname()
 				}
@@ -295,7 +322,7 @@ func parseJSONOrDBeaver(raw string) (DataFile, error) {
 			continue
 		}
 		if port == 0 {
-			if p, err := strconv.Atoi(dc.Port); err == nil {
+			if p, err := strconv.Atoi(dc.Port.String()); err == nil {
 				port = p
 			}
 		}

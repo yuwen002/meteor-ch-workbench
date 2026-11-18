@@ -11,6 +11,13 @@ app.use(createPinia())
 app.use(router)
 app.use(i18n)
 
+app.directive('focus', {
+  mounted(el: HTMLElement) {
+    el.focus()
+    if (el instanceof HTMLInputElement) el.select()
+  },
+})
+
 const store = useAppStore()
 store.loadAll()
 

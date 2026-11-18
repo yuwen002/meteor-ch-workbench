@@ -148,28 +148,178 @@ interface Folder {
 
 ---
 
+### ReorderFolders(ids)
+按给定顺序持久化分组顺序（拖拽排序后调用）。
+
+| | |
+|---|---|
+| Go | `func (a *App) ReorderFolders(ids []string) error` |
+| TS | `api.ReorderFolders(ids: string[]): Promise<void>` |
+| 参数 | `ids` — 新的分组 ID 顺序数组 |
+
+---
+
+### ReorderConnections(ids)
+按给定顺序持久化连接顺序（组内 / 跨组拖拽后调用）。
+
+| | |
+|---|---|
+| Go | `func (a *App) ReorderConnections(ids []string) error` |
+| TS | `api.ReorderConnections(ids: string[]): Promise<void>` |
+| 参数 | `ids` — 新的连接 ID 顺序数组 |
+
+---
+
+## 2.1 配置导入导出
+
+### ExportConfig()
+导出完整配置为 JSON 文本（含密码）。
+
+| | |
+|---|---|
+| Go | `func (a *App) ExportConfig() (string, error)` |
+| TS | `api.ExportConfig(): Promise<string>` |
+
+---
+
+### GetExportFormats()
+返回支持的导出格式列表，前端据此动态渲染格式选择。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetExportFormats() []config.ExportFormat` |
+| TS | `api.GetExportFormats(): Promise<ExportFormat[]>` |
+| 返回 | `ExportFormat{ id, name, extension, mime, description }[]` |
+
+当前支持：`json` / `yaml` / `csv` / `dsn` / `dbeaver`。
+
+---
+
+### ExportConfigByFormat(format, includePassword)
+按指定格式导出配置文本，第二个返回值为建议扩展名。
+
+| | |
+|---|---|
+| Go | `func (a *App) ExportConfigByFormat(format string, includePassword bool) (string, string, error)` |
+| TS | `api.ExportConfigByFormat(format: string, includePassword: bool): Promise<[string, string]>` |
+| 参数 | `includePassword` — false 时清空所有密码（脱敏） |
+
+> **注意**：脱敏只影响导出内容，不会修改内存中的真实配置（`sanitize` 做了深拷贝）。
+
+---
+
+### SaveExportAs(format, includePassword)
+弹出系统「另存为」对话框，把配置写入用户选择的路径。
+
+| | |
+|---|---|
+| Go | `func (a *App) SaveExportAs(format string, includePassword bool) (string, error)` |
+| TS | `api.SaveExportAs(format: string, includePassword: bool): Promise<string>` |
+| 返回 | 实际写入的文件路径（用户取消时为空） |
+
+---
+
+### ImportConfig(raw)
+导入 JSON 配置并覆盖当前全部连接与分组。
+
+| | |
+|---|---|
+| Go | `func (a *App) ImportConfig(raw string) error` |
+| TS | `api.ImportConfig(raw: string): Promise<void>` |
+
+---
+
+### GetImportFormats()
+返回支持的导入格式列表。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetImportFormats() []config.ImportFormat` |
+| TS | `api.GetImportFormats(): Promise<ImportFormat[]>` |
+
+当前支持：`json`（含 DBeaver 结构）/ `yaml` / `csv` / `dsn`。
+
+---
+
+### PickImportFile()
+弹出系统「打开文件」对话框，返回用户选中文件的**内容**与文件名。
+
+| | |
+|---|---|
+| Go | `func (a *App) PickImportFile() (string, string, error)` |
+| TS | `api.PickImportFile(): Promise<[string, string]>` |
+| 返回 | `[文件内容, 文件路径]`（用户取消时均为空） |
+
+---
+
+### ImportConfigWithOptions(raw, opts)
+按指定格式与模式导入。`format` 为空时自动识别；`mode` 为 `replace`（覆盖，默认）或 `merge`（合并）。
+
+| | |
+|---|---|
+| Go | `func (a *App) ImportConfigWithOptions(raw string, opts config.ImportOptions) (config.ImportResult, error)` |
+| TS | `api.ImportConfigWithOptions(raw: string, opts: ImportOptions): Promise<ImportResult>` |
+
+ImportResult 结构：
+```ts
+interface ImportResult {
+  mode: 'replace' | 'merge'
+  format: string            // 实际识别/使用的格式
+  importedFolders: number   // 本次导入的分组数
+  importedConns: number     // 本次导入的连接数
+  totalFolders: number      // 导入后的分组总数
+  totalConns: number        // 导入后的连接总数
+}
+```
+
+> **合并模式规则**：同名分组复用已有分组（不重复创建）；分组 ID 冲突时重新生成并把引用它的连接 `folder_id` 一并重映射；连接 ID 冲突时重新生成。指向不存在分组的连接在导入后归到根级。
+
+---
+
 ## 3. SQL 执行
 
-### Query(connectionID, sql)
+### Query(connectionID, sql, queryID)
 执行 SELECT / SHOW 等查询语句，返回结果表格。
 
 | | |
 |---|---|
-| Go | `func (a *App) Query(connectionID, sql string) (*clickhouse.QueryResult, error)` |
-| TS | `api.Query(connectionID: string, sql: string): Promise<QueryResult>` |
+| Go | `func (a *App) Query(connectionID, sql, queryID string) (*clickhouse.QueryResult, error)` |
+| TS | `api.Query(connectionID: string, sql: string, queryID: string): Promise<QueryResult>` |
+
+`queryID` 由前端生成（`crypto.randomUUID()`），用于支持主动取消。传空字符串表示不可取消。
 
 QueryResult 结构：
 ```ts
 interface QueryResult {
-  columns: string[]     // 列名列表
+  columns: ColumnInfo[] // 列信息列表，每项含 name / type / comment
   rows: any[][]         // 数据行
   row_count: number     // 总行数
   elapsed_ms: number    // 执行耗时
+  truncated: boolean    // 是否因超过行数上限被截断
+  row_limit: number     // 本次生效的行数上限
   error?: string        // SQL 错误（如语法错），放在这里而不是 Go error
 }
 ```
 
 > **设计说明**：SQL 执行失败时 Go 返回的 `error` 为 nil，错误信息放在 `QueryResult.error` 里。这样前端能正常渲染结果面板并在面板内展示错误文本，而不是当作网络级异常处理。
+
+> **大结果保护**：`Query` 默认最多返回 `DefaultQueryRowLimit = 50000` 行（后端常量），超出部分被丢弃并置 `truncated = true`，前端在结果面板提示用户。这样避免一次性把巨量数据传给前端导致界面卡死。
+
+> **取消行为**：查询执行期间调用 `CancelQuery(queryID)`，本次查询立即返回，`QueryResult.error = "查询已取消"`，已读取的部分行被丢弃（`rows` 为空）。前端据此用灰色提示条而非红色错误条展示。
+
+---
+
+### CancelQuery(queryID)
+取消指定 queryID 正在执行的查询。
+
+| | |
+|---|---|
+| Go | `func (a *App) CancelQuery(queryID string) bool` |
+| TS | `api.CancelQuery(queryID: string): Promise<boolean>` |
+
+返回值：`true` 表示该查询确实正在运行并已被取消；`false` 表示查询已结束或 ID 不存在，前端应静默忽略。
+
+> **实现要点**：后端 `Service` 维护 `running map[string]context.CancelFunc`。`Query` 开始时注册可取消 context，结束时（含 defer）注销。取消时调用 `cancel()`，驱动层 `QueryContext` 与逐行扫描都会立即返回。前端关闭标签页时若查询仍在运行，会自动调用本方法，避免 context 泄漏。
 
 ---
 
@@ -190,6 +340,111 @@ interface ExecResult {
 ```
 
 > 同样，SQL 错误放在 `ExecResult.error` 而非 Go error。可视化建表 / 编辑表 / 删除表均使用此接口。
+
+---
+
+## 3.1 结果集导出
+
+### GetResultExportFormats()
+返回结果集支持的导出格式。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat` |
+| TS | `api.GetResultExportFormats(): Promise<ResultExportFormat[]>` |
+
+当前支持：`csv` / `json` / `markdown`（注册表模式，新增格式只需在 `internal/clickhouse/export.go` 追加一项）。
+
+---
+
+### SaveQueryResultAs(format, columns, rows)
+把当前结果集按指定格式写入用户选择的文件。
+
+| | |
+|---|---|
+| Go | `func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}) (string, error)` |
+| TS | `api.SaveQueryResultAs(format: string, columns: string[], rows: any[][]): Promise<string>` |
+| 返回 | 实际写入的文件路径（用户取消时为空） |
+
+> 由前端把已渲染的结果数据传回后端渲染落盘，不重新查库，因此导出的就是用户眼前这份数据（包括被截断的部分）。
+
+---
+
+## 3.2 查询历史
+
+### GetQueryHistory()
+读取查询历史（新的在前）。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetQueryHistory() ([]config.HistoryEntry, error)` |
+| TS | `api.GetQueryHistory(): Promise<HistoryEntry[]>` |
+
+HistoryEntry 结构：
+```ts
+interface HistoryEntry {
+  id: string
+  sql: string
+  connectionId: string
+  timestamp: string    // RFC3339
+  duration: number     // 毫秒
+  success: boolean
+}
+```
+
+> **记录时机**：`Query` 执行结束后自动记录（成功或 SQL 错误都会记，`success` 区分）。最多保留 `HistoryMaxEntries = 200` 条，超出丢弃最旧的，存于 `history.json`。
+
+---
+
+### DeleteQueryHistory(id)
+删除单条历史。
+
+| | |
+|---|---|
+| Go | `func (a *App) DeleteQueryHistory(id string) error` |
+| TS | `api.DeleteQueryHistory(id: string): Promise<void>` |
+
+---
+
+### ClearQueryHistory()
+清空全部历史。
+
+| | |
+|---|---|
+| Go | `func (a *App) ClearQueryHistory() error` |
+| TS | `api.ClearQueryHistory(): Promise<void>` |
+
+---
+
+## 3.3 标签页持久化
+
+### GetTabs()
+读取上次退出时的标签页快照（标题 / SQL / 活动标签）。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetTabs() (config.TabsFile, error)` |
+| TS | `api.GetTabs(): Promise<TabsFile>` |
+
+TabsFile 结构：
+```ts
+interface TabsFile {
+  tabs: { id: string, title: string, sql: string }[]
+  activeId: string
+}
+```
+
+---
+
+### SaveTabs(snapshot)
+保存标签页快照，前端在标签增删、重命名、切换、SQL 变更（防抖）时调用。
+
+| | |
+|---|---|
+| Go | `func (a *App) SaveTabs(snapshot config.TabsFile) error` |
+| TS | `api.SaveTabs(snapshot: TabsFile): Promise<void>` |
+
+> 存于 `tabs.json`。只持久化标题和 SQL，**不持久化查询结果**——重启后标签内容在，结果为空，需要重新执行。
 
 ---
 
