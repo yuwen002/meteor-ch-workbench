@@ -1,0 +1,112 @@
+internal/config/saved_sql_test.go
+  h_a3f313f3d96276 1-229
+frontend/src/utils/tabs.test.ts
+  h_a3f313f3d96276 1-32
+frontend/step3.ps1
+  h_a3f313f3d96276 1-59
+frontend/src/utils/resultTable.test.ts
+  h_a3f313f3d96276 1-78
+frontend/src/components/DatabaseTree.vue
+  h_a3f313f3d96276 1-579
+frontend/src/utils/sqlLiteral.test.ts
+  h_a3f313f3d96276 1-116
+frontend/package.json
+  h_a3f313f3d96276 9-11,30
+frontend/src/composables/useSqlCompletion.ts
+  h_a3f313f3d96276 1-207
+frontend/src/utils/ddl.test.ts
+  h_a3f313f3d96276 1-135
+frontend/src/locales/zh.ts
+  h_a3f313f3d96276 68-73,75-85,88-91,93-101,104-148
+frontend/src/utils/resultFilter.test.ts
+  h_a3f313f3d96276 1-443
+frontend/src/utils/autoRefresh.test.ts
+  h_a3f313f3d96276 1-119
+.trae/rules/project_rules.md
+  h_a3f313f3d96276 9-21,26,51
+frontend/src/locales/en.ts
+  h_a3f313f3d96276 142-156,162,164-166,169-182,186-231,233-238
+docs/FEATURES.md
+  h_a3f313f3d96276 16-20,22-53,55-57,60,71-78,86-87,176
+.trae/rules/roadmap.md
+  h_a3f313f3d96276 22,143,182-186,190,194-199,201,220-225,228,232-240,242,244,246,250-286,288-291,293-296,298-304,306,308-358,361-602,604,616
+app.go
+  h_a3f313f3d96276 24,36,265-297,324,326-327
+frontend/src/utils/cellEdit.ts
+  h_a3f313f3d96276 1-151
+.trae/PROJECT.md
+  h_a3f313f3d96276 4,19-25,52,59,119-126,130-132,235,249,311-317
+frontend/src/utils/explain.test.ts
+  h_a3f313f3d96276 1-79
+frontend/src/utils/resultView.ts
+  h_a3f313f3d96276 1-66
+frontend/src/utils/resultView.test.ts
+  h_a3f313f3d96276 1-156
+frontend/src/components/HistoryPanel.vue
+  h_a3f313f3d96276 1-117
+internal/clickhouse/mutation_test.go
+  h_a3f313f3d96276 1-95
+frontend/src/components/ResultFilterPanel.vue
+  h_a3f313f3d96276 1-289
+frontend/src/utils/cellEdit.test.ts
+  h_a3f313f3d96276 1-195
+frontend/src/utils/completionItems.test.ts
+  h_a3f313f3d96276 1-114
+frontend/src/utils/tabs.ts
+  h_a3f313f3d96276 2,15-16,31-32
+frontend/src/composables/useMonaco.ts
+  h_a3f313f3d96276 1-140
+internal/clickhouse/export.go
+  h_a3f313f3d96276 10,30-32,35,58-64,77-78,81,93,114,137,166-256
+frontend/src/utils/pagination.test.ts
+  h_a3f313f3d96276 1-229
+docs/API.md
+  h_a3f313f3d96276 294-295,333-336,345,359-361,365,370-371,374-375,424-482,577-578,582-583
+frontend/src/utils/completionContext.ts
+  h_a3f313f3d96276 1-198
+docs/CODE_INDEX.md
+  h_a3f313f3d96276 5,14,29,31-32,87,107-108,113,128-129,131-132,136-137,188-204,223,227,247,264,324,327-328,343,374-564,573,577,579-583,587-598,604-608,615-620,637
+frontend/src/api.ts
+  h_a3f313f3d96276 2,121-122,137-152
+frontend/src/types.ts
+  h_a3f313f3d96276 59-60,83,119-127
+frontend/src/utils/completionItems.ts
+  h_a3f313f3d96276 1-192
+frontend/src/utils/completionContext.test.ts
+  h_a3f313f3d96276 1-169
+frontend/src/main.ts
+  h_a3f313f3d96276 10-24
+frontend/src/utils/sqlError.test.ts
+  h_a3f313f3d96276 1-91
+internal/clickhouse/export_test.go
+  h_a3f313f3d96276 5,16,44,54,87,118,159,171,183-209,212-283,286-312
+frontend/src/utils/sqlError.ts
+  h_a3f313f3d96276 1-64
+frontend/src/utils/pagination.ts
+  h_a3f313f3d96276 1-100
+internal/clickhouse/service.go
+  h_a3f313f3d96276 18,32-33,242,348,357-417,553-556,562-567,734-751
+frontend/src/views/QueryEditor.vue
+  h_a3f313f3d96276 1,7,9-14,21-38,53-58,62-65,67-69,72-73,76-78,81-82,85,90-93,97-98,101-102,105-109,111,116,119-122,125,131,133-134,137,142-143,146,148,169-175,177-188,191-207,209-214,217,219-223,225-227,230-233,235,242,245-247,250-255,257-265,268-274,276-283,287-296,298-302,324-325,330,351,353-355,359-363,365,400-402,440,442-443,449-450,452,458-461,466,474,476-478,486,488-489,511,530-532,536,538,541-542,550-551,556-571,576,583,586,616,621,626-637,639,643-647,649-655,658-679,685-687,689-692,696-706,708,710-711,713,715-716
+frontend/src/components/ResultGrid.vue
+  h_a3f313f3d96276 1-1576
+frontend/index.html
+  h_a3f313f3d96276 10-33
+frontend/src/utils/autoRefresh.ts
+  h_a3f313f3d96276 1-62
+frontend/src/utils/resultFilter.ts
+  h_a3f313f3d96276 1-269
+internal/config/saved_sql.go
+  h_a3f313f3d96276 1-201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "d5ee15d3e0b88ae1b3435b224024ef1e2a7e64d8",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
