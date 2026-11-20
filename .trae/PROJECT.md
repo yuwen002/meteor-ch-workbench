@@ -1,7 +1,7 @@
 # Project Map — Meteor CH Workbench
 
 > AI 快速检索用。新会话先读这个文件，再按需深入具体文件。
-> 更新时间：2026-11-18
+> 更新时间：2026-11-21
 
 ---
 
@@ -16,7 +16,13 @@
 | 编辑器 | Monaco Editor |
 | 状态 | Pinia（单个 store：`stores/app.ts`） |
 | 国际化 | vue-i18n@9，key 前缀分组：`common.*` / `editor.*` / `menu.*` |
-| 构建 | Vite（前端），Wails CLI v3（打包） |
+| 构建 | Vite（前端）；Go 直接构建（**本机 Wails CLI 是 v2，与 v3 不兼容，不能用 `wails build`**） |
+
+### Windows 打包
+```bash
+go build -ldflags "-H windowsgui -s -w" -o meteor-ch-workbench.exe .
+```
+`-H windowsgui` 必须有，否则 PE 子系统是 CONSOLE，运行时会弹出 DOS 黑窗口。详见 `.trae/rules/project_rules.md`。
 
 ---
 
@@ -43,13 +49,14 @@ Wails v3
 
 ```
 main.go                            入口，注册 App Service
-app.go                            39 个方法（含 2 个生命周期回调）→ 前端可调用
+app.go                            43 个方法（含 2 个生命周期回调）→ 前端可调用
 internal/clickhouse/service.go    Query / Exec / GetDatabases / GetTables / GetViews / GetTableSchema / GetClusters / TestConnection
 internal/clickhouse/export.go     结果集导出注册表（csv / json / markdown）+ QueryResult 行数上限 50000
 internal/config/manager.go        连接与分组：LoadAll / Save / Delete / Reorder
 internal/config/export.go         配置导出注册表（json / yaml / csv / dsn / dbeaver）
 internal/config/import.go         配置导入解析器 + 合并策略
 internal/config/history.go        查询历史（history.json，上限 200）
+internal/config/saved_sql.go      收藏常用 SQL（saved_sql.json，无上限、不随清空历史删除）
 internal/config/tabs.go           标签页快照（tabs.json）
 ```
 
@@ -109,10 +116,20 @@ src/
 ├── stores/app.ts                唯一 Pinia store：folders / connections / activeConnectionId / connectionStatus / groupedConnections / loadAll / checkConnection ...
 ├── utils/ddl.ts                 前端 DDL 构建：buildCreateTableSQL / buildAlterTableSQL / buildDropTableSQL + CLICKHOUSE_ENGINES(26) + CLICKHOUSE_TYPES(42)
 ├── utils/tabs.ts                QueryTab 类型与工厂：每个标签独立持有 sql / result / error / querying / queryId / canceled / viewState / resultScrollTop
-├── utils/resultTable.ts         结果表格虚拟滚动纯函数：ROW_HEIGHT / VIRTUAL_THRESHOLD / measureColWidths / shouldVirtualize
+├── utils/resultTable.ts          结果表格虚拟滚动纯函数：ROW_HEIGHT / VIRTUAL_THRESHOLD / measureColWidths / shouldVirtualize
+├── utils/pagination.ts           结果集分页纯函数：splitStatements / isSingleSelect / buildPageSQL / nextPage + DEFAULT_PAGE_SIZE
+├── utils/completionContext.ts    SQL 补全上下文判定：getCompletionContext / extractTableRefs / resolveQualifier / isCursorInComment
+├── utils/completionItems.ts      SQL 补全候选构建：SQL_KEYWORDS / SQL_FUNCTIONS / buildCompletionItems
+├── utils/resultView.ts           结果表格本地视图：applyView（搜索+排序）/ nextSortState / compareCells / collectColumnValues / columnValuesText
+├── utils/resultFilter.ts        服务端排序 / 按值过滤 / 多条件筛选拼 SQL：appendSort / appendWhere / filterExpression / rawFilterExpression / buildFilterWhere / isNumericType
+├── utils/cellEdit.ts            单元格编辑 → UPDATE：parseQuerySource / detectKeyColumns（主键→唯一列→全列三级自动选键）/ buildRowKeys / buildAlterUpdateSQL（只生成不执行）
+├── utils/autoRefresh.ts          结果定时刷新：normalizeSeconds / remainingSeconds / shouldFire / AUTO_REFRESH_PRESETS（localStorage 持久化）
 ├── utils/sqlLiteral.ts          SQL 字面量与复制纯函数：escapeSqlString / sqlLiteral / quoteIdent / rowToTSV / buildInsertStatement
 ├── router/index.ts              仅 1 条路由：/ → /query，懒加载 QueryEditor
 ├── locales/zh.ts, en.ts         i18n key：common / menu / editor（建表/编辑表相关 key 都在 editor.*）
+├── composables/
+│   ├── useMonaco.ts             编辑器初始化 / SQL 语言懒加载 / 主题 / Ctrl+Enter / 事件桥接，并注册补全 provider
+│   └── useSqlCompletion.ts      SQL 自动补全：Monaco provider + 库表列清单按连接缓存（TTL 120s，切连接失效）
 ├── components/
 │   ├── MenuBar.vue              顶栏：连接选择器、语言切换、菜单
 │   ├── ConnectionModal.vue      新建/编辑连接（Native/HTTP/TLS/压缩/测试）
@@ -215,6 +232,7 @@ ExecResult     { rows_affected, error? }
 |---|---|---|
 | `connections.json` | `{ folders: Folder[], connections: Connection[] }` | 连接与分组，**密码明文存储** |
 | `history.json` | `{ entries: HistoryEntry[] }` | 查询历史，上限 200 |
+| `saved_sql.json` | `SavedSQL[]` | 已收藏 SQL，无上限，不受清空历史影响 |
 | `tabs.json` | `{ tabs: [...], activeId }` | 标签页快照（仅标题 + SQL） |
 
 ---
@@ -228,6 +246,7 @@ ExecResult     { rows_affected, error? }
 | `internal/config/export_test.go` | 5 种导出格式的渲染、脱敏、转义、往返一致性 |
 | `internal/config/import_test.go` | 4 种解析器边界（DBeaver / CSV 缺列 / DSN 非法行）+ 合并策略（同名复用、ID 冲突重分配、folder_id 重映射） |
 | `internal/config/history_test.go` | 历史记录、上限裁剪、删除与清空 |
+| `internal/config/saved_sql_test.go` | 收藏增删改查、无上限、重复/空 SQL 拒绝、清空历史不影响收藏、重载与损坏文件 |
 | `internal/config/tabs_test.go` | 标签快照读写与容错 |
 | `internal/clickhouse/export_test.go` | 结果集导出渲染（CSV / JSON / Markdown，含竖线、换行、CRLF、反斜杠转义边界） |
 | `internal/clickhouse/cancel_test.go` | 查询取消：空 ID / 未注册 / 正常取消 / 重复取消 / 注销清理 / 重复注册取消旧 / 超时不误判 |
@@ -289,3 +308,10 @@ go test ./...
 | 改标签页结构 | `frontend/src/utils/tabs.ts`（类型）→ `internal/config/tabs.go`（持久化） |
 | 改合并导入策略 | `internal/config/import.go` 的 `mergeData` → `import_test.go` 对应测试 |
 | 加单元测试 | 同目录 `*_test.go`，表驱动风格，覆盖正常 + 边界 + 往返一致性 |
+| 改结果表格排序 / 搜索 / 复制字段 | `utils/resultView.ts`（纯函数 + test）→ `components/ResultGrid.vue` 的 `rowIndices` / `searchQuery` / `sortState` |
+| 改服务端排序 / 按值过滤 / 多条件筛选 | `utils/resultFilter.ts`（纯函数 + test）→ `components/ResultFilterPanel.vue`（面板 UI）→ `ResultGrid.vue` 拼 SQL 后 `emit('rerun')` → `QueryEditor.onResultRerun`（**必须重置 `page`**） |
+| 改单元格编辑 / UPDATE 语句生成 | `utils/cellEdit.ts`（纯函数 + test）→ `ResultGrid.vue` 的 `startEditCell` / `commitEditCell` → `QueryEditor.onResultEditSql`（只写入编辑器，不执行） |
+| 改「查看实际执行 SQL」 | `QueryTab.lastExecutedSql`（`utils/tabs.ts` + `QueryEditor.executeSelectedSQL` 赋值）→ `ResultGrid.vue` 的 SQL 面板 |
+| 改结果刷新 / 定时刷新 | `utils/autoRefresh.ts`（秒数归一化 + 倒计时）→ `ResultGrid.vue` 的 ticker + `emit('refresh')` → `QueryEditor.onResultRefresh` |
+| 改 SQL 自动补全 | `composables/useSqlCompletion.ts`（provider + 库表列缓存）→ `utils/completionContext.ts` / `utils/completionItems.ts`（上下文判定与候选构建，均配 test）；切换连接时 `QueryEditor` 调 `invalidateCompletion()` 失效缓存 |
+| 改收藏 SQL | `internal/config/saved_sql.go` + `components/SavedSQLPanel.vue`（QueryEditor 工具栏 + 收藏对话框） |

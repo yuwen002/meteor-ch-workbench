@@ -17,11 +17,12 @@ import (
 // 它组合了配置管理器（负责连接与文件夹的读写）和 ClickHouse 服务（负责真正的查询交互），
 // 前端通过绑定生成的 JS 方法调用这里导出的每一个公开方法。
 type App struct {
-	ctx   context.Context        // Wails 注入的应用上下文，随应用生命周期结束而关闭
-	conf  *config.Manager        // 配置管理器，负责 connections.json 的读写
-	hist  *config.HistoryManager // 查询历史管理器，负责 history.json 的读写
-	tabs  *config.TabsManager    // 标签页管理器，负责 tabs.json 的读写
-	chSvc *clickhouse.Service    // ClickHouse 连接池与查询服务
+	ctx   context.Context         // Wails 注入的应用上下文，随应用生命周期结束而关闭
+	conf  *config.Manager         // 配置管理器，负责 connections.json 的读写
+	hist  *config.HistoryManager  // 查询历史管理器，负责 history.json 的读写
+	tabs  *config.TabsManager     // 标签页管理器，负责 tabs.json 的读写
+	saved *config.SavedSQLManager // 收藏 SQL 管理器，负责 saved_sql.json 的读写
+	chSvc *clickhouse.Service     // ClickHouse 连接池与查询服务
 }
 
 // NewApp 创建 App 实例，并初始化配置管理器、查询历史管理器和 ClickHouse 服务。
@@ -32,6 +33,7 @@ func NewApp() *App {
 		conf:  conf,
 		hist:  config.NewHistoryManager(conf.ConfigDir()),
 		tabs:  config.NewTabsManager(conf.ConfigDir()),
+		saved: config.NewSavedSQLManager(conf.ConfigDir()),
 		chSvc: clickhouse.NewService(),
 	}
 }
@@ -260,6 +262,39 @@ func (a *App) DeleteQueryHistory(id string) error {
 	return a.hist.Delete(id)
 }
 
+// GetSavedSQL 返回全部收藏的 SQL，最近更新的排在最前。
+func (a *App) GetSavedSQL() ([]config.SavedSQL, error) {
+	return a.saved.List()
+}
+
+// SaveSQL 收藏一条 SQL 并返回新建的记录。
+// SQL 为空或重复收藏时返回 error，由前端提示用户。
+func (a *App) SaveSQL(name string, sql string, connectionID string) (*config.SavedSQL, error) {
+	item, err := a.saved.Add(config.SavedSQL{
+		Name:         name,
+		SQL:          sql,
+		ConnectionID: connectionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+// UpdateSavedSQL 修改一条收藏记录的标题与 SQL 文本。
+func (a *App) UpdateSavedSQL(id string, name string, sql string) (*config.SavedSQL, error) {
+	item, err := a.saved.Update(id, name, sql)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+// DeleteSavedSQL 删除指定 ID 的一条收藏记录。
+func (a *App) DeleteSavedSQL(id string) error {
+	return a.saved.Delete(id)
+}
+
 // GetTabs 返回上次保存的标签页快照，供前端启动时恢复编辑器工作现场。
 func (a *App) GetTabs() (config.TabsFile, error) {
 	return a.tabs.Load()
@@ -286,9 +321,10 @@ func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat {
 }
 
 // SaveQueryResultAs 弹出系统「另存为」对话框，把结果集按指定格式导出到用户选择的位置。
+// target 为目标表名，仅 INSERT 族格式使用（其余格式忽略）。
 // 返回实际保存路径；用户取消时返回空字符串。
-func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}) (string, error) {
-	content, ext, err := clickhouse.ExportResultByFormat(format, columns, rows)
+func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}, target string) (string, error) {
+	content, ext, err := clickhouse.ExportResultByFormat(format, columns, rows, target)
 	if err != nil {
 		return "", err
 	}

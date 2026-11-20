@@ -1,4 +1,5 @@
 import type { QueryResult } from '../types'
+import type { PageState } from './pagination'
 
 export interface QueryTab {
   id: string
@@ -11,6 +12,8 @@ export interface QueryTab {
   canceled: boolean
   resultScrollTop: number
   viewState: unknown | null
+  page: PageState | null
+  lastExecutedSql: string
 }
 
 export function createTab(index: number, sql = '-- ClickHouse SQL\nSELECT version()'): QueryTab {
@@ -25,6 +28,8 @@ export function createTab(index: number, sql = '-- ClickHouse SQL\nSELECT versio
     canceled: false,
     resultScrollTop: 0,
     viewState: null,
+    page: null,
+    lastExecutedSql: '',
   }
 }
 

@@ -1,5 +1,5 @@
 import { Call } from '@wailsio/runtime'
-import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ColumnInfo, ClusterInfo, ExportFormat, ImportFormat, ImportOptions, ImportResult, ResultExportFormat, HistoryEntry, TabsFile } from './types'
+import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ColumnInfo, ClusterInfo, ExportFormat, ImportFormat, ImportOptions, ImportResult, ResultExportFormat, HistoryEntry, SavedSQL, TabsFile } from './types'
 
 type AnyError = { message?: string; cause?: unknown; name?: string }
 
@@ -118,8 +118,8 @@ export const api = {
     return call<ResultExportFormat[]>('main.App.GetResultExportFormats')
   },
 
-  SaveQueryResultAs(format: string, columns: string[], rows: any[][]): Promise<string> {
-    return call<string>('main.App.SaveQueryResultAs', format, columns, rows)
+  SaveQueryResultAs(format: string, columns: string[], rows: any[][], target = ''): Promise<string> {
+    return call<string>('main.App.SaveQueryResultAs', format, columns, rows, target)
   },
 
   GetQueryHistory(): Promise<HistoryEntry[]> {
@@ -132,6 +132,22 @@ export const api = {
 
   DeleteQueryHistory(id: string): Promise<void> {
     return call<void>('main.App.DeleteQueryHistory', id)
+  },
+
+  GetSavedSQL(): Promise<SavedSQL[]> {
+    return call<SavedSQL[]>('main.App.GetSavedSQL')
+  },
+
+  SaveSQL(name: string, sql: string, connectionID: string): Promise<SavedSQL> {
+    return call<SavedSQL>('main.App.SaveSQL', name, sql, connectionID)
+  },
+
+  UpdateSavedSQL(id: string, name: string, sql: string): Promise<SavedSQL> {
+    return call<SavedSQL>('main.App.UpdateSavedSQL', id, name, sql)
+  },
+
+  DeleteSavedSQL(id: string): Promise<void> {
+    return call<void>('main.App.DeleteSavedSQL', id)
   },
 
   SaveTabs(snapshot: TabsFile): Promise<void> {

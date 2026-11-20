@@ -2,7 +2,7 @@
 
 > 按文件列出职责、关键入口与依赖关系，便于人和 AI 快速定位。
 > 与 `.trae/PROJECT.md`（AI 检索地图）互补：本文更偏「文件清单」，PROJECT.md 更偏「怎么改」。
-> 更新时间：2026-11-18
+> 更新时间：2026-11-21
 
 ---
 
@@ -11,7 +11,7 @@
 ```
 meteor-ch-workbench/
 ├── main.go              Wails 应用入口
-├── app.go               所有前端可调用方法的门面（39 个）
+├── app.go               所有前端可调用方法的门面（43 个，含 2 个生命周期回调）
 ├── wails.json           Wails 打包配置
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
@@ -26,9 +26,10 @@ meteor-ch-workbench/
 │       ├── i18n.ts      中英切换 + localStorage 记忆
 │       ├── router/      仅一条路由 → QueryEditor
 │       ├── stores/      Pinia（app.ts 唯一）
-│       ├── utils/       纯函数（ddl.ts / tabs.ts / resultTable.ts / sqlLiteral.ts）
+│       ├── utils/       纯函数（ddl.ts / tabs.ts / resultTable.ts / sqlLiteral.ts / explain.ts / sqlError.ts / pagination.ts / completionContext.ts / completionItems.ts / resultView.ts / resultFilter.ts / autoRefresh.ts / cellEdit.ts，均配 *.test.ts）
 │       ├── views/       QueryEditor（唯一视图）
-│       ├── components/  5 个 Modal 与 MenuBar
+│       ├── components/  业务组件（DatabaseTree / ResultGrid / ResultFilterPanel / HistoryPanel / SavedSQLPanel）+ 5 个 Modal + MenuBar
+│       ├── composables/ useMonaco.ts（编辑器初始化 / 懒加载 / 主题 / 事件桥接）、useSqlCompletion.ts（SQL 补全 provider + 缓存）
 │       └── locales/     zh.ts / en.ts
 ├── docs/                API.md / FEATURES.md / CODE_INDEX.md
 └── .trae/               PROJECT.md / rules/
@@ -83,6 +84,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | 查询 | `Query` / `CancelQuery` / `Execute` | SQL 错误放返回体 `.error`，非 Go error；`Query` 必须传 queryID 才能取消 |
 | 结果导出 | `GetResultExportFormats` / `SaveQueryResultAs` | |
 | 历史 | `GetQueryHistory` / `DeleteQueryHistory` / `ClearQueryHistory` / `recordHistory`（私有） | `recordHistory` 在 `Query` 后自动调用 |
+| 收藏 SQL | `GetSavedSQL` / `SaveSQL` / `UpdateSavedSQL` / `DeleteSavedSQL` | 无上限、无清空；重复 SQL 拒绝 |
 | 标签 | `GetTabs` / `SaveTabs` | |
 | 元数据 | `GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetClusters` | |
 | 其他 | `OpenConfigFolder` / `GetAppVersion` | |
@@ -102,11 +104,13 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | `Service.CancelQuery(queryID)` | 函数 | 取消运行中查询，返回是否真的找到并取消 |
 | `Service.Query(conn, sql, queryID)` | 函数 | 支持取消；取消时返回 `Error = "查询已取消"` |
 | `Service.Execute(conn, sql)` | 函数 | DDL/DML，返回 `ExecResult` |
+| `ensureMutationSync(sql)` | 函数 | mutation 语句（`ALTER ... UPDATE/DELETE`、`DELETE FROM`）自动追加 `SETTINGS mutations_sync = 2`，等服务端 mutation 完成才返回；已显式指定则不覆盖 |
+| `isMutationStatement(sql)` / `stripLeadingComments(sql)` / `hasSetting(sql, key)` | 函数 | 语句类型判定（跳过前置注释）、SETTINGS 键存在性检查 |
 | `buildDSN(conn)` | 函数 | 由 protocol + secure 决定 scheme |
 | `scanRows(ctx, rows, limit)` | 函数 | 逐行检查 ctx，使取消能在一行内生效 |
 | `errQueryCanceled` | 常量 | `"查询已取消"`，前端按此文案识别取消 |
 | `isCanceled(ctx)` | 函数 | 只认 `context.Canceled`，超时不算用户取消 |
-| `QueryResult` | struct | `columns` 现为 `[]ColumnInfo`（含 name/type/comment） |
+| `QueryResult` | struct | `columns` 现为 `[]ColumnInfo`（含 name/type/comment/is_primary/has_default） |
 | `ColumnInfo` / `TableInfo` / `ClusterInfo` | struct | 元数据返回结构 |
 | `DefaultQueryRowLimit` | 常量 | 见 export.go，50000 |
 
@@ -121,11 +125,15 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | `DefaultQueryRowLimit = 50000` | `Query` 的行数上限 |
 | `resultExportRegistry` | 私有注册表：`{Meta, Render}` |
 | `ResultExportFormats()` | 返回元信息列表，供前端下拉 |
-| `ExportResultByFormat(format, columns, rows)` | 按 ID 分发到 Render，返回 `(文本, 扩展名, error)` |
-| `renderResultCSV` / `renderResultJSON` / `renderResultMarkdown` | 具体渲染实现 |
+| `ExportResultByFormat(format, columns, rows, target)` | 按 ID 分发到 Render，返回 `(文本, 扩展名, error)`；`target` 仅 insert 格式使用 |
+| `renderResultCSV` / `renderResultJSON` / `renderResultMarkdown` / `renderResultInsert` | 具体渲染实现；`Render` 统一签名 `func(columns []string, rows [][]interface{}, target string)`，前三者忽略 `target` |
 | `escapeMarkdownCell` | Markdown 单元格转义：`\` 优先双写 → `|` 转 `\|` → 换行统一转 `<br>` |
+| `escapeInsertIdentifier` | INSERT 列名反引号包裹，内部反引号双写 |
+| `insertLiteral` / `escapeInsertString` | INSERT 值字面量，规则与 `frontend/src/utils/sqlLiteral.ts` 对齐（`\` 双写、`'` 转 `\'`、布尔 1/0、非有限浮点转 NULL） |
 
 **扩展方式**：向 `resultExportRegistry` 追加一项即可，前端自动感知。补测试到 [export_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_test.go)。
+
+> `insert` 格式依赖 `target`（目标表名），由 `App.SaveQueryResultAs` 的第四参数透传；前端在 [ResultGrid.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultGrid.vue) 弹出目标表对话框，默认值取侧边栏选中表，也允许手动输入。两处转义规则必须同步，`export_test.go` 有对应一致性用例。
 
 ### [internal/config/manager.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/manager.go)
 
@@ -177,6 +185,23 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | `HistoryManager` | 沿用 Manager 模式 |
 | `Add` | 新增后裁剪到上限 |
 
+> 与 [saved_sql.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/saved_sql.go) 语义必须保持分离：历史是自动流水、有上限、可清空；收藏是用户资产、无上限、不受清空历史影响。
+
+### [internal/config/saved_sql.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/saved_sql.go)
+
+职责：手动收藏 SQL 的持久化（`saved_sql.json`），模式同构于 history.go。
+
+| 符号 | 说明 |
+|---|---|
+| `SavedSQL` | id / name / sql / connectionId / createdAt / updatedAt |
+| `SavedSQLManager` | 沿用 Manager 模式：内存缓存 + `sync.RWMutex` + 变更后全量写回 |
+| `Add` | 追加到列表头部；空 SQL 拒绝、忽略首尾空白的重复 SQL 拒绝；`name` 为空时取 SQL 首个非空行（超 80 字符截断） |
+| `Update` | 按 ID 改标题与 SQL，保留 `CreatedAt`、刷新 `UpdatedAt` |
+| `Delete` | 按 ID 删除，不存在返回 `ErrSavedSQLNotFound` |
+| `ErrSavedSQLDuplicate` / `ErrSavedSQLNotFound` | 前端据此映射 `editor.savedDuplicate` 等提示 |
+
+> **无条数上限**，也不提供 `Clear` —— 收藏只能逐条删除，避免误操作清空用户资产。
+
 ### [internal/config/tabs.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/tabs.go)
 
 职责：标签页快照持久化（仅标题 + SQL + activeId，不存结果）。
@@ -195,9 +220,11 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | [export_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/export_test.go) | 5 格式渲染、脱敏**不改源数据**、转义、往返一致性 |
 | [import_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/import_test.go) | DBeaver 多版本兼容、CSV 缺列/短行、DSN 非法行、合并三场景、Manager 集成 |
 | [history_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/history_test.go) | 记录、上限裁剪、删除、清空 |
+| [saved_sql_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/saved_sql_test.go) | 新增 / 无上限 / 空 SQL 拒绝 / 重复拒绝 / 更新 / 删除 / **清空历史不影响收藏** / 重载 / 空文件 / 损坏文件 |
 | [tabs_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/tabs_test.go) | 快照读写、容错 |
 | [export_test.go（clickhouse）](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_test.go) | 结果集 CSV / JSON / Markdown 渲染（含 Markdown 竖线、换行、CRLF、反斜杠转义边界） |
 | [cancel_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/cancel_test.go) | 查询取消：空 ID、未注册、重复取消、注销清理、重复注册、超时不误判 |
+| [mutation_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/mutation_test.go) | `ensureMutationSync`：ALTER UPDATE/DELETE、DELETE FROM、大小写、前置注释、显式 mutations_sync 不覆盖、SELECT/INSERT/CREATE/ADD COLUMN 不误判、空语句与纯注释 |
 
 **测试风格约定**：表驱动；用例名用中文描述场景；重点覆盖「边界 + 错误 + 往返一致性」，不只测正常路径。
 
@@ -217,6 +244,7 @@ createPinia → router → i18n → 注册 v-focus 指令 → store.loadAll() �
 |---|---|
 | `v-focus` 自定义指令 | 全局可用，Modal 打开时自动聚焦 + `input` 自动全选 |
 | `store.loadAll()` | 在 mount 前调用，保证首屏已有数据 |
+| `app.config.errorHandler` | 运行时错误以红色横幅显示在页面顶部（配合 `index.html` 的 `window.onerror` / `unhandledrejection`）。**Vue 组件内错误默认不冒泡到 `window.onerror`**，没有这层捕获就只能看到白屏，无法定位 |
 
 新增全局插件 / 指令在此登记。
 
@@ -233,6 +261,7 @@ createPinia → router → i18n → 注册 v-focus 指令 → store.loadAll() �
 | 全局 Modal 宿主 | `ConnectionModal` / `FolderModal` 在此挂载，**不在 ConnectionManager 中** |
 | 全局右键菜单 | `ctxMenu` 状态（folder / connection 两类），统一渲染 |
 | 调试 debug | `console.log` 有 debug 开关 |
+| 启动行为 | `onMounted` 只 `loadAll()`，**不调用 `checkAllConnections()`**，保证默认不建任何连接 |
 
 **注意**：`ConnectionManager.vue` 里的 Modal 引用是历史遗留，真实宿主在 `App.vue`。
 
@@ -292,11 +321,11 @@ export const api = {
 
 | 状态 / 动作 | 说明 |
 |---|---|
-| `folders` / `connections` / `activeConnectionId` | 核心数据 |
+| `folders` / `connections` / `activeConnectionId` | 核心数据；`activeConnectionId` 初始为 `null` |
 | `connectionStatus` | 连通性缓存 |
 | `groupedConnections` | computed，按分组聚合 |
-| `loadAll` | 启动时拉全量 |
-| `checkConnection` | 状态检测 |
+| `loadAll` | 启动时拉全量配置（**只读本地 JSON，不建任何网络连接**） |
+| `checkConnection` / `checkAllConnections` | 连通性探测。**启动时不得自动调用**——它会真实 `TestConnection` 打后端，节点不可达就刷一屏 `dial tcp ... timeout`。仅在用户点连接、右键检查、导入配置后调用 |
 
 ### [utils/ddl.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/ddl.ts)
 
@@ -311,7 +340,7 @@ export const api = {
 
 ### [utils/tabs.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/tabs.ts)
 
-`QueryTab` 类型与工厂。每个标签独立持有 `sql` / `result` / `error` / `querying` / `queryId` / `canceled` / `resultScrollTop` / `viewState`。
+`QueryTab` 类型与工厂。每个标签独立持有 `sql` / `result` / `error` / `querying` / `queryId` / `canceled` / `resultScrollTop` / `viewState` / `page`（`page` 为 `PageState | null`，`null` 表示非分页的普通查询）/ `lastExecutedSql`（**最终发给后端**的语句，含分页 `LIMIT` 与筛选 `WHERE`，供「查看 SQL」面板展示）。
 
 ### [utils/resultTable.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/resultTable.ts)
 
@@ -342,6 +371,197 @@ export const api = {
 
 > 被 `QueryEditor.vue` 的结果单元格右键菜单使用。若后续做 SQL INSERT 导出，复用本文件而非另写转义。
 
+### [utils/explain.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/explain.ts)
+
+**纯函数，无副作用**，EXPLAIN 拼接与可解释性判定（P7-2）。
+
+| 符号 | 说明 |
+|---|---|
+| `EXPLAIN_MODES` | 四种模式：`PLAN` / `AST` / `PLAN_DETAIL` / `PIPELINE`，含显示名 i18n key |
+| `splitStatements(sql)` | 剥离 `--` / `#` / `/* */` 注释后按 `;` 切分，丢弃空段 |
+| `canExplain(sql)` | 仅单条且非 DDL/DML 等以 `BLOCKED_PREFIXES` 开头的语句返回 true |
+| `getExplainKeyword(mode)` | 模式 → `EXPLAIN` / `EXPLAIN AST` / `EXPLAIN PLAN` / `EXPLAIN PIPELINE` |
+| `buildExplainSQL(sql, mode)` | 取首条语句拼前缀；空内容返回空串 |
+
+> 前端零后端改动：拼好的 SQL 直接走现有 `api.Query`，结果复用结果表格。`QueryEditor.vue` 结果工具栏的「执行计划」按钮 + 模式下拉即由此驱动，按钮在 `querying` 或 `!canExplain` 时禁用。
+
+### [utils/sqlError.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/sqlError.ts)
+
+**纯函数，无副作用**，ClickHouse 错误文本友好化（P7-5）。
+
+| 符号 | 说明 |
+|---|---|
+| `parseSqlError(raw)` | 返回 `{ code, summary, raw }`：提炼错误码、一句话原因（`DB::Exception` 描述 + 高频码中文映射），原文完整保留 |
+| `extractErrorCode(text)` | 从 `Code: 60.` 提取数字，未命中返回 `null` |
+| `describeErrorCode(code)` | 高频错误码中文映射（60 表不存在 / 47 标识符 / 62 语法 / 159 超时 / 241 内存 等），未收录返回 `null` |
+| `firstLine(text)` | 无错误码时的回退首行 |
+| `isCanceledMessage(text, canceledText)` | 取消提示判定 |
+
+> 结果面板把 `summary` 作为短提示、`raw` 折叠在「展开原文」按钮后，避免友好化掩盖真实信息。
+
+### [utils/pagination.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/pagination.ts)
+
+**纯函数，无副作用**，结果集分页（P7-3，方案 A：前端拼 SQL）。
+
+| 符号 | 说明 |
+|---|---|
+| `DEFAULT_PAGE_SIZE` | 50000，与后端 `DefaultQueryRowLimit` 对齐 |
+| `splitStatements(sql)` | 剥注释后按 `;` 切分，注释中的分号不参与切分 |
+| `headKeyword(stmt)` | 取首关键字大写，兼容 `count(1)` 这种带括号写法 |
+| `isSingleSelect(sql)` | 可翻页判定：单条语句且首关键字为 `SELECT` / `WITH`，DDL/DML/SHOW/EXPLAIN 等一律拒绝 |
+| `buildPageSQL(sql, offset, pageSize)` | 追加 `LIMIT n OFFSET m`；剥离尾部空分号，负偏移归零、零页大小归 1、小数取整 |
+| `nextPage` / `prevPage` / `resetPage` | 分页状态推进，`prevPage` 不越过 0 |
+| `currentPageNumber` / `hasPrevPage` / `hasNextPage` | 页码与按钮可用性；`hasNextPage` 依据「结果行数 ≥ 页大小」判断最后一页 |
+
+> `ResultGrid` 的截断提示条右侧出现「上一页 / 第 N 页 / 下一页」，`QueryEditor` 的 `executeSelectedSQL(rawSQL, page)` 在 `page` 非空时用 `buildPageSQL` 拼装实际执行 SQL。后端零改动，`docs/API.md` 不变。
+
+### [utils/completionContext.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/completionContext.ts)
+
+**纯函数，无副作用**，SQL 补全的上下文判定（P8-3）。
+
+| 符号 | 说明 |
+|---|---|
+| `getCompletionContext(text, cursor)` | 返回 `{ kind, prefix, qualifier, preferTable, preferColumn }`：判定光标处于表名位置 / 列位置 / 其他；`kind` 为 `table` / `column` / `keyword` |
+| `extractTableRefs(sql)` | 从 `FROM` / `JOIN` / `INTO` 等子句提取库表引用与别名，单段表名（无库）忽略 |
+| `resolveQualifier(sql, qualifier)` | 按别名 → 表名 → 库表全名依次解析限定符，未命中返回 `null` |
+| `isCursorInComment(text, cursor)` | 光标是否落在 `/* */` 块注释或 `--` / `#` 行注释内，命中则不触发补全 |
+| `unquoteIdentifier(raw)` | 剥离反引号 / 双引号并还原转义，返回 `db.table` |
+| `filterByPrefix(items, prefix)` | 忽略大小写的前缀过滤 |
+
+> 判定规则要点：`FROM` / `JOIN` 之后到出现 `WHERE` / `ON` / `,` 等关键字之前视为表名位置；`db.` / 别名后的点触发列补全；其余位置按「SELECT 列表 → 列」，找不到上下文时退回关键字。
+
+### [utils/completionItems.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/completionItems.ts)
+
+**纯函数，无副作用**，把上下文 + 数据源组装为补全候选列表（P8-3）。
+
+| 符号 | 说明 |
+|---|---|
+| `SQL_KEYWORDS` | 静态关键字表（`SELECT` / `FROM` / `GROUP BY` / `JOIN` / `WITH` / `FORMAT` 等） |
+| `SQL_FUNCTIONS` | ClickHouse 常用函数与返回类型说明（`count` / `uniq` / `sum` / `toDateTime` 等） |
+| `buildCompletionItems(options)` | 按 `context.kind` 组装候选：表名位置给库名 + 全限定表名，列位置给列名（带 `db.table` 限定符时仅给该表列，SELECT 列表额外带表名），其他位置给关键字 + 函数 |
+| `CompletionItem` | `{ label, kind, detail, insertText }`；函数插入带左括号，表名插入反引号包裹的全名 |
+
+> 与 `useSqlCompletion.ts` 的分工：本文件不依赖 Monaco 与 API，纯数据组装，可完全单测；provider 只负责取数据、转 `CompletionItemKind` 与坐标换算。
+
+### [utils/resultView.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/resultView.ts)
+
+**纯函数，无副作用**，结果表格的复制字段与本地搜索能力。
+
+| 符号 | 说明 |
+|---|---|
+| `isEmptyCell(v)` | `null` / `undefined` 视为空 |
+| `collectColumnValues` / `distinctColumnValues` / `columnValuesText` | 按索引顺序取某列非空值 / 去重 / 换行拼接 |
+| `columnListText(columns, index)` | 取列标题，越界返回空串；表头菜单「复制列名」只取当前列 |
+| `cellText(v)` | 单元格转可搜索文本，空值转空串 |
+| `rowMatches(row, keyword, column)` | 单行匹配：关键字去首尾空白后忽略大小写子串匹配；`column >= 0` 只匹配该列，否则全列；空关键字恒真 |
+| `filterRowIndices(rows, keyword, column)` | 返回命中的原始行索引数组；空关键字返回全部索引，供 `rowIndices` 直接驱动虚拟滚动与复制字段 |
+
+> `ResultGrid` 的 `rowIndices` 由 `filterRowIndices(result.rows, searchText, searchColumn)` 计算：搜索为空时等价于原来的全量索引，搜索非空时虚滚动、复制字段、行数统计自动跟随过滤结果。
+
+### 空结果与空值约定（`QueryResult.rows`）
+
+后端 `scanRows` 以 `make([][]interface{}, 0)` 初始化，**0 行时返回 `[]` 而非 `nil`**（见 [service.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/service.go)）。但历史数据/兜底路径仍可能给 `null`，故 `frontend/src/types.ts` 将 `rows` 声明为 `any[][] | null`。
+
+> 正因为类型标了可空，`vue-tsc` 能全量揪出所有裸访问（本轮共 6 处：`DatabaseTree.vue` 的 DDL 取值、`ResultGrid.vue` 的导出 / 右键取行 / 取单元格值等）。约定：**访问 `result.rows` / `result.columns` 一律先判空或 `?.` + `?? []`**，不要写 `result.rows.length`。新增相关代码若出现 `TS18047`，说明漏了判空。
+
+### [utils/cellEdit.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/cellEdit.ts)
+
+**纯函数，无副作用**，结果单元格双击编辑 → `ALTER TABLE ... UPDATE` 语句生成（P10）。
+
+| 符号 | 说明 |
+|---|---|
+| `SourceRef` / `EditTarget` / `KeyColumn` | 源表引用（`database` 可空 + `table`）/ 编辑目标（列名 + 旧值 + 新值）/ 定位列（列名 + 值） |
+| `NO_SOURCE_HINT` | 无法定位源表时的提示文案（`JOIN` / `UNION` / 子查询场景） |
+| `stripComments(sql)` | 剥离 `/* */` / `--` / `#` 注释，避免注释中的 `FROM` 误判 |
+| `splitQualified(name)` | 拆 `db.table` / `table`，剥离反引号与引号，超过两段返回 `null` |
+| `parseQuerySource(sql)` | 从单表 `FROM` / `UPDATE` 提取源表；命中 `JOIN` / `UNION` / 带括号子查询 / `numbers` / `system` / `remote` / `cluster` 时返回 `null` |
+| `canEditCell(source, keyColumns)` | 允许编辑判定：源表可解析 + 至少一个定位列 + 定位列值全部非空 |
+| `isNumericType(type)` | 按 `U?Int*` / `Float*` / `Decimal` / `Bool` 前缀判定数值类型 |
+| `numericLiteral(raw)` | 合法数字字面量原样返回，否则回退 `sqlLiteral` |
+| `buildKeyCondition(keyColumns, columnType?)` | 生成 `\`col\` = 值 AND ...`，数值列不加引号 |
+| `buildAlterUpdateSQL(source, target, keyColumns, columnType?)` | 生成 `ALTER TABLE \`db\`.\`table\`\nUPDATE \`col\` = 值\nWHERE 条件;`；源表或定位列为空返回空串 |
+| `valueForEdit(raw)` | 单元格值 → 可编辑字符串，空值转空串 |
+| `AutoKeyInput` / `AutoKeyResult` | 自动选键输入（`columns` 含 `is_primary`、`rows`）/ 输出（`indexes` + `reason: 'primary' \| 'unique' \| 'all'`） |
+| `detectKeyColumns(input)` | **三级自动选键（对齐 DBeaver）**：① 有 `is_primary` 列 → 用全部主键列；② 无主键 → 取第一个「全非空且全唯一」列；③ 都没有 → 退化为**全部列**（因此绝大多数结果集无需手动指定即可编辑） |
+| `buildRowKeys(indexes, columns, row)` | 按列索引从当前行取出 `KeyColumn[]`，越界索引自动过滤 |
+
+> `ResultGrid` 双击单元格时用它算出 SQL，先**暂存到 `pendingEdits`**（单元格变琥珀色显示新值），底部操作条「应用修改」再一次性 `emit('apply-edits', statements)`；`QueryEditor.onResultApplyEdits` 逐条调 `api.Execute` 执行，全部成功后按当前查询刷新结果（`keepResult`），失败即停并写入 `tab.error`。另有「撤销修改」（清空待提交）与「填入编辑器」（`emit('edit-sql')` 批量填入 Monaco，不执行）。结果刷新 / 翻页后 `watch(result)` 清空待提交列表。
+>
+> **定位列（WHERE 依据）默认全自动**：`watch(result, { immediate: true })` 调 `detectKeyColumns` 算出 `autoKey`，表头以 `KEY` 徽标标出所选列。用户可在表头右键「用作编辑定位列」覆盖（`userKeyIndex >= 0` 时优先于自动结果，再点一次取消回到自动）。表头菜单顶部展示 `editKeyHint` 说明当前策略（主键 / 唯一列 / 全部列 / 手动）。
+>
+> 自动化依赖后端 `ColumnInfo.is_primary`：`GetTableSchema` 的 `DESCRIBE TABLE` 本就返回 `primary_key` 列，现已解析透出（见 `internal/clickhouse/service.go`），前端据此判定主键。
+
+### [utils/resultFilter.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/resultFilter.ts)
+
+**纯函数，无副作用**，结果区 DBeaver 风格排序 / 按值过滤，以及 Navicat 风格的多条件筛选：把表格操作翻译成 SQL 子句。
+
+| 符号 | 说明 |
+|---|---|
+| `FILTER_EQ` / `FILTER_NE` / `FILTER_GT` / `FILTER_GE` / `FILTER_LT` / `FILTER_LE` / `FILTER_LIKE` / `FILTER_NOT_LIKE` | 八种过滤操作符常量 |
+| `FILTER_OP_ORDER` | 菜单展示顺序 |
+| `isNullValue(v)` / `valuePreview(v, max)` | 空值判定；预览按「头…尾」截断（默认 18 字符） |
+| `opSymbol(op)` | 操作符 → SQL 符号（`NOT LIKE` 单独处理） |
+| `quoteColumn(column)` / `escapeSqlString(s)` | 列名反引号包裹；字符串单引号包裹并按 ClickHouse 规则转义 |
+| `filterExpression(col, op, value, percent)` | 生成条件表达式；空值 `=` → `IS NULL`、`<>` → `IS NOT NULL`；`LIKE` / `NOT LIKE` 统一走 `likePattern` 自动补 `%值%`（含 `%` / `_` 时不补） |
+| `conditionPreview(col, op, value)` | 菜单项文案（列 + 符号 + 截断值） |
+| `isConditionable(sql)` | 仅单条 `SELECT` / `WITH` 可用于追加条件 |
+| `appendSort(sql, conditions)` | 追加/替换 `ORDER BY`（列名 `quoteColumn`），保留前置注释与 `FORMAT` / `SETTINGS` 等尾部子句 |
+| `appendWhere(sql, exprs)` | 在 `ORDER BY` 之前追加 `WHERE`，多条件用 `AND` 连接 |
+| `FILTER_JOIN_AND` / `FILTER_JOIN_OR` / `FILTER_JOIN_ORDER` | 条件组之间的连接词常量与展示顺序 |
+| `FilterRule` / `FilterCondition` | 规则（操作符 + 值 + `numeric?`）/ 条件组（列 + 连接词 + 多条规则） |
+| `isNumericType(type)` | 按 `Nullable(U?Int* / Float* / Decimal*)` 前缀判定 ClickHouse 数值列 |
+| `rawFilterExpression(col, op, value, numeric)` | 单条规则 → 条件表达式；列名 `quoteColumn`；`numeric` 为真且输入是合法数字字面量时不加引号，否则回退 `escapeSqlString` |
+| `conditionExpression(condition)` | 条件组 → 表达式；单规则直接输出，多规则括号内 `OR` 拼接，空规则忽略 |
+| `buildFilterWhere(conditions)` | 多条件组按 `AND` / `OR` 拼成完整 `WHERE` 子句，空规则自动忽略，全部为空返回空串（筛选面板的只读预览也用它） |
+| `countActiveRules(conditions)` | 有效规则数（工具栏徽标用） |
+
+> `ResultGrid` 只管生成 SQL 并 `emit('rerun', sql)`，由 `QueryEditor.onResultRerun` 走既有 `executeSelectedSQL` 重跑，后端零改动。
+
+### [utils/autoRefresh.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/autoRefresh.ts)
+
+**纯函数，无副作用**，结果区定时刷新的秒数归一化与倒计时（P9-1）。
+
+| 符号 | 说明 |
+|---|---|
+| `AUTO_REFRESH_DISABLED` / `MIN_REFRESH_SECONDS` / `MAX_REFRESH_SECONDS` | `0` 关闭，允许 1–86400 秒 |
+| `AUTO_REFRESH_PRESETS` | 预设间隔 `[5, 10, 30, 60, 300]` |
+| `AUTO_REFRESH_STORAGE_KEY` | `meteor-ch.autoRefreshSeconds`，存 localStorage |
+| `normalizeSeconds(v)` | 非数字 / 小于 1 秒 → 关闭；小数向下取整；超过上限截断 |
+| `isRefreshEnabled(seconds)` / `intervalMs(seconds)` | 启用判定与毫秒换算 |
+| `isCustomPreset(seconds)` | 是否为非预设的自定义间隔（用于下拉补位） |
+| `formatSeconds(seconds)` | 倒计时/选项显示用字符串 |
+| `remainingSeconds(input)` | `{ enabled, intervalSeconds, lastRunAt, now }` → 剩余秒数，时钟回拨不出负数 |
+| `shouldFire(input)` | 是否已到触发时刻 |
+| `parseStoredSeconds(raw)` | 解析 localStorage 字符串 |
+
+> `ResultGrid` 用 1 秒 `setInterval` 驱动倒计时，到点 emit `refresh`；父组件 `QueryEditor.onResultRefresh` 以 `keepResult = true` 调 `executeSelectedSQL`，刷新过程中旧结果不闪空。查询进行中 `tickRefresh` 不叠加触发。
+
+### 前端单元测试
+
+`utils/` 下每个模块均有同名 `*.test.ts`，由 **Vitest 2.x**（与 vite 5 兼容，勿升到 5.x）驱动：
+
+```bash
+cd frontend && npm run test          # 单次
+cd frontend && npm run test:watch    # 监听
+```
+
+遵循项目后端同款约定：表驱动 + 中文用例名 + 覆盖正常 / 边界。当前覆盖 `ddl` / `tabs` / `resultTable` / `sqlLiteral` / `explain` / `sqlError` / `pagination` / `completionContext` / `completionItems` / `resultView` / `resultFilter` / `autoRefresh` / `cellEdit` 十三个模块（**440** 用例）。新增纯函数进 `utils/` 时同步补测试。
+
+### composables/
+
+#### [composables/useSqlCompletion.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/composables/useSqlCompletion.ts)
+
+SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端零改动）。
+
+| 符号 | 说明 |
+|---|---|
+| `createSqlCompletion(monaco, options)` | 工厂：返回 `{ register, invalidate, dispose }`；`options` 提供 `getConnectionId()` 与 `getText()` |
+| `register()` | 注册 `languages.registerCompletionItemProvider('sql', ...)`，触发字符为 `.` / 反引号 / 双引号 |
+| `invalidate(connectionId?)` | 清空库表列缓存；切换连接时由 `QueryEditor` 调用 |
+| 缓存 | 库 + 表清单按连接缓存（TTL 120s），列清单按 `connectionId|db|table` 缓存（TTL 120s）；同 key 并发请求复用同一 in-flight Promise，避免每次按键打后端 |
+
+> 候选上限 200 条，`CompletionItemKind` 映射：keyword → 14、function → 1、table → 6（Class）、column → 3（Field）。补全逻辑与 Monaco 核心 chunk 分离，`monaco-editor` chunk 体积不变（2,753 kB）。
+
 ### views/
 
 只有 [QueryEditor.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/views/QueryEditor.vue) 一个视图。
@@ -350,36 +570,53 @@ export const api = {
 
 #### [views/QueryEditor.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/views/QueryEditor.vue) ★
 
-**核心视图，承载 ~90% 业务逻辑**。文件较长，按区块阅读：
+**核心视图，负责布局与跨模块编排**。P7-1 起结果区已拆入 `components/ResultGrid.vue`、数据库树已拆入 `components/DatabaseTree.vue`、历史面板已拆入 `components/HistoryPanel.vue`、编辑器初始化已抽入 `composables/useMonaco.ts`，文件按区块阅读：
 
 | 区域 | 内容 |
 |---|---|
-| 顶部工具栏 | 连接选择、运行/取消按钮、历史开关、导出按钮 |
+| 顶部工具栏 | 连接选择、运行/取消按钮、历史开关、树刷新（调用 `databaseTreeRef.reload()`） |
 | 标签栏 | 多标签、双击重命名、关闭 |
-| 左侧树 | 数据库 → 表 / 视图分区，单击预览、右键菜单 |
-| 编辑器区 | Monaco（`editor.api.js` 精简入口 + SQL 语言包，均在 `onMounted` 内动态 import），`Ctrl+Enter` 执行，viewState 保存恢复 |
-| 结果区 | 表格（> 200 行走虚拟滚动）、截断提示条、导出下拉（CSV / JSON / Markdown）、单元格右键菜单 |
-| 历史面板 | 列表 + 单条删除 + 清空 |
-| Modal 宿主 | CreateTable / EditTable / DropConfirm / DDL |
-| 右键菜单 | 数据库菜单 / 表菜单，统一在此渲染 |
+| 左侧树 | 已拆出，见 [DatabaseTree.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/DatabaseTree.vue) |
+| 编辑器区 | 已抽入 [useMonaco.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/composables/useMonaco.ts)（懒加载 / 主题 / `Ctrl+Enter` / 事件桥接），本文件只保留 `restoreTab` / `saveActiveTabState` 等标签级 viewState 编排，`onMounted` 只调用 `initEditor()` |
+| 结果区 | 已拆出，见 [ResultGrid.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultGrid.vue) |
+| 历史面板 | 已拆出，见 [HistoryPanel.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/HistoryPanel.vue) |
+| 收藏面板 | 已拆出，见 [SavedSQLPanel.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/SavedSQLPanel.vue)；「收藏当前 SQL」对话框（`saveDialogVisible`，`Teleport to="body"`）留在本文件 |
 
 **关键函数**：
 
-| 函数 | 行 | 说明 |
-|---|---|---|
-| `runQuery` | ~255 | 取选区或全文 → `api.Query` → 写 `tab.result` / `tab.error` |
-| `exportResult` | ~290 | `api.SaveQueryResultAs`，用户取消不报错 |
-| `loadHistory` | ~310 | 拉历史列表 |
+| 函数 | 说明 |
+|---|---|
+| `executeSelectedSQL(rawSQL)` | 普通执行与 EXPLAIN 共用：`api.Query` → 写 `tab.result` / `tab.error` |
+| `runQuery` | `currentEditorSelection()` 取选区或全文 → `executeSelectedSQL` |
+| `cancelQuery` | 顶部运行按钮在 `querying` 时切换为取消，调用 `api.CancelQuery` |
+| `closeAllMenus` | 依次调用 `databaseTreeRef.closeMenus()` 与 `resultGridRef.closeMenus()` |
+| `onResultError` / `onResultScrollTop` | 接收 ResultGrid 的导出错误与滚动位置，写回活动标签 |
+| `onResultEditSql(sql)` | 接收 ResultGrid 双击编辑生成的 `ALTER TABLE ... UPDATE` 语句，`setValue` 进编辑器并聚焦，**不自动执行** |
+| `onTreePreview` / `onTreeSelectDB` / `onTreeInsertDDL` / `onTreeError` | 承接 DatabaseTree 的预览、选库、DDL 回填与错误上报 |
+| `restoreTab` | 切换标签时恢复 Monaco viewState 与结果滚动位置（`resultGridRef.restoreScroll`） |
+| `toggleHistory` / `applyHistory(sql)` | 翻转历史面板开关；接收 HistoryPanel 回填的 SQL 写入编辑器并同步到当前标签 |
+| `toggleSavedSQL` / `saveCurrentSQL` / `confirmSaveSQL` / `applySavedSQL` | 收藏面板开关（与历史面板互斥）、打开收藏对话框（预填 SQL 首行作标题）、提交收藏（捕获 name / sql / connectionId）、回填选中收藏到编辑器 |
 
 ### components/
 
 | 文件 | 职责 |
 |---|---|
+| [ResultGrid.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultGrid.vue) | 结果区整体：工具栏（搜索框 / 执行计划 / 导出 / 筛选 / 刷新）、截断提示、取消 / 错误 / 加载 / 空态 / 搜索无命中面板、虚拟滚动表格、单元格与表头右键菜单及复制逻辑、按值过滤弹层。props 收 `result / error / canceled / querying / availableSql / executedSql / insertDb / insertTable / scrollTop / page`，emit `explain / error / scroll-top / page / refresh / rerun / edit-sql`，**`defineExpose({ closeMenus, restoreScroll })`** —— 这两个方法被 `QueryEditor` 通过 `resultGridRef` 调用（全局点击关菜单、切换标签恢复滚动），删掉会导致 `xxx is not a function`。表格下方固定分页栏（「第 N 页」+ 上一页 / 下一页）由 `utils/pagination.ts` 驱动。**表头只响应右键**（`@contextmenu` + `cursor-context-menu`，左键不弹菜单）；表头菜单含「复制列名」（仅当前列，`copyHeaderColumnName`）与「复制列名（逗号分隔）」（全列）两项；`searchText` / `searchColumn` 驱动 `rowIndices`（`filterRowIndices`），`searchColumn` 越界自动回落全列。主内容区判定链固定为 `canceled → error → showLoading → isEmptyResult → searchNoMatch → hasTable → 初始提示`，派生状态 `showLoading`（`querying && !result`）、`showRefreshing`（`querying && result`，只显示工具栏小标识保留旧表格）、`isEmptyResult`（`row_count === 0`）、`hasTable`（有列）、`searchNoMatch`（有行数据但本地搜索零命中）：0 行结果不再渲染空表头表格，`filteredByServer` 为真时空态提示转为筛选语境并提供「清除筛选」重跑。**按值过滤有两种入口**：单元格右键（`openHeaderFilter`，`filterPanel.rowIndex >= 0`）显示单元格值对应的全量操作符选项；表头右键（`openHeaderValueFilter`，`rowIndex = -1`）打开 DBeaver 式面板——顶部 `filterCandidateFilter` 搜索框逐字过滤 `headerCandidateValues`（`collectColumnValues` 去重，受 `HEADER_VALUE_LIMIT` 限制，取当前 `rowIndices` 命中行），点值即 `列 = 值` 重跑，另有 `headerOperatorOptions()` 的 5 个常用操作符套用搜索框内容，以及「仅在 xxx 中搜索」把关键字交给本地搜索 |
+| [ResultFilterPanel.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultFilterPanel.vue) | 多条件筛选面板（Navicat 风格）：条件组增删、组间 AND / OR、规则增删与操作符切换、数值 / 文本模式切换、仅读 `WHERE` 预览、重置 / 应用。纯 UI，状态由 `ResultGrid` 持有；props 收 `visible / columns / conditions / error / applyDisabled`，emit `close / update:conditions / update:error / apply / clear`（`v-model:conditions` 与 `v-model:error`）。所有变更均以不可变方式回传新数组，不修改父级 props；列类型经 `isNumericType` 判定数值列并自动置 `numeric` |
+| [DatabaseTree.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/DatabaseTree.vue) | 左侧数据库树：库 / 表 / 视图 / 集群分区、表与库右键菜单、DDL 查看 / 建表 / 编辑 / DROP 全流程。props 收 `active / selectedDb / selectedTable`，emit `preview / select-db / append-uuid / insert-ddl / error`，暴露 `closeMenus` / `reload`；内部 `watch(activeConnectionId, immediate)` 自动加载库与集群 |
+| [HistoryPanel.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/HistoryPanel.vue) | 查询历史面板：列表、单条删除、清空、时间格式化、加载 / 空态。props 收 `visible`，emit `select`（回填 SQL）与 `close`，暴露 `reload`；内部 `watch(visible, immediate)` 自动拉取历史 |
+| [SavedSQLPanel.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/SavedSQLPanel.vue) | 已收藏 SQL 面板：列表、关键字过滤（标题 + SQL）、内联重命名、单条删除、时间格式化、加载 / 空态 / 无匹配态。props 收 `visible / connectionId`，emit `select / error / close`，暴露 `reload`；内部 `watch(visible, immediate)` 自动拉取。与 HistoryPanel 同构，无「清空」按钮 |
 | [MenuBar.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/MenuBar.vue) | 顶栏：连接选择器、语言切换、菜单 |
 | [ConnectionModal.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ConnectionModal.vue) | 新建/编辑连接表单 |
 | [FolderModal.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/FolderModal.vue) | 分组表单 |
 | [CreateTableModal.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/CreateTableModal.vue) | 可视化建表 + SQL 预览 |
 | [EditTableModal.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/EditTableModal.vue) | 加载 schema → MOD/REN/DROP/ADD → ALTER |
+
+### composables/
+
+| 文件 | 职责 |
+|---|---|
+| [useMonaco.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/composables/useMonaco.ts) | Monaco 编辑器生命周期：空 Blob Worker 的 `MonacoEnvironment` 安装、`editor.api.js` + SQL 语言包懒加载、`ch-dark` 主题、`Ctrl+Enter` / 内容变化 / 选区变化三个回调桥接（`onRun` / `onContentChange` / `onSelectionChange`）、`onBeforeUnmount` 自动 `dispose`。对外暴露 `editorRef` / `editor` / `initEditor(initialValue)` / `getEditor()` / `disposeEditor()` |
 
 ### locales/
 
@@ -397,6 +634,7 @@ export const api = {
 | 新增导出格式（结果集） | `clickhouse/export.go` 注册表 + `export_test.go` |
 | 调整行数上限 | `clickhouse/export.go` 的 `DefaultQueryRowLimit` |
 | 调整历史上限 | `config/history.go` 的 `HistoryMaxEntries` |
+| 新增持久化文件（无上限类） | 照 `config/saved_sql.go`：内存缓存 + RWMutex + 全量写回 |
 | 新增前端文案 | `locales/zh.ts` + `locales/en.ts` |
 | 新增 Modal | `components/` 新建 → 在目标 view 加 visible state |
 | 修改 DDL 生成 | `utils/ddl.ts`（纯函数，可直接单测） |

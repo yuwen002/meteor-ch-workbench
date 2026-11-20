@@ -56,6 +56,8 @@ export interface ColumnInfo {
   type: string
   default?: string
   comment?: string
+  is_primary?: boolean
+  has_default?: boolean
 }
 
 export interface TableInfo {
@@ -78,7 +80,7 @@ export interface ClusterInfo {
 
 export interface QueryResult {
   columns: ColumnInfo[]
-  rows: any[][]
+  rows: any[][] | null
   row_count: number
   elapsed_ms: number
   truncated: boolean
@@ -112,6 +114,15 @@ export interface HistoryEntry {
   timestamp: string
   duration_ms: number
   success: boolean
+}
+
+export interface SavedSQL {
+  id: string
+  name: string
+  sql: string
+  connection_id: string
+  created_at: string
+  updated_at: string
 }
 
 export interface ExecResult {

@@ -74,7 +74,6 @@ onMounted(async () => {
   window.addEventListener('click', onGlobalClick)
   window.addEventListener('contextmenu', hideContextMenu)
   await store.loadAll()
-  store.checkAllConnections()
 })
 
 onBeforeUnmount(() => {

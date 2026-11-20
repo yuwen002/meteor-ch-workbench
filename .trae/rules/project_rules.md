@@ -6,11 +6,24 @@
   ```bash
   cd frontend && npm run build
   ```
-- 若运行的是已打包的 `wails build` 可执行文件，还需重新 `wails build` 并重启程序。
+- 若运行的是已打包的可执行文件，需按下方「Windows 打包」重新构建并重启程序。
+
+## Windows 打包
+- 本项目是 Wails v3，本机 CLI 为 v2（不兼容），**不能用 `wails build`**，直接用 go 构建：
+  ```bash
+  go build -ldflags "-H windowsgui -s -w" -o meteor-ch-workbench.exe .
+  ```
+- `-H windowsgui` 必须加，否则 PE 子系统为 CONSOLE（Subsystem=3），Windows 会弹出一个 DOS 黑窗口；加了之后为 Subsystem=2。
+- `-s -w` 去掉符号表，体积约 29 MB → 22 MB。
+- 校验是否生效（PowerShell）：
+  ```powershell
+  $b=[System.IO.File]::ReadAllBytes((Resolve-Path 'meteor-ch-workbench.exe')); $pe=[BitConverter]::ToInt32($b,0x3C); [BitConverter]::ToUInt16($b,$pe+0x5C)  # 期望输出 2
+  ```
 
 ## 校验命令
 ```bash
 cd frontend && npx vue-tsc --noEmit   # 类型检查
+cd frontend && npm run test           # 前端纯函数单元测试（Vitest，改 utils/ 必须跑）
 cd frontend && npm run build          # 必须，产出 dist
 go build ./...                        # 后端编译
 go test ./...                         # 后端测试（改 internal/ 必须跑）
@@ -35,7 +48,7 @@ go test ./...                         # 后端测试（改 internal/ 必须跑�
 
 ## 前端结构约定
 - 组件层不直接写 `Call.ByName`，一律走 `api.ts`。
-- `utils/` 只放纯函数（如 `ddl.ts` / `tabs.ts`），不引入 store 或 API 调用。
+- `utils/` 只放纯函数（如 `ddl.ts` / `tabs.ts`），不引入 store 或 API 调用；**每个纯函数模块必须配同名 `*.test.ts`**（Vitest），测试沿用后端风格：表驱动 + 中文用例名 + 覆盖正常 / 边界。
 - Modal 统一用 `<Teleport to="body">`，z-index 2000 或 3000，关闭靠 `v-if + @click.self + Esc`。
 - 数据库树外层需要 `group` 类，内层按钮才能用 `group-hover:opacity-100` 显示。
 

@@ -291,8 +291,8 @@ interface ImportResult {
 QueryResult 结构：
 ```ts
 interface QueryResult {
-  columns: ColumnInfo[] // 列信息列表，每项含 name / type / comment
-  rows: any[][]         // 数据行
+  columns: ColumnInfo[] // 列信息列表，每项含 name / type / comment / is_primary / has_default
+  rows: any[][] | null  // 数据行；0 行时后端返回 []（旧版本可能为 null，前端按可空处理）
   row_count: number     // 总行数
   elapsed_ms: number    // 执行耗时
   truncated: boolean    // 是否因超过行数上限被截断
@@ -323,13 +323,16 @@ interface QueryResult {
 
 ---
 
-### Execute(connectionID, sql)
-执行 DDL / DML（CREATE / ALTER / DROP / INSERT 等）。
+### Execute
 
 | | |
 |---|---|
 | Go | `func (a *App) Execute(connectionID, sql string) (*clickhouse.ExecResult, error)` |
 | TS | `api.Execute(connectionID: string, sql: string): Promise<ExecResult>` |
+
+执行 DDL / DML（CREATE / ALTER / DROP / INSERT 等）。
+
+**mutation 同步**：若语句是 ClickHouse mutation（`ALTER TABLE ... UPDATE` / `ALTER TABLE ... DELETE` / `DELETE FROM`），后端自动追加 `SETTINGS mutations_sync = 2`，等 mutation 在全部副本完成后才返回，保证紧接着的查询能读到新数据；语句本身已显式包含 `mutations_sync` 时不覆盖。其余语句原样执行。判定逻辑见 `ensureMutationSync`。
 
 ExecResult 结构：
 ```ts
@@ -339,7 +342,7 @@ interface ExecResult {
 }
 ```
 
-> 同样，SQL 错误放在 `ExecResult.error` 而非 Go error。可视化建表 / 编辑表 / 删除表均使用此接口。
+> 同样，SQL 错误放在 `ExecResult.error` 而非 Go error。可视化建表 / 编辑表 / 删除表、结果单元格「应用修改」均使用此接口。
 
 ---
 
@@ -353,18 +356,22 @@ interface ExecResult {
 | Go | `func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat` |
 | TS | `api.GetResultExportFormats(): Promise<ResultExportFormat[]>` |
 
-当前支持：`csv` / `json` / `markdown`（注册表模式，新增格式只需在 `internal/clickhouse/export.go` 追加一项）。
+当前支持：`csv` / `json` / `markdown` / `insert`（注册表模式，新增格式只需在 `internal/clickhouse/export.go` 追加一项）。
+
+`insert` 需要在导出时提供目标表名（见下一节的 `target` 参数），渲染结果为单条 `INSERT INTO ... VALUES (...), (...);` 语句。字符串字面量的转义规则与前端 [sqlLiteral.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/sqlLiteral.ts) 完全一致（反斜杠双写、单引号转义为 `\'`、布尔转 `1/0`、非有限浮点转 `NULL`），两处改动必须同步。CSV / JSON / Markdown 忽略 `target`。
 
 ---
 
-### SaveQueryResultAs(format, columns, rows)
+### SaveQueryResultAs(format, columns, rows, target)
 把当前结果集按指定格式写入用户选择的文件。
 
 | | |
 |---|---|
-| Go | `func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}) (string, error)` |
-| TS | `api.SaveQueryResultAs(format: string, columns: string[], rows: any[][]): Promise<string>` |
+| Go | `func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}, target string) (string, error)` |
+| TS | `api.SaveQueryResultAs(format: string, columns: string[], rows: any[][], target?: string): Promise<string>` |
 | 返回 | 实际写入的文件路径（用户取消时为空） |
+
+`target` 仅 `insert` 格式使用（目标表名，可为 `db.table` 或带反引号的完整名）；其余格式传空字符串即可。
 
 > 由前端把已渲染的结果数据传回后端渲染落盘，不重新查库，因此导出的就是用户眼前这份数据（包括被截断的部分）。
 
@@ -413,6 +420,65 @@ interface HistoryEntry {
 |---|---|
 | Go | `func (a *App) ClearQueryHistory() error` |
 | TS | `api.ClearQueryHistory(): Promise<void>` |
+
+> 只清空查询历史（`history.json`），**不影响**已收藏的 SQL（`saved_sql.json`）。
+
+---
+
+### GetSavedSQL()
+返回全部手动收藏的 SQL，最近更新的排在最前。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetSavedSQL() ([]config.SavedSQL, error)` |
+| TS | `api.GetSavedSQL(): Promise<SavedSQL[]>` |
+
+```ts
+interface SavedSQL {
+  id: string
+  name: string          // 标题；留空时后端取 SQL 首个非空行
+  sql: string
+  connection_id: string
+  created_at: string
+  updated_at: string
+}
+```
+
+> 存于 `saved_sql.json`。与查询历史语义分离：收藏**无条数上限**，且不随「清空历史」删除。
+
+---
+
+### SaveSQL(name, sql, connectionId)
+收藏一条 SQL，返回新建记录。
+
+| | |
+|---|---|
+| Go | `func (a *App) SaveSQL(name string, sql string, connectionID string) (*config.SavedSQL, error)` |
+| TS | `api.SaveSQL(name: string, sql: string, connectionID: string): Promise<SavedSQL>` |
+
+`sql` 为空或与已有收藏（忽略首尾空白）重复时返回 error，文案分别含 `saved sql is empty` / `saved sql already exists`，前端据此提示。
+
+---
+
+### UpdateSavedSQL(id, name, sql)
+修改收藏的标题与 SQL 文本，`created_at` 保持不变，`updated_at` 刷新。
+
+| | |
+|---|---|
+| Go | `func (a *App) UpdateSavedSQL(id string, name string, sql string) (*config.SavedSQL, error)` |
+| TS | `api.UpdateSavedSQL(id: string, name: string, sql: string): Promise<SavedSQL>` |
+
+ID 不存在返回 `saved sql not found`；`sql` 为空同样报错。
+
+---
+
+### DeleteSavedSQL(id)
+删除指定 ID 的收藏记录；ID 不存在返回 `saved sql not found`。
+
+| | |
+|---|---|
+| Go | `func (a *App) DeleteSavedSQL(id string) error` |
+| TS | `api.DeleteSavedSQL(id: string): Promise<void>` |
 
 ---
 
@@ -508,8 +574,12 @@ interface ColumnInfo {
   type: string
   default?: string
   comment?: string
+  is_primary?: boolean   // 是否属于主键（DESCRIBE 的 primary_key = 1）
+  has_default?: boolean  // 是否有默认值表达式（DESCRIBE 的 default_type 非空）
 }
 ```
+
+> `is_primary` 用于结果单元格编辑时自动选取 WHERE 依据列（前端 `detectKeyColumns` 优先使用主键）。
 
 ---
 

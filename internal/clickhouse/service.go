@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,9 +26,11 @@ import (
 
 // ColumnInfo 描述表的一列结构信息。
 type ColumnInfo struct {
-	Name    string `json:"name"`    // 列名
-	Type    string `json:"type"`    // 列类型（如 String、UInt64、DateTime）
-	Comment string `json:"comment"` // 列注释
+	Name       string `json:"name"`        // 列名
+	Type       string `json:"type"`        // 列类型（如 String、UInt64、DateTime）
+	Comment    string `json:"comment"`     // 列注释
+	IsPrimary  bool   `json:"is_primary"`  // 是否属于主键（DESCRIBE 的 primary_key = 1）
+	HasDefault bool   `json:"has_default"` // 是否有默认值表达式（DESCRIBE 的 default_type 非空）
 }
 
 // TableInfo 描述一张表的基本信息。
@@ -236,7 +239,7 @@ func scanRows(ctx context.Context, rows *sql.Rows, limit int) ([][]interface{}, 
 	if err != nil {
 		return nil, false, err
 	}
-	var result [][]interface{}
+	var result [][]interface{} = make([][]interface{}, 0)
 	colCount := len(cols)
 	truncated := false
 	for rows.Next() {
@@ -342,13 +345,76 @@ func (s *Service) Exec(conn config.Connection, sqlText string) (*ExecResult, err
 	}
 
 	ctx := context.Background()
-	res, err := db.ExecContext(ctx, sqlText)
+	res, err := db.ExecContext(ctx, ensureMutationSync(sqlText))
 	if err != nil {
 		return &ExecResult{Error: err.Error()}, nil
 	}
 
 	affected, _ := res.RowsAffected()
 	return &ExecResult{RowsAffected: affected}, nil
+}
+
+// ensureMutationSync 对 ALTER ... UPDATE / DELETE 类 mutation 语句追加 SETTINGS mutations_sync=2，
+// 让服务端等 mutation 在全部副本上完成后才返回，避免调用方紧接着查询时仍读到旧数据。
+// 非 mutation 语句，或调用方已显式指定 mutations_sync 时原样返回。
+func ensureMutationSync(sqlText string) string {
+	if !isMutationStatement(sqlText) {
+		return sqlText
+	}
+	if hasSetting(sqlText, "mutations_sync") {
+		return sqlText
+	}
+	trimmed := strings.TrimRight(strings.TrimSpace(sqlText), ";")
+	return trimmed + " SETTINGS mutations_sync = 2"
+}
+
+// isMutationStatement 判断语句是否为 ClickHouse 需要等待完成的 mutation。
+// 只看首两个关键字：ALTER TABLE ... UPDATE / DELETE，以及独立的 DELETE FROM。
+func isMutationStatement(sqlText string) bool {
+	fields := strings.Fields(strings.ToUpper(stripLeadingComments(sqlText)))
+	if len(fields) == 0 {
+		return false
+	}
+	if fields[0] == "DELETE" {
+		return len(fields) > 1 && fields[1] == "FROM"
+	}
+	if fields[0] != "ALTER" || len(fields) < 3 {
+		return false
+	}
+	for _, f := range fields {
+		if f == "UPDATE" || f == "DELETE" {
+			return true
+		}
+	}
+	return false
+}
+
+// stripLeadingComments 去掉语句开头的空白与 -- / /* */ 注释，便于按关键字判断语句类型。
+func stripLeadingComments(sqlText string) string {
+	s := strings.TrimSpace(sqlText)
+	for {
+		if strings.HasPrefix(s, "--") {
+			if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+				s = strings.TrimSpace(s[idx+1:])
+				continue
+			}
+			return ""
+		}
+		if strings.HasPrefix(s, "/*") {
+			if idx := strings.Index(s, "*/"); idx >= 0 {
+				s = strings.TrimSpace(s[idx+2:])
+				continue
+			}
+			return ""
+		}
+		return s
+	}
+}
+
+// hasSetting 判断语句中是否已显式包含指定的 SETTINGS 键。
+func hasSetting(sqlText, key string) bool {
+	lower := strings.ToLower(sqlText)
+	return strings.Contains(lower, strings.ToLower(key)+" ")
 }
 
 // GetDatabases 返回该连接可见的全部数据库名（SHOW DATABASES）。
@@ -483,14 +549,22 @@ func (s *Service) GetTableSchema(conn config.Connection, database string, table 
 		}
 		info := ColumnInfo{}
 		for i, name := range cols {
-			sval, _ := vals[i].(string)
 			switch name {
-			case "name":
-				info.Name = sval
-			case "type":
-				info.Type = sval
-			case "comment":
-				info.Comment = sval
+			case "name", "type", "comment":
+				sval, _ := vals[i].(string)
+				switch name {
+				case "name":
+					info.Name = sval
+				case "type":
+					info.Type = sval
+				case "comment":
+					info.Comment = sval
+				}
+			case "primary_key":
+				info.IsPrimary = isTruthy(vals[i])
+			case "default_type":
+				sval, _ := vals[i].(string)
+				info.HasDefault = sval != ""
 			}
 		}
 		schema = append(schema, info)
@@ -655,6 +729,24 @@ func (s *Service) CloseAll() {
 // 外层加单引号，内部单引号按 SQL 标准双写。
 func quoteLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// isTruthy 判断驱动返回的标志位是否等价于「真」。
+// ClickHouse 的 DESCRIBE 中 primary_key 为 UInt8，驱动可能返回 uint8/int64/bool，
+// 也兼容字符串形式的 "1"，避免因类型断言失败而丢失主键信息。
+func isTruthy(v interface{}) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return t
+	case string:
+		return t == "1" || strings.EqualFold(t, "true")
+	case []byte:
+		return string(t) == "1" || strings.EqualFold(string(t), "true")
+	}
+	n, err := strconv.ParseFloat(fmt.Sprint(v), 64)
+	return err == nil && n != 0
 }
 
 // quoteIdent 把标识符（库名/表名）转义为合法的反引号标识符，

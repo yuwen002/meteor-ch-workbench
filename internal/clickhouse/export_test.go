@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"encoding/csv"
+	"math"
 	"strings"
 	"testing"
 )
@@ -12,7 +13,7 @@ func TestRenderResultCSVEscapes(t *testing.T) {
 		{"x,y", nil},
 		{`he said "hi"`, "line\nbreak"},
 	}
-	out, err := renderResultCSV(cols, rows)
+	out, err := renderResultCSV(cols, rows, "")
 	if err != nil {
 		t.Fatalf("renderResultCSV: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestRenderResultJSONPadsMissingCells(t *testing.T) {
 		{1, "two", []interface{}{3, 4}},
 		{5, "six"},
 	}
-	out, err := renderResultJSON(cols, rows)
+	out, err := renderResultJSON(cols, rows, "")
 	if err != nil {
 		t.Fatalf("renderResultJSON: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestRenderResultJSONPadsMissingCells(t *testing.T) {
 }
 
 func TestExportResultByFormatUnknown(t *testing.T) {
-	if _, _, err := ExportResultByFormat("xml", []string{"a"}, nil); err == nil {
+	if _, _, err := ExportResultByFormat("xml", []string{"a"}, nil, ""); err == nil {
 		t.Fatal("expected error for unsupported format")
 	}
 }
@@ -83,7 +84,7 @@ func TestRenderResultMarkdownStructure(t *testing.T) {
 	out, err := renderResultMarkdown([]string{"a", "b"}, [][]interface{}{
 		{"x,y", nil},
 		{`he said "hi"`, "line\nbreak"},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("renderResultMarkdown: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestRenderResultMarkdownEscapesBreakingChars(t *testing.T) {
 	out, err := renderResultMarkdown([]string{"c|1", "c2"}, [][]interface{}{
 		{"a|b", "multi\nline"},
 		{`back\slash`, "quote\"x"},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("renderResultMarkdown: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestRenderResultMarkdownEdgeCases(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			out, err := renderResultMarkdown(c.cols, c.rows)
+			out, err := renderResultMarkdown(c.cols, c.rows, "")
 			if err != nil {
 				t.Fatalf("renderResultMarkdown: %v", err)
 			}
@@ -167,7 +168,7 @@ func TestRenderResultMarkdownEdgeCases(t *testing.T) {
 }
 
 func TestExportResultByFormatMarkdown(t *testing.T) {
-	out, ext, err := ExportResultByFormat("markdown", []string{"a"}, [][]interface{}{{1}})
+	out, ext, err := ExportResultByFormat("markdown", []string{"a"}, [][]interface{}{{1}}, "")
 	if err != nil {
 		t.Fatalf("ExportResultByFormat: %v", err)
 	}
@@ -176,6 +177,138 @@ func TestExportResultByFormatMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(out, "| a |") {
 		t.Fatalf("unexpected markdown output: %s", out)
+	}
+}
+
+// TestInsertLiteral 覆盖单元格值 → SQL 字面量，规则与前端 sqlLiteral.ts 对齐。
+func TestInsertLiteral(t *testing.T) {
+	cases := []struct {
+		name string
+		in   interface{}
+		want string
+	}{
+		{"nil 输出 NULL", nil, "NULL"},
+		{"普通字符串", "abc", "'abc'"},
+		{"单引号反斜杠转义", "a'b", `'a\'b'`},
+		{"反斜杠先双写", `a\b`, `'a\\b'`},
+		{"换行保持原样", "line1\nline2", "'line1\nline2'"},
+		{"空字符串", "", "''"},
+		{"整数", 42, "42"},
+		{"浮点数", 1.5, "1.5"},
+		{"NaN 转 NULL", math.NaN(), "NULL"},
+		{"Inf 转 NULL", math.Inf(1), "NULL"},
+		{"true 转 1", true, "1"},
+		{"false 转 0", false, "0"},
+		{"字节串按字符串处理", []byte("a'b"), `'a\'b'`},
+		{"中文", "中文", "'中文'"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := insertLiteral(c.in); got != c.want {
+				t.Fatalf("insertLiteral(%v) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestEscapeInsertIdentifier 覆盖标识符反引号包裹与内部反引号双写。
+func TestEscapeInsertIdentifier(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"普通列名", "a", "`a`"},
+		{"内部反引号双写", "a`b", "`a``b`"},
+		{"中文列名", "用户", "`用户`"},
+		{"空列名", "", "``"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := escapeInsertIdentifier(c.in); got != c.want {
+				t.Fatalf("escapeInsertIdentifier(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRenderResultInsertStructure(t *testing.T) {
+	out, err := renderResultInsert(
+		[]string{"a", "b"},
+		[][]interface{}{{"x'y", nil}, {"plain", 1}},
+		"`db`.`t`",
+	)
+	if err != nil {
+		t.Fatalf("renderResultInsert: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("want 1 line (single INSERT statement), got %d: %q", len(lines), out)
+	}
+	want := "INSERT INTO `db`.`t` (`a`, `b`) VALUES ('x\\'y', NULL), ('plain', 1);"
+	if lines[0] != want {
+		t.Fatalf("unexpected statement: %q, want %q", lines[0], want)
+	}
+}
+
+func TestRenderResultInsertEdgeCases(t *testing.T) {
+	cases := []struct {
+		name    string
+		cols    []string
+		rows    [][]interface{}
+		target  string
+		wantErr bool
+		wantHas string
+	}{
+		{"目标表为空报错", []string{"a"}, [][]interface{}{{1}}, "", true, ""},
+		{"目标表仅空白报错", []string{"a"}, [][]interface{}{{1}}, "   ", true, ""},
+		{"零行只输出语句骨架", []string{"a"}, nil, "t", false, "INSERT INTO t (`a`) VALUES ;"},
+		{"缺列的行补 NULL", []string{"a", "b"}, [][]interface{}{{1}}, "t", false, "(1, NULL);"},
+		{"零列退化", nil, [][]interface{}{{}}, "t", false, "INSERT INTO t () VALUES ();"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := renderResultInsert(c.cols, c.rows, c.target)
+			if c.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("renderResultInsert: %v", err)
+			}
+			if !strings.Contains(out, c.wantHas) {
+				t.Fatalf("output %q does not contain %q", out, c.wantHas)
+			}
+		})
+	}
+}
+
+func TestExportResultByFormatInsert(t *testing.T) {
+	out, ext, err := ExportResultByFormat("insert", []string{"a"}, [][]interface{}{{1}}, "test_table")
+	if err != nil {
+		t.Fatalf("ExportResultByFormat: %v", err)
+	}
+	if ext != "sql" {
+		t.Fatalf("want extension sql, got %q", ext)
+	}
+	if !strings.Contains(out, "INSERT INTO test_table") {
+		t.Fatalf("unexpected insert output: %s", out)
+	}
+}
+
+func TestExportResultByFormatIgnoresTargetForOtherFormats(t *testing.T) {
+	csvOut, _, err := ExportResultByFormat("csv", []string{"a"}, [][]interface{}{{1}}, "")
+	if err != nil {
+		t.Fatalf("ExportResultByFormat csv: %v", err)
+	}
+	csvOutWithTarget, _, err := ExportResultByFormat("csv", []string{"a"}, [][]interface{}{{1}}, "some_table")
+	if err != nil {
+		t.Fatalf("ExportResultByFormat csv with target: %v", err)
+	}
+	if csvOut != csvOutWithTarget {
+		t.Fatalf("target must not affect csv output: %q vs %q", csvOut, csvOutWithTarget)
 	}
 }
 
