@@ -129,13 +129,27 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | `ExportResultByFormat(format, columns, rows, target)` | 兼容层：基于 `bytes.Buffer` 调 `ExportResultTo`，返回 `(文本, 扩展名, error)`，与流式输出逐字节一致 |
 | `ResultExportExtension(format)` | 查询格式对应的扩展名，未知格式返回空串 |
 | `renderResultCSV` / `renderResultJSON` / `renderResultMarkdown` / `renderResultInsert` | 具体渲染实现（`*To` 版本）；前三者忽略 `target` |
+| `renderResultJSONLTo` | JSON Lines：每行一个对象，缺列补 `null`，按 4 KB 刷盘 |
+| `renderResultTSVTo` / `escapeTSVCell` | TSV：表头 + 数据，单元格 `\`（先双写）、`\t`、`\r\n`、`\n`、`\r` 转义 |
+| `renderResultDDLTo` / `inferColumnType` | 建表 + INSERT：按列首个非空值推断 `Int64` / `Float64` / `UInt8` / `String`，`target` 必填 |
+| `flushBuilder` | 通用流式刷盘：缓冲达到阈值时写 `io.Writer` 并清空 |
 | `escapeMarkdownCell` | Markdown 单元格转义：`\` 优先双写 → `|` 转 `\|` → 换行统一转 `<br>` |
 | `escapeInsertIdentifier` | INSERT 列名反引号包裹，内部反引号双写 |
 | `insertLiteral` / `escapeInsertString` | INSERT 值字面量，规则与 `frontend/src/utils/sqlLiteral.ts` 对齐（`\` 双写、`'` 转 `\'`、布尔 1/0、非有限浮点转 NULL） |
 
-**扩展方式**：向 `resultExportRegistry` 追加一项即可，前端自动感知。补测试到 [export_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_test.go)。
+**Excel 单独成文件**：[export_xlsx.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_xlsx.go) 负责 `.xlsx` 渲染（依赖 `github.com/xuri/excelize/v2`），因为 xlsx 是 zip 容器，无法逐行写文本，需先在内存中构建工作簿再整体写出。要点：
 
-> `insert` 格式依赖 `target`（目标表名），由 `App.SaveQueryResultAs` 的第四参数透传；前端在 [ResultGrid.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultGrid.vue) 弹出目标表对话框，默认值取侧边栏选中表，也允许手动输入。两处转义规则必须同步，`export_test.go` 有对应一致性用例。
+| 符号 | 说明 |
+|---|---|
+| `renderResultXLSXTo` | 工作簿字节流写入 `io.Writer`，签名与其他格式一致 |
+| `buildXLSX` | 单工作表 `Result`（删除默认 `Sheet1`）、表头加粗、冻结首行、自动筛选、列宽自适应 |
+| `setXLSXCell` | 按类型写单元格：数值 → 数字、布尔 → `TRUE/FALSE`、非有限浮点转文本、其余 → 字符串 |
+| `columnAxis` / `xlsxColumnWidth` / `displayWidth` / `isWideRune` | 列名换算（上限 16384 列）与列宽估算（CJK 双宽，夹在 8–60） |
+| `truncateRunes` / `xlsxMaxCellRunes` | 按字符截断到 32767，避免 Excel 报文件损坏 |
+
+**扩展方式**：向 `resultExportRegistry` 追加一项即可，前端自动感知。补测试到 [export_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_test.go) 或按格式拆到 [export_formats_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_formats_test.go)。
+
+> `insert` / `sql_ddl` 依赖 `target`（目标表名），由 `App.SaveQueryResultAs` 的第四参数透传；前端在 [ResultGrid.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultGrid.vue) 弹出目标表对话框，默认值取侧边栏选中表，也允许手动输入（`sql_ddl` 无目标表时回退占位符 `your_table`）。两处转义规则必须同步，`export_test.go` 有对应一致性用例。
 
 ### [internal/config/manager.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/manager.go)
 
@@ -235,6 +249,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | [saved_sql_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/saved_sql_test.go) | 新增 / 无上限 / 空 SQL 拒绝 / 重复拒绝 / 更新 / 删除 / **清空历史不影响收藏** / 重载 / 空文件 / 损坏文件 |
 | [tabs_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/config/tabs_test.go) | 快照读写、容错 |
 | [export_test.go（clickhouse）](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_test.go) | 结果集 CSV / JSON / Markdown 渲染（含 Markdown 竖线、换行、CRLF、反斜杠转义边界） |
+| [export_formats_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_formats_test.go) | JSONL 逐行合法性、TSV 转义与列数、DDL 建表结构与类型推断、Excel 内容 / 截断 / 列名换算 / 写入失败 |
 | [cancel_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/cancel_test.go) | 查询取消：空 ID、未注册、重复取消、注销清理、重复注册、超时不误判 |
 | [mutation_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/mutation_test.go) | `ensureMutationSync`：ALTER UPDATE/DELETE、DELETE FROM、大小写、前置注释、显式 mutations_sync 不覆盖、SELECT/INSERT/CREATE/ADD COLUMN 不误判、空语句与纯注释 |
 

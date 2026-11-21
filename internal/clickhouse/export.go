@@ -66,6 +66,35 @@ var resultExportRegistry = []struct {
 		},
 		RenderTo: renderResultInsertTo,
 	},
+	{
+		Meta: ResultExportFormat{
+			ID: "jsonl", Name: "JSON Lines", Extension: "jsonl", Mime: "application/x-ndjson",
+			Description: "每行一个 JSON 对象，适合流式处理与 jq / 数据管道，无内存峰值",
+		},
+		RenderTo: renderResultJSONLTo,
+	},
+	{
+		Meta: ResultExportFormat{
+			ID: "tsv", Name: "TSV", Extension: "tsv", Mime: "text/tab-separated-values",
+			Description: "制表符分隔，粘贴到表格工具不易串列，ClickHouse 原生格式",
+		},
+		RenderTo: renderResultTSVTo,
+	},
+	{
+		Meta: ResultExportFormat{
+			ID: "xlsx", Name: "Excel", Extension: "xlsx",
+			Mime:        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			Description: "真正的 .xlsx 工作簿，表头冻结、列宽自适应，可直接交付给非技术同事",
+		},
+		RenderTo: renderResultXLSXTo,
+	},
+	{
+		Meta: ResultExportFormat{
+			ID: "sql_ddl", Name: "SQL DDL + INSERT", Extension: "sql", Mime: "text/plain",
+			Description: "先 CREATE TABLE 再 INSERT，可在新库一键建表回灌，需指定目标表",
+		},
+		RenderTo: renderResultDDLTo,
+	},
 }
 
 // ResultExportFormats 返回全部结果集导出格式元信息，供前端渲染格式选择。
@@ -271,6 +300,130 @@ func flushBuilder(w io.Writer, b *strings.Builder) error {
 	}
 	b.Reset()
 	return nil
+}
+
+// renderResultJSONLTo 把结果集渲染为 JSON Lines（每行一个 JSON 对象，无分隔逗号）。
+// 与 JSON 格式的区别：不整表包成数组，任意行都能独立解析，适合 jq / 流式管道；
+// 且无需回读已写内容，天然支持极大的结果集。
+// 缺少列的单元格以 null 填充，键顺序与 JSON 格式一致（map 序列化按键名排序）。
+func renderResultJSONLTo(w io.Writer, columns []string, rows [][]interface{}, _ string) error {
+	var b strings.Builder
+	for _, row := range rows {
+		item := make(map[string]interface{}, len(columns))
+		for ci, col := range columns {
+			if ci < len(row) {
+				item[col] = row[ci]
+			} else {
+				item[col] = nil
+			}
+		}
+		line, err := json.Marshal(item)
+		if err != nil {
+			return err
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+		if b.Len() >= 4096 {
+			if err := flushBuilder(w, &b); err != nil {
+				return err
+			}
+		}
+	}
+	return flushBuilder(w, &b)
+}
+
+// renderResultTSVTo 把结果集渲染为 TSV，首行为列名。
+// 单元格内的制表符、换行、回车会破坏「一行一记录」的结构，
+// 按 ClickHouse 原生 TSV 约定转义为 \t / \n / \r，反斜杠本身先双写。
+func renderResultTSVTo(w io.Writer, columns []string, rows [][]interface{}, _ string) error {
+	var b strings.Builder
+	for i, col := range columns {
+		if i > 0 {
+			b.WriteByte('\t')
+		}
+		b.WriteString(escapeTSVCell(col))
+	}
+	b.WriteByte('\n')
+	for _, row := range rows {
+		for i := range columns {
+			if i > 0 {
+				b.WriteByte('\t')
+			}
+			if i < len(row) {
+				b.WriteString(escapeTSVCell(cellText(row[i])))
+			}
+		}
+		b.WriteByte('\n')
+		if b.Len() >= 4096 {
+			if err := flushBuilder(w, &b); err != nil {
+				return err
+			}
+		}
+	}
+	return flushBuilder(w, &b)
+}
+
+// escapeTSVCell 转义会破坏 TSV 行结构或与 ClickHouse 转义语法冲突的字符。
+// 顺序很关键：反斜杠必须最先双写，否则会把后面新增的转义符再转义一遍。
+func escapeTSVCell(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "\t", `\t`)
+	s = strings.ReplaceAll(s, "\r\n", `\n`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	return s
+}
+
+// renderResultDDLTo 把结果集渲染为「建表 + 插入」的完整 SQL 脚本。
+// 列类型按取值推断：整数 → Int64、浮点 → Float64、布尔 → UInt8、其余 → String，
+// 便于在没有原表结构时先建出一张可用表；target 为目标表名（必填）。
+// 数据部分复用 renderResultInsertTo，转义规则与纯 INSERT 导出一致。
+func renderResultDDLTo(w io.Writer, columns []string, rows [][]interface{}, target string) error {
+	table := strings.TrimSpace(target)
+	if table == "" {
+		return errors.New("ddl target table is required")
+	}
+	var b strings.Builder
+	b.WriteString("CREATE TABLE IF NOT EXISTS ")
+	b.WriteString(table)
+	b.WriteString(" (\n")
+	for i, col := range columns {
+		b.WriteString("  ")
+		b.WriteString(escapeInsertIdentifier(col))
+		b.WriteByte(' ')
+		b.WriteString(inferColumnType(rows, i))
+		if i < len(columns)-1 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('\n')
+	}
+	b.WriteString(");\n")
+	if err := flushBuilder(w, &b); err != nil {
+		return err
+	}
+	return renderResultInsertTo(w, columns, rows, target)
+}
+
+// inferColumnType 按该列首个非空值的类型推断 SQL 列类型，全部为空时回落 String。
+func inferColumnType(rows [][]interface{}, colIndex int) string {
+	for _, row := range rows {
+		if colIndex >= len(row) {
+			continue
+		}
+		switch row[colIndex].(type) {
+		case nil:
+			continue
+		case bool:
+			return "UInt8"
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			return "Int64"
+		case float32, float64:
+			return "Float64"
+		default:
+			return "String"
+		}
+	}
+	return "String"
 }
 
 // renderResultCSV 把结果集渲染为 CSV，首行为列名。

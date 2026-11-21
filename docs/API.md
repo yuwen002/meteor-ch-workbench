@@ -358,9 +358,28 @@ interface ExecResult {
 | Go | `func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat` |
 | TS | `api.GetResultExportFormats(): Promise<ResultExportFormat[]>` |
 
-当前支持：`csv` / `json` / `markdown` / `insert`（注册表模式，新增格式只需在 `internal/clickhouse/export.go` 追加一项）。
+当前支持 8 种格式（注册表模式，新增格式只需在 `internal/clickhouse/export.go` 追加一项，前端自动感知）：
 
-`insert` 需要在导出时提供目标表名（见下一节的 `target` 参数），渲染结果为单条 `INSERT INTO ... VALUES (...), (...);` 语句。字符串字面量的转义规则与前端 [sqlLiteral.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/sqlLiteral.ts) 完全一致（反斜杠双写、单引号转义为 `\'`、布尔转 `1/0`、非有限浮点转 `NULL`），两处改动必须同步。CSV / JSON / Markdown 忽略 `target`。
+| id | 名称 | 扩展名 | 说明 | 用到 `target` |
+|---|---|---|---|---|
+| `csv` | CSV | `.csv` | 通用表格格式，首行列名 | 否 |
+| `json` | JSON | `.json` | 整表数组，便于程序读取 | 否 |
+| `markdown` | Markdown | `.md` | 直接贴进文档的表格 | 否 |
+| `insert` | SQL INSERT | `.sql` | 单条 `INSERT INTO ... VALUES (...), (...);` | 是 |
+| `jsonl` | JSON Lines | `.jsonl` | 每行一个 JSON 对象，流式、可被 jq / 数据管道逐行消费 | 否 |
+| `tsv` | TSV | `.tsv` | 制表符分隔，ClickHouse 原生格式，粘贴到表格工具不易串列 | 否 |
+| `xlsx` | Excel | `.xlsx` | 真正的 Excel 工作簿：表头加粗冻结、自动筛选、列宽自适应 | 否 |
+| `sql_ddl` | SQL DDL + INSERT | `.sql` | 先 `CREATE TABLE` 再插入，可在新库一键建表回灌 | 是 |
+
+`insert` 与 `sql_ddl` 需要导出时提供目标表名（见下一节的 `target` 参数）。`insert` 渲染为单条 `INSERT INTO ... VALUES (...), (...);`；`sql_ddl` 在其前面追加 `CREATE TABLE IF NOT EXISTS`，列类型按该列首个非空值推断（整数 → `Int64`、浮点 → `Float64`、布尔 → `UInt8`、其余 → `String`，整列为空回落 `String`）。
+
+字符串字面量的转义规则与前端 [sqlLiteral.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/sqlLiteral.ts) 完全一致（反斜杠双写、单引号转义为 `\'`、布尔转 `1/0`、非有限浮点转 `NULL`），两处改动必须同步。
+
+其余格式均忽略 `target`：
+
+- **`jsonl`**：每行一个对象，缺列补 `null`，单元格内的换行与引号由 `encoding/json` 转义，保证「一行一记录」。
+- **`tsv`**：单元格内的 `\`、`\t`、`\r\n` 按 ClickHouse 原生 TSV 约定转义为 `\\`、`\t`、`\n`（反斜杠最先双写），不会破坏列结构。
+- **`xlsx`**：单工作表 `Result`；数值列写入数字类型（Excel 可直接求和），布尔写 `TRUE/FALSE`，非有限浮点（NaN / Inf）转文本；超过 32767 字符的单元格按字符截断并追加 `...`；列宽按内容宽度估算（CJK 按双宽计），夹在 8–60 之间。由于 xlsx 是 zip 容器，内部先构建工作簿再整体写出，不适用「逐行写」的流式优化，超大结果集导出时内存占用高于文本格式。
 
 ---
 
@@ -373,7 +392,7 @@ interface ExecResult {
 | TS | `api.SaveQueryResultAs(format: string, columns: string[], rows: any[][], target?: string): Promise<string>` |
 | 返回 | 实际写入的文件路径（用户取消时为空） |
 
-`target` 仅 `insert` 格式使用（目标表名，可为 `db.table` 或带反引号的完整名）；其余格式传空字符串即可。
+`target` 仅 `insert` / `sql_ddl` 格式使用（目标表名，可为 `db.table` 或带反引号的完整名，必填，为空时报错）；`sql_ddl` 未指定表名时前端会回退到占位符 `your_table`。其余格式传空字符串即可。
 
 > 由前端把已渲染的结果数据传回后端渲染落盘，不重新查库，因此导出的就是用户眼前这份数据（包括被截断的部分）。
 >

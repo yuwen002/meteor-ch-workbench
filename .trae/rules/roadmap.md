@@ -1,6 +1,6 @@
 # 开发路线图
 
-> 本文件是**已完成能力与后续计划的唯一真相源**，按阶段（P1–P12）记录问题、方案、落地结果与验收标准。
+> 本文件是**已完成能力与后续计划的唯一真相源**，按阶段（P1–P14）记录问题、方案、落地结果与验收标准。
 > 与其他文档分工：`docs/FEATURES.md` 面向用户，`docs/API.md` 面向接口契约，`docs/CODE_INDEX.md` 面向文件职责。
 > 更新时间：2026-11-22
 
@@ -20,6 +20,8 @@
 | P10 | 结果区体验补齐（单元格编辑 / 工具栏整理 / 启动不连接） | 已完成 |
 | P11 | 单元格编辑收口 + `ResultGrid` 拆分 | 已完成 |
 | P12 | 批量执行 / 流式导出 / 行数上限 / 壳层瘦身 | 已完成 |
+| P13 | 结果集导出格式扩容（Excel / JSONL / TSV / DDL） | 已完成 |
+| P14 | 工程收口（查询并发正确性 / 组件测试 / 后端拆分 / 连接生命周期 / 文档纠偏） | 计划中 |
 
 约定：阶段标题统一为 `### Px 主题`，其下依次是「目标」行、`**状态：...**` 行、条目表（或 `**落地结果**` 列表）；单项交付记录固定为「问题 → 方案 → 落地结果 → 验收」四段，验收始终放在末尾。
 
@@ -869,12 +871,172 @@ P11 收口后自审发现的性能与可配置性短板：批量编辑的逐条�
 
 **说明**：隐藏列只在渲染层过滤，不改 `result.columns` / `result.rows` 数据结构，因此筛选、编辑与右键菜单仍使用完整列与原始列索引，不会错位。导出与复制则按 `columnIndexes` 裁剪，保证「界面看不到的列不会被带出去」；若要从数据层彻底去掉某列（连执行计划与导出都少一列），用「隐藏此列（改写 SQL）」，由 `sqlProjection.ts` 改写 `SELECT` 投影后重跑，仅支持单条 `SELECT` / `WITH`。
 
+### P13 结果集导出格式扩容（Excel / JSONL / TSV / DDL）
+
+**目标**：结果导出从 4 种扩到 8 种，覆盖「交付给非技术同事」「喂给数据管道」「一键建表回灌」三类真实诉求，前端零改动。
+
+**状态：已完成（2026-11-22）**
+
+| # | 条目 | 状态 |
+|---|---|---|
+| P13-1 | JSON Lines（`.jsonl`） | ✅ |
+| P13-2 | TSV（`.tsv`） | ✅ |
+| P13-3 | Excel（`.xlsx`，引入 excelize） | ✅ |
+| P13-4 | SQL DDL + INSERT（含类型推断） | ✅ |
+| P13-5 | 测试与文档同步 | ✅ |
+
+#### P13-1 JSON Lines ✅ 已完成
+
+**问题**：整体 JSON 必须把全部行包成一个数组，只有读到文件末尾才闭合，任何流式消费者（`jq --stream`、日志采集、断点续传）都无法逐行处理；结果极大时也无法边写边用。
+
+**落地结果**：`renderResultJSONLTo` 每行一个对象、`\n` 结尾，缺列补 `null`，单元格内的换行与引号交给 `encoding/json` 转义，保证「一行一记录」；按 4 KB 刷盘，复用新增的 `flushBuilder`。注册表新增 `jsonl` 项，前端自动出现按钮。
+
+**验收**：`export_formats_test.go` 覆盖两行各成一行、缺列补 null、零行输出空内容、含换行与引号仍为单行；另有用例逐行 `json.Unmarshal` 验证每行独立合法。
+
+#### P13-2 TSV ✅ 已完成
+
+**问题**：CSV 对逗号、引号、换行的处理会让粘贴到表格工具时出现引号噪音；ClickHouse 自身生态惯用 TSV，二者缺一。
+
+**落地结果**：`renderResultTSVTo` 输出表头行 + 数据行；`escapeTSVCell` 按 ClickHouse 原生约定转义 `\`（最先双写）、`\t`、`\r\n`、`\n`、`\r`，确保单元格内出现制表符时不会多出一列。
+
+**验收**：覆盖表头 + 两行、缺列留空、零行只有表头、含制表符的单元格转义后列数仍与表头一致；`escapeTSVCell` 单独覆盖 8 种输入（含反斜杠与制表符叠加）。
+
+#### P13-3 Excel ✅ 已完成
+
+**问题**：原来的「CSV 用 Excel 打开」路线在中文列名、长数字（如手机号被转科学计数法）、超长文本上体验很差，不适合直接交付。
+
+**方案**：xlsx 是 zip 容器，无法逐行写文本，故单独成文件 [export_xlsx.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_xlsx.go)，引入 `github.com/xuri/excelize/v2` 在内存中构建工作簿后整体写出；其他格式的 `io.Writer` 契约不变。
+
+**落地结果**：
+
+| 关注点 | 处理 |
+|---|---|
+| 默认空工作表 | 新建 `Result` 表后删除 `Sheet1`，避免打开时多一张空表 |
+| 表头可用性 | 表头加粗、冻结首行、开启自动筛选 |
+| 类型保留 | 数值写数字类型（Excel 可直接求和）、布尔写 `TRUE/FALSE`、NaN / Inf 转文本 |
+| 超长文本 | 按字符（非字节）截断到 32767 并追加 `...`，防止 Excel 提示文件损坏 |
+| 列宽 | 按内容估算，CJK 按双宽计，夹在 8–60，避免中文列名变 `###` |
+| 列数上限 | `columnAxis` 超过 16384 列直接报错，不静默丢列 |
+
+**验收**：`export_formats_test.go` 用 `excelize.OpenReader` 回读生成文件，校验工作表数量与名称、表头、数值 / 布尔 / 空值单元格；另覆盖零行零列、超长截断、NaN 转文本、Writer 失败错误透传；`columnAxis` 覆盖 A / Z / AA / AB / XFD 与越界。
+
+#### P13-4 SQL DDL + INSERT ✅ 已完成
+
+**问题**：纯 INSERT 导出只能往**已存在**的表里写；换个库或做数据迁移时还得手工建表，而手写列类型极易和实际数据对不上。
+
+**落地结果**：`renderResultDDLTo` 先输出 `CREATE TABLE IF NOT EXISTS <target>`，列类型由 `inferColumnType` 按该列首个非空值推断（整数 → `Int64`、浮点 → `Float64`、布尔 → `UInt8`、其余 → `String`，整列为空回落 `String`），随后复用 `renderResultInsertTo` 追加数据，转义规则与纯 INSERT 完全一致。`target` 必填，为空或纯空白报错。
+
+**验收**：覆盖建表头、三列类型、INSERT 部分与转义一致；边界覆盖空 target / 纯空白 target 报错、零行仍输出建表骨架、零列退化；`inferColumnType` 覆盖类型推断与首个非空、全空、缺列跳过。
+
+#### P13-5 测试与文档同步 ✅ 已完成
+
+**落地结果**：新增 [export_formats_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export_formats_test.go)（表驱动 + 中文用例名，覆盖正常 / 边界 / 写入失败）；`docs/API.md` 补 8 格式对照表与各格式转义细节；`docs/FEATURES.md` 更新用户侧说明；`docs/CODE_INDEX.md` 补新文件与符号索引。
+
+**验收**：`go test ./...` 全部通过；前端无需改动（格式列表由 `GetResultExportFormats()` 自动感知），故只需 `go build ./...` 通过即可，`dist` 无需重建。
+
+### P14 工程收口
+
+P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只处理自审发现的**一处真实缺陷 + 三类工程债**：查询并发正确性、组件层测试空白、后端文件体量与连接生命周期、以及文档与代码的偏差。基线核对（2026-11-22）：`vue-tsc --noEmit` 0 错误；`npm run test` 17 文件 **607** 用例全通过；`go build ./...`、`go vet ./...`、`go test ./...` 全通过。
+
+**状态：计划中**
+
+| 事实 | 数据 | 含义 |
+|---|---|---|
+| 前端超大文件 | `ResultGrid.vue` 1018、`QueryEditor.vue` 793、`App.vue` 692、`MenuBar.vue` 671、`DatabaseTree.vue` 647 行 | P12-4 声称 App < 500 / MenuBar < 450，实际均超；文档与代码不符 |
+| 后端超大文件 | `service.go` 768、`import.go` 598、`export.go` 556 行 | `service.go` 把连接管理 / 元数据 / 查询 / 执行挤在一处 |
+| 组件测试 | 0 个 | `@vue/test-utils` 未引入，`ResultGrid` 等 21 个组件无自动化兜底 |
+| 同标签并发查询 | `tab.queryId` 只做「结果丢弃」，不取消旧请求 | 连点刷新会堆叠后端查询，`running` map 残留 |
+
+条目与执行顺序：
+
+| 顺序 | 项 | 内容 | 工作量 | 影响面 |
+|---|---|---|---|---|
+| 1 | P14-1 | 查询并发正确性修复 | 小 | 前端 + 兜底调 `CancelQuery` |
+| 2 | P14-2 | 组件层冒烟测试（`@vue/test-utils`） | 中 | 前端测试基建 |
+| 3 | P14-3 | `clickhouse/service.go` 拆分 | 中 | 纯后端重构 |
+| 4 | P14-4 | 连接生命周期收口 | 小 | 后端 + 前端提示 |
+| 5 | P14-5 | 文档纠偏与勾选 | 小 | 仅文档 |
+
+执行顺序理由：P14-1 是当前**唯一被证实的用户可感知缺陷**且改动面最小，先落地立信；P14-2 建起组件测试底座——P14-3 / P14-4 会动前后端交互层，没有组件测试兜底极易重演 P10-4（文件被误清空、无测试可回退）的事故；P14-3 是纯重构，必须在测试就位之后；P14-4 顺带把连接断开语义写进 UI 提示；P14-5 最后统一收口文档。
+
+阶段验收标准：`npx vue-tsc --noEmit`、`npm run test`、`npm run build`、`go build ./...`、`go vet ./...`、`go test ./...` 全绿；按项目规则重新打包 `meteor-ch-workbench.exe` 并确认 PE 子系统为 2；`docs/API.md` / `docs/CODE_INDEX.md` / `docs/FEATURES.md` 与代码一致。
+
+#### P14-1 查询并发正确性修复（优先级：高）
+
+**问题**：`QueryEditor.executeSelectedSQL` 只在结果返回时比对 `tab.queryId`，不比对就丢弃，**并不取消已经发出去的旧请求**。由此产生三个可感知问题：
+
+1. 同一标签连点「刷新」或快速改分页，每次点都会新发一个后端查询；旧查询继续在 `Service.running` 里跑，`tab.queryId` 被新 UUID 覆盖后旧请求再也无法比对，前端也拿不到它的句柄，只能等它自然结束。
+2. 慢查询场景下（如 `SELECT sleep(3)`），后发的快请求先返回、先发的慢请求后返回时，`tab.queryId` 已不等于旧的，结果被丢弃——这是运气好；若两个请求耗时接近且返回顺序颠倒，界面出现的是**旧结果**（因为此时 `tab.queryId` 恰好等于旧值）。
+3. 关标签页只调用一次 `CancelQuery(tab.queryId)`，用户连点后堆积的其余 queryId 全部无人取消。
+
+**方案**：
+- 新增 `frontend/src/utils/queryState.ts` 纯函数：`shouldCancelPrevious(currentQueryId)`（非空即需取消）、`isStaleResult(currentQueryId, pendingQueryIds)`（判定返回结果是否属于已作废的请求）、`reconcileQueryIds(previous, next)`（返回需取消的集合）。
+- `executeSelectedSQL` 在生成新 `queryId` 之前，若 `tab.queryId` 非空，先 `api.CancelQuery(tab.queryId)`（不 await 阻塞主流程，失败静默）。
+- `QueryTab` 新增 `pendingQueryIds: string[]`，每次发起时 push 新 id，返回后 spliced 移除；关闭标签页时对 `pendingQueryIds` 全量取消，而非只取消最后一个。
+- 结果判定改为「不在 pending 交集即视为过期」：只有 `queryId` 仍在 pending 中且等于 `tab.queryId` 时才写回结果。
+- 配 `queryState.test.ts`：表驱动，覆盖空 id、单次发起的自取消边界、正常返回、过期返回、多 id 求和取消集合。
+
+**验收**：`SELECT sleep(3)` 期间连点刷新 5 次，后端 `running` map 最终为空、只保留最后一个请求为有效；快速改分页不会出现旧结果回显；关标签页时所有在途查询被取消；`queryState.test.ts` 覆盖上述边界；`vue-tsc --noEmit` / `npm run test` / `npm run build` 通过。
+
+#### P14-2 组件层冒烟测试（优先级：中）
+
+**问题**：`utils/` 17 个模块共 607 条用例覆盖完善，但 21 个 `.vue` 组件零测试。P7-1 与 P11-4 的两次大重构全靠人工回归，P10-4 的事故（`ResultGrid.vue` 被一条写错的 PowerShell 命令清空、无 git 历史也无测试兜底）正是缺少这层防线的直接后果。
+
+**方案**：
+- 引入 `@vue/test-utils` + `jsdom`（`vitest` 已就位，仅需新增 `environment: 'jsdom'` 配置与两个 devDependencies；同样注意 vitest 2.x 版本约束，勿升到 5.x）。
+- **只测「纯渲染 + 事件契约」的组件**，明确排除依赖 Wails 运行时与 Monaco 的组件：
+  - 纳入：`ResultTableBody.vue`（可见列索引下渲染的列数 / 单元格取值）、`ResultToolbarInfo.vue` / `ResultToolbarActions.vue`（统计文案与按钮 enabled 状态）、`ResultHeaderMenu.vue` / `ResultCellMenu.vue`（菜单项与 emit 载荷）。
+  - 排除：`ResultGrid.vue`（依赖 `useCellEditing` / `useResultFilterPanel` 等 composable 与 `api`，致 mock 成本过高）、`QueryEditor.vue`、`DatabaseTree.vue`、所有 Modal。
+- `api.ts` 在测试环境下用 `vi.mock` 全量打桩，保证任何被间接导入的 API 都不会真的发起 `Call.ByName`。
+- 组件测试与被测组件同目录，命名 `*.test.ts`，风格与 `utils/` 一致：表驱动 + 中文用例名 + 正常 / 边界。挂载点固定在 `describe('X 组件')` 下，不测实现细节（不查 class 名，只查文本与 emit）。
+
+**验收**：新增组件测试 ≥ 3 个文件、≥ 25 条用例；`npm run test` 全通过且原有 607 条不回归；`vite.config` 与 `vitest` 配置变更不影响 `npm run build` 产物（Monaco chunk 仍 2,753 kB）。
+
+#### P14-3 `clickhouse/service.go` 拆分（优先级：中）
+
+**问题**：[service.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/service.go) 768 行里混着四类职责：连接池与 DSN 拼装、查询与行扫描、`Exec` / `ExecBatch`、元数据（库 / 表 / 视图 / 列 / 集群）。加一个元数据方法或改一处 DSN 规则，都要在 700+ 行里定位。
+
+**方案**（纯重构，不改行为）：
+- `service.go`：保留 `Service` 结构体、`NewService`、`register` / `CancelQuery`、`Invalidate` / `Close`、DSN 拼装（`dsn` 相关），目标 ≤ 350 行。
+- `query.go`：`Query` / `QueryWithLimit` / `scanRows` / `emptyQueryResult` 及行数上限处理。
+- `exec.go`：`Exec` / `ExecBatch` 及 `StatementResult` 组装。
+- `metadata.go`：`GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetClusters` 及 `isTruthy` 等解析辅助。
+- 现有 `*_test.go` 不动，仅在必要时跟随同包符号移动（同包内移动不改导入路径）。
+- **一次只动一类**：每拆一类立即 `go build ./... && go test ./...`，禁止一次性全拆（沿用 P7-1 的风险控制约定）。
+
+**验收**：`service.go` ≤ 350 行，四个新文件职责单一；`go build ./...` / `go vet ./...` / `go test ./...` 全绿且用例数不减；`docs/CODE_INDEX.md` 同步新文件职责。
+
+#### P14-4 连接生命周期收口（优先级：中）
+
+**问题**：`SaveConnection` 会 `Invalidate` 旧池，但只做「从 map 里删掉」，**不 `Close` 底层 `*sql.DB`**，已建立的长连接仍持有旧凭据存活；改密码 / 收紧权限后，旧会话依旧可用。`Disconnect` 同理，也不处理正在运行的查询——用户断开连接后，在途查询返回的是驱动层错误，前端只能看到一串原始文本。
+
+**方案**：
+- `Invalidate` 改为「从 map 删除 + `db.Close()`」，并清除该连接相关的 `running` 条目（按 connectionID 记录查询归属，需给 `running` 增加归属信息或新增 `runningByConn` 映射）。
+- `Disconnect` 先取消该连接全部在途查询，再 `Close` 池。
+- 前端：`ResultGrid` 错误面板对「连接已关闭 / 已断开」类错误给出明确文案（复用 `sqlError` 的映射表新增两个错误码或关键词），并提供「重新连接」快捷按钮（复用 `checkConnection`）。
+- 补 `internal/clickhouse/` 用例：`Invalidate` 后旧池 `Close` 被调用、在途查询被取消、重复 `Invalidate` 幂等；「改密码后旧会话不可用」通过 `sqlmock` 或集成标记说明（若无 sqlmock 依赖，则仅覆盖 `Close` / 取消路径）。
+
+**验收**：改密码并保存后，旧池被关闭、旧会话不再被复用；断开连接时在途查询立即返回「已断开」提示而非驱动原始错误；`go test ./...` 新增用例通过；`docs/API.md` 若新增方法则同步。
+
+#### P14-5 文档纠偏与勾选（优先级：低）
+
+**问题**：三处文档与代码不一致——① P12-4 验收写 `App.vue < 500` / `MenuBar.vue < 450`，实际 692 / 671 行；② `docs/FEATURES.md` 的结果导出仍按 4 种描述，实际已 8 种（P13 只更新了 `API.md` 与 `CODE_INDEX.md`）；③ `docs/CODE_INDEX.md` 未收录 `sqlProjection.ts` / `dragPanel.ts` / `menuPosition.ts` / `splitPane.ts` 等 P13 之后新增的 utils。
+
+**方案**：
+- P12-4「落地结果」追加一行**实际行数说明**：`App.vue` 692 行、`MenuBar.vue` 671 行，虽超出原定 500 / 450，但四类职责已拆为独立组件 / composable，壳层剩余内容为布局编排，**决定不再继续拆分**（再拆收益递减）；原验收值下调为「不再承载业务逻辑」这一可核验标准。
+- `docs/FEATURES.md` 结果导出章节改为 8 格式对照（沿用 `docs/API.md` 的表格内容，用户视角措辞）。
+- `docs/CODE_INDEX.md` 补全新增 utils 与 `composables/usePanelDrag.ts`、`useResultFilterPanel.ts`、`useCellEditing.ts`、`useAutoRefresh.ts`。
+- 本阶段完成后在「阶段总览」表勾选 P14 各条，并更新文件头「更新时间」。
+
+**验收**：三份文档与代码逐项对得上（行数、格式数、文件清单）；roadmap 阶段总览 P14 状态改为「已完成」。
+
 ## 明确不做
 
 - 目录按职责再细分（当前划分已够用）
 - 多用户 / 权限 / 审计（非单人场景）
 - 引入 AG Grid / Handsontable 等重型表格库
 - 自动 SQL 格式化、连接池参数 UI 化
+- Parquet / ClickHouse Native 结果导出（依赖体积大、收益低，CSV / TSV / JSONL 已覆盖分析场景）
 
 ## 实施约定
 
