@@ -1,0 +1,26 @@
+.trae/rules/roadmap.md
+  h_a3f313f3d96276 3,23-24,874-1032,1039
+internal/clickhouse/export_xlsx.go
+  h_a3f313f3d96276 1-252
+docs/API.md
+  h_a3f313f3d96276 361,363-375,377-382,395
+docs/CODE_INDEX.md
+  h_a3f313f3d96276 132-135,140,142-152,252
+docs/FEATURES.md
+  h_a3f313f3d96276 61-67
+internal/clickhouse/export_formats_test.go
+  h_a3f313f3d96276 1-453
+internal/clickhouse/export.go
+  h_a3f313f3d96276 69-97,305-428
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "a6d5c31cffeb47e02d237e6166a0f30b181b182f",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
