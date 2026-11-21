@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '../stores/app'
 import { api } from '../api'
@@ -7,6 +7,7 @@ import type { QueryResult, ClusterInfo } from '../types'
 import CreateTableModal from './CreateTableModal.vue'
 import EditTableModal from './EditTableModal.vue'
 import { buildDropTableSQL } from '../utils/ddl'
+import { clampPaneWidth, paneWidthFromDelta, PANE_MAX_WIDTH } from '../utils/splitPane'
 
 const props = defineProps<{
   active: boolean
@@ -27,6 +28,58 @@ const store = useAppStore()
 
 const databases = ref<string[]>([])
 const expandedDBs = ref<Set<string>>(new Set())
+
+const TREE_STORAGE_KEY = 'meteor-ch.treeWidth'
+const TREE_DEFAULT_WIDTH = 224
+const treeWidth = ref(TREE_DEFAULT_WIDTH)
+const treeResizing = ref(false)
+const treeRootEl = ref<HTMLElement | null>(null)
+const treeDragState = ref<{ x: number; width: number; max: number } | null>(null)
+
+function loadTreeWidth() {
+  const saved = localStorage.getItem(TREE_STORAGE_KEY)
+  const w = saved ? parseInt(saved, 10) : Number.NaN
+  if (!Number.isNaN(w)) treeWidth.value = clampPaneWidth(w, PANE_MAX_WIDTH)
+}
+
+function onTreeResizeStart(ev: MouseEvent) {
+  if (!treeRootEl.value) return
+  ev.preventDefault()
+  treeDragState.value = {
+    x: ev.clientX,
+    width: treeWidth.value,
+    max: treeRootEl.value.parentElement?.clientWidth ?? PANE_MAX_WIDTH,
+  }
+  treeResizing.value = true
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+function onTreeResizeMove(ev: MouseEvent) {
+  const state = treeDragState.value
+  if (!state) return
+  treeWidth.value = paneWidthFromDelta(state.width, ev.clientX - state.x, state.max - 200)
+}
+
+function onTreeResizeEnd() {
+  if (!treeDragState.value) return
+  treeDragState.value = null
+  treeResizing.value = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  localStorage.setItem(TREE_STORAGE_KEY, String(treeWidth.value))
+}
+
+onMounted(() => {
+  loadTreeWidth()
+  window.addEventListener('mousemove', onTreeResizeMove)
+  window.addEventListener('mouseup', onTreeResizeEnd)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onTreeResizeMove)
+  window.removeEventListener('mouseup', onTreeResizeEnd)
+})
 const tablesByDB = ref<Map<string, { name: string; engine?: string }[]>>(new Map())
 const viewsByDB = ref<Map<string, { name: string; engine?: string }[]>>(new Map())
 const loadingTables = ref<string | null>(null)
@@ -267,7 +320,22 @@ function refreshTables(db: string) {
 </script>
 
 <template>
-  <div v-if="active" class="w-56 border-r border-ch-border bg-ch-panel flex flex-col shrink-0">
+  <div
+    v-if="active"
+    ref="treeRootEl"
+    class="relative border-r border-ch-border bg-ch-panel flex flex-col shrink-0"
+    :style="{ width: treeWidth + 'px' }"
+  >
+    <div
+      class="absolute inset-y-0 right-0 w-1 cursor-col-resize group z-20 select-none"
+      @mousedown="onTreeResizeStart"
+      @click.stop
+    >
+      <div
+        class="absolute inset-y-0 -left-0.5 -right-0.5 transition-colors"
+        :class="treeResizing ? 'bg-ch-accent/40' : 'bg-transparent hover:bg-ch-accent/30'"
+      ></div>
+    </div>
     <div class="flex-1 overflow-y-auto text-sm">
       <div class="px-3 py-2 text-xs font-semibold text-ch-muted uppercase tracking-wide border-b border-ch-border sticky top-0 bg-ch-panel z-10">
         {{ t('editor.databases') }}

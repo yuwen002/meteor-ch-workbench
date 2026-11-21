@@ -23,6 +23,7 @@ type App struct {
 	tabs  *config.TabsManager     // 标签页管理器，负责 tabs.json 的读写
 	saved *config.SavedSQLManager // 收藏 SQL 管理器，负责 saved_sql.json 的读写
 	chSvc *clickhouse.Service     // ClickHouse 连接池与查询服务
+	prefs *config.SettingsManager // 用户偏好设置，负责 settings.json 的读写
 }
 
 // NewApp 创建 App 实例，并初始化配置管理器、查询历史管理器和 ClickHouse 服务。
@@ -34,6 +35,7 @@ func NewApp() *App {
 		hist:  config.NewHistoryManager(conf.ConfigDir()),
 		tabs:  config.NewTabsManager(conf.ConfigDir()),
 		saved: config.NewSavedSQLManager(conf.ConfigDir()),
+		prefs: config.NewSettingsManager(conf.ConfigDir()),
 		chSvc: clickhouse.NewService(),
 	}
 }
@@ -153,6 +155,9 @@ func (a *App) SaveExportAs(format string, includePassword bool) (string, error) 
 	}
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
+		if strings.Contains(err.Error(), "cancelled") {
+			return "", nil
+		}
 		return "", err
 	}
 	if path == "" {
@@ -218,12 +223,26 @@ func (a *App) Query(connectionID string, sql string, queryID string) (*clickhous
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.chSvc.Query(*conn, sql, queryID)
+	res, err := a.chSvc.QueryWithLimit(*conn, sql, queryID, a.prefs.RowLimit())
 	if err != nil {
 		return nil, err
 	}
 	a.recordHistory(connectionID, sql, res.ElapsedMs, res.Error == "")
 	return res, nil
+}
+
+// GetSettings 返回当前用户偏好设置，供前端设置面板回显。
+func (a *App) GetSettings() (config.SettingsFile, error) {
+	return a.prefs.Load()
+}
+
+// SaveSettings 校验并保存用户偏好设置，返回保存后实际生效的值（可能被收敛到合法区间）。
+// SQL 写入失败等基础错误走 Go error；越界输入则被 NormalizeRowLimit 静默修正。
+func (a *App) SaveSettings(settings config.SettingsFile) (config.SettingsFile, error) {
+	if err := a.prefs.Save(settings); err != nil {
+		return config.SettingsFile{}, err
+	}
+	return a.prefs.Load()
 }
 
 // CancelQuery 取消指定 queryID 正在执行的查询。
@@ -315,6 +334,18 @@ func (a *App) Execute(connectionID string, sql string) (*clickhouse.ExecResult, 
 	return a.chSvc.Exec(*conn, sql)
 }
 
+// ExecuteBatch 在指定连接上顺序执行一批 DDL/DML 语句，只做一次跨进程调用。
+// 用于批量提交单元格编辑生成的 ALTER ... UPDATE，避免逐条 RPC 的串行等待。
+// 采用 continueOnError=true：单条失败不中断，一次收集全部失败点，
+// 调用方可据回执精确回填未成功的语句。SQL 错误放在回执中，不返回 error。
+func (a *App) ExecuteBatch(connectionID string, statements []string) (*clickhouse.ExecBatchResult, error) {
+	conn, err := a.conf.GetConnection(connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.chSvc.ExecBatch(*conn, statements, true)
+}
+
 // GetResultExportFormats 返回支持的结果集导出格式元信息，供前端渲染格式选择。
 func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat {
 	return clickhouse.ResultExportFormats()
@@ -324,11 +355,8 @@ func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat {
 // target 为目标表名，仅 INSERT 族格式使用（其余格式忽略）。
 // 返回实际保存路径；用户取消时返回空字符串。
 func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}, target string) (string, error) {
-	content, ext, err := clickhouse.ExportResultByFormat(format, columns, rows, target)
-	if err != nil {
-		return "", err
-	}
 	dialog := application.Get().Dialog.SaveFile()
+	ext := clickhouse.ResultExportExtension(format)
 	dialog.SetMessage("选择查询结果的保存位置")
 	dialog.SetFilename("query-result." + ext)
 	dialog.SetButtonText("保存")
@@ -337,13 +365,25 @@ func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interf
 	}
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
+		if strings.Contains(err.Error(), "cancelled") {
+			return "", nil
+		}
 		return "", err
 	}
 	if path == "" {
 		return "", nil
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	file, err := os.Create(path)
+	if err != nil {
 		return "", err
+	}
+	_, writeErr := clickhouse.ExportResultTo(file, format, columns, rows, target)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return "", writeErr
+	}
+	if closeErr != nil {
+		return "", closeErr
 	}
 	return path, nil
 }

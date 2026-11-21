@@ -123,13 +123,14 @@ export interface AutoKeyResult {
 export function detectKeyColumns(input: AutoKeyInput): AutoKeyResult {
   const { columns, rows } = input
   if (columns.length === 0) return { indexes: [], reason: 'all' }
+  if (rows.length === 0) return { indexes: [], reason: 'all' }
 
   const primaries = columns.map((c, i) => (c.is_primary ? i : -1)).filter((i) => i >= 0)
   if (primaries.length > 0) return { indexes: primaries, reason: 'primary' }
 
   for (let ci = 0; ci < columns.length; ci++) {
     const seen = new Set<string>()
-    let ok = rows.length > 0
+    let ok = true
     for (const row of rows) {
       const v = row[ci]
       if (v === null || v === undefined) {
@@ -142,6 +143,26 @@ export function detectKeyColumns(input: AutoKeyInput): AutoKeyResult {
   }
 
   return { indexes: columns.map((_, i) => i), reason: 'all' }
+}
+
+export type KeyMode = 'primary' | 'unique' | 'all' | 'manual' | 'none'
+
+export interface KeyStrategy {
+  mode: KeyMode
+  indexes: number[]
+  columnNames: string[]
+}
+
+export function describeKeyStrategy(
+  keyIndexes: number[],
+  result: AutoKeyResult,
+  columns: Array<{ name: string }> = [],
+  manualColumn: string | null = null,
+): KeyStrategy {
+  const names = keyIndexes.map((i) => columns[i]?.name ?? '')
+  if (keyIndexes.length === 0) return { mode: 'none', indexes: [], columnNames: [] }
+  if (manualColumn) return { mode: 'manual', indexes: keyIndexes.slice(), columnNames: names }
+  return { mode: result.reason, indexes: keyIndexes.slice(), columnNames: names }
 }
 
 export function buildRowKeys(indexes: number[], columns: Array<{ name: string }>, row: unknown[]): KeyColumn[] {

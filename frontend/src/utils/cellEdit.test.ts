@@ -5,6 +5,7 @@ import {
   buildRowKeys,
   canEditCell,
   detectKeyColumns,
+  describeKeyStrategy,
   parseQuerySource,
   valueForEdit,
   type KeyColumn,
@@ -148,9 +149,9 @@ describe('detectKeyColumns', () => {
       want: { indexes: [0, 1], reason: 'all' },
     },
     {
-      name: '无数据行时退化为全部列',
+      name: '无数据行时返回空索引（0 行结果无需定位列）',
       input: { columns: cols('a', 'b'), rows: [] },
-      want: { indexes: [0, 1], reason: 'all' },
+      want: { indexes: [], reason: 'all' },
     },
     {
       name: '无列时返回空',
@@ -166,6 +167,72 @@ describe('detectKeyColumns', () => {
   for (const c of cases) {
     it(c.name, () => {
       expect(detectKeyColumns(c.input)).toEqual(c.want)
+    })
+  }
+})
+
+describe('describeKeyStrategy', () => {
+  const cols = (...names: string[]) => names.map((name) => ({ name }))
+  const cases: Array<{
+    name: string
+    keyIndexes: number[]
+    result: Parameters<typeof describeKeyStrategy>[1]
+    columns: Array<{ name: string }>
+    manualColumn: string | null
+    want: ReturnType<typeof describeKeyStrategy>
+  }> = [
+    {
+      name: '无索引时为 none',
+      keyIndexes: [],
+      result: { indexes: [], reason: 'all' },
+      columns: cols('a'),
+      manualColumn: null,
+      want: { mode: 'none', indexes: [], columnNames: [] },
+    },
+    {
+      name: '自动识别主键',
+      keyIndexes: [0, 1],
+      result: { indexes: [0, 1], reason: 'primary' },
+      columns: cols('id', 'tenant'),
+      manualColumn: null,
+      want: { mode: 'primary', indexes: [0, 1], columnNames: ['id', 'tenant'] },
+    },
+    {
+      name: '自动识别唯一列',
+      keyIndexes: [1],
+      result: { indexes: [1], reason: 'unique' },
+      columns: cols('v', 'id'),
+      manualColumn: null,
+      want: { mode: 'unique', indexes: [1], columnNames: ['id'] },
+    },
+    {
+      name: '退化为全部列时多列展示',
+      keyIndexes: [0, 1, 2],
+      result: { indexes: [0, 1, 2], reason: 'all' },
+      columns: cols('a', 'b', 'c'),
+      manualColumn: null,
+      want: { mode: 'all', indexes: [0, 1, 2], columnNames: ['a', 'b', 'c'] },
+    },
+    {
+      name: '手工指定覆盖自动识别',
+      keyIndexes: [1],
+      result: { indexes: [], reason: 'all' },
+      columns: cols('a', 'b'),
+      manualColumn: 'b',
+      want: { mode: 'manual', indexes: [1], columnNames: ['b'] },
+    },
+    {
+      name: '列名缺失时为空字符串',
+      keyIndexes: [5],
+      result: { indexes: [5], reason: 'unique' },
+      columns: cols('a'),
+      manualColumn: null,
+      want: { mode: 'unique', indexes: [5], columnNames: [''] },
+    },
+  ]
+  for (const c of cases) {
+    it(c.name, () => {
+      expect(describeKeyStrategy(c.keyIndexes, c.result, c.columns, c.manualColumn)).toEqual(c.want)
     })
   }
 })

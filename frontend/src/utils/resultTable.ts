@@ -35,3 +35,52 @@ export function buildGridStyle(colWidths: number[], columnCount: number): string
 export function shouldVirtualize(rowCount: number): boolean {
   return rowCount > VIRTUAL_THRESHOLD
 }
+
+export function visibleColumnIndexes(total: number, hidden: number[]): number[] {
+  const hiddenSet = new Set(hidden)
+  const out: number[] = []
+  for (let i = 0; i < total; i++) {
+    if (!hiddenSet.has(i)) out.push(i)
+  }
+  return out
+}
+
+export function hiddenColumnIndexes(total: number, hidden: number[]): number[] {
+  return Array.from(new Set(hidden))
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < total)
+    .sort((a, b) => a - b)
+}
+
+export function pickCellIndexes(cells: unknown[], indexes: number[]): unknown[] {
+  return indexes.map((i) => cells[i])
+}
+
+export function gridWidthsFor(indexes: number[], colWidths: number[]): number[] {
+  return indexes.map((i) => colWidths[i])
+}
+
+export function colWidthAt(colWidths: number[], ci: number): number {
+  const w = colWidths[ci]
+  return typeof w === 'number' && Number.isFinite(w) ? w : MIN_COL_WIDTH
+}
+
+export function clampColWidth(width: number): number {
+  if (Number.isNaN(width)) return MIN_COL_WIDTH
+  return Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, Math.round(width)))
+}
+
+export function resizeColWidths(
+  colWidths: number[],
+  indexes: number[],
+  startWidth: number,
+  deltaX: number,
+): number[] {
+  if (indexes.length === 0) return colWidths
+  const next = colWidths.slice()
+  const width = clampColWidth(startWidth + deltaX)
+  for (const ci of indexes) {
+    while (next.length <= ci) next.push(MIN_COL_WIDTH)
+    next[ci] = width
+  }
+  return next
+}

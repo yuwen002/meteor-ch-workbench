@@ -1,10 +1,30 @@
-# Meteor CH Workbench 开发路线图
+# 开发路线图
 
-本文件记录已完成能力与后续开发计划，作为后续迭代的依据。
+> 本文件是**已完成能力与后续计划的唯一真相源**，按阶段（P1–P12）记录问题、方案、落地结果与验收标准。
+> 与其他文档分工：`docs/FEATURES.md` 面向用户，`docs/API.md` 面向接口契约，`docs/CODE_INDEX.md` 面向文件职责。
+> 更新时间：2026-11-22
 
-## 当前状态
+## 阶段总览
 
-### 已完成
+| 阶段 | 主题 | 状态 |
+|---|---|---|
+| P1 | 结果集导出 + 大结果保护 | 已完成 |
+| P2 | 查询历史 | 已完成 |
+| P3 | 多标签页编辑 | 已完成 |
+| P4 | 补充工程质量 | 已完成 |
+| P5 | 安全增强 | 部分完成（密码加密存储主动跳过） |
+| P6 | 后续迭代（取消 / 虚拟滚动 / 复制 / 导出格式 / Monaco 瘦身） | 已完成 |
+| P7 | 维护性与体验补强（EXPLAIN / Vitest / 视图拆分 / 分页 / 错误友好化） | 已完成 |
+| P8 | 高频能力补强（INSERT 导出 / 收藏 SQL / 自动补全） | 已完成 |
+| P9 | 结果区体验增强（搜索 / 排序 / 筛选 / 空态） | 已完成 |
+| P10 | 结果区体验补齐（单元格编辑 / 工具栏整理 / 启动不连接） | 已完成 |
+| P11 | 单元格编辑收口 + `ResultGrid` 拆分 | 已完成 |
+| P12 | 批量执行 / 流式导出 / 行数上限 / 壳层瘦身 | 已完成 |
+
+约定：阶段标题统一为 `### Px 主题`，其下依次是「目标」行、`**状态：...**` 行、条目表（或 `**落地结果**` 列表）；单项交付记录固定为「问题 → 方案 → 落地结果 → 验收」四段，验收始终放在末尾。
+
+## 已完成能力（基线）
+
 - 连接 / 分组的增删改查，拖拽排序（组内、跨组、分组排序），持久化到 `connections.json`
 - 侧边栏折叠、状态检测、宽度调节
 - ClickHouse 元数据浏览：数据库 / 表 / 视图 / 集群 / 表结构
@@ -20,14 +40,26 @@
 - 结果集导出扩展：Markdown（P6-3）
 - Monaco 体积优化：精简入口 + 懒加载，4,074 kB → 2,753 kB（P6-4）
 - 结果区体验补齐：三段式工具栏 + 查看实际执行 SQL、单元格双击编辑生成 `ALTER ... UPDATE`（不自动执行）、启动默认不建任何连接（P10）
+- 单元格编辑直接应用：待提交队列 + 确认弹窗 + 批量执行（`ExecuteBatch`，单次请求），mutation 自动追加 `SETTINGS mutations_sync = 2`（P10 / P11 / P12-1）
+- 结果表交互：隐藏列（界面隐藏 / 改写 SQL 两种）、时间列筛选、浮层可拖拽、按可见列裁剪导出（见文末「结果表交互补漏」）
+- 视图拆分：`QueryEditor.vue` 509 行，`ResultGrid.vue` 946 行，历史 / 收藏 / 筛选 / 导出 / 自动刷新 / 确认弹窗均已独立组件化（P7-1 / P9-4 / P11-4 / P12-4）
+- 可拖拽布局：侧边栏宽度、数据库树宽度、编辑器与结果面板上下分割、结果表列宽，均持久化到本地存储
+- 查询行数上限可配置（`settings.json`，100 ～ 1,000,000 或不限制）（P12-3）
+- 结果导出流式写盘，避免大结果整体回传前端（P12-2）
 
-> P1–P4、P6 均已收尾。P5 仅剩「密码加密存储」一项未做，属主动跳过的决策项，非遗漏。
+> P1–P4、P6–P12 均已收尾。P5 仅剩「密码加密存储」一项未做，属主动跳过的决策项，非遗漏。
 
-## 后续计划
+## 分阶段实施记录
+
+每个阶段按「目标 → 条目表 → 逐项（问题 / 方案 / 落地结果 / 验收）」组织，已收尾阶段保留完整复盘，便于回溯决策依据。
 
 ### P1 结果集导出 + 大结果保护
+
 目标：查询结果可导出，且避免大结果卡死界面。
 
+**状态：已完成**
+
+**落地结果**：
 - [x] 后端 `ExportResultByFormat(format, columns, rows)`，注册表模式（`internal/clickhouse/export.go`）
 - [x] 支持导出格式：CSV、JSON
 - [x] 结果面板新增「导出」按钮，复用系统「另存为」对话框（`SaveQueryResultAs`）
@@ -35,25 +67,45 @@
 - [x] `QueryResult` 补齐 `elapsed_ms` / `truncated` / `row_limit` 字段
 - [x] 为导出渲染函数补单元测试（`internal/clickhouse/export_test.go`）
 
+**验收**：`export_test.go` 覆盖 CSV / JSON 正常路径与空行、特殊字符边界；查询 5 万行以上触发 `truncated` 并在结果区提示；`go test ./...`、`vue-tsc --noEmit`、`npm run build` 通过。
+
 ### P2 查询历史
+
 目标：记录并复用历史 SQL。
 
+**状态：已完成**
+
+**落地结果**：
 - [x] 新建 `history.json`，沿用 config.Manager 的读写模式（`internal/config/history.go`）
 - [x] 记录字段：sql / connectionId / timestamp / duration / success
 - [x] 执行成功后自动记录，保留上限（`HistoryMaxEntries = 200`）
 - [x] 面板展示历史，点击回填到编辑器（工具栏时钟按钮开关，支持单条删除与清空）
 - [x] 为 HistoryManager 补单元测试（`internal/config/history_test.go`）
 
+**验收**：`history_test.go` 覆盖写入 / 读取 / 上限裁剪 / 删除单条 / 清空 / 文件缺失回退；执行成功后历史面板即时出现新记录且点击可回填；`go test ./...` 通过。
+
 ### P3 多标签页编辑
+
 目标：同时打开多个查询标签，各自独立结果。
 
+**状态：已完成**
+
+**落地结果**：
 - [x] 抽出 `QueryTab` 类型与工厂（`frontend/src/utils/tabs.ts`），每个标签独立持有 sql / result / error / querying / viewState
 - [x] 标签页增删、重命名（双击）、切换，切换时保存并恢复 Monaco 视图状态（滚动位置、光标）
 - [x] 复用 P2 的历史回填逻辑，回填写入当前活动标签
 - [x] 标签页持久化：`tabs.json` 保存标题 / SQL / 活动标签，启动恢复（`internal/config/tabs.go`）
 - [x] 为 TabsManager 补单元测试（`internal/config/tabs_test.go`）
 
+**验收**：`tabs_test.go` 覆盖保存 / 读取 / 活动标签恢复 / 文件缺失回退；重启程序后标签页与活动标签正确恢复，切换标签时 Monaco 光标与滚动位置还原；`go test ./...`、`vue-tsc --noEmit` 通过。
+
 ### P4 补充工程质量
+
+目标：补齐配置导入导出的测试覆盖并修复既有解析缺陷。
+
+**状态：已完成**
+
+**落地结果**：
 - [x] 为 `internal/config/export.go` 的渲染函数补单元测试（JSON / YAML / CSV / DSN / DBeaver）（`export_test.go`）
 - [x] 为 `internal/config/import.go` 的解析函数补单元测试（含 DBeaver、CSV 缺列、DSN 非法行等边界）（`import_test.go`）
 - [x] 为合并模式补测试（同名分组复用、ID 冲突重分配、folder_id 重映射）
@@ -62,13 +114,27 @@
   - `mergeData` 中 ID 冲突的文件夹未把旧 ID 写进 remap，导致 `folder_id` 重映射失效
   - DBeaver `port` 字段对字符串/数字两种写法兼容（`looseString`）
 
+**验收**：`export_test.go` / `import_test.go` 覆盖 JSON / YAML / CSV / DSN / DBeaver 的正常路径、缺列、非法输入与「导出后再导入」往返一致性；合并模式覆盖同名分组复用与 ID 冲突重分配；`go test ./...` 全绿。
+
 ### P5 安全增强（可选）
+
+目标：评估密码加密存储与导出脱敏。
+
+**状态：部分完成**——密码加密存储经权衡后主动跳过，非遗漏。
+
+**落地结果**：
+- [x] 导出默认脱敏，文档中强化安全提示（`docs/FEATURES.md` 配置导入导出一节）
+
+**待办**：
 - [ ] 密码加密存储选项（需权衡密钥管理复杂度与可用性）
-- [x] 导出默认脱敏（已实现），文档中强化安全提示（`docs/FEATURES.md` 配置导入导出一节）
+
+**验收**：配置导出默认清空密码字段，且 `sanitize` 走深拷贝不影响内存中的连接；`docs/FEATURES.md` 的配置导入导出章节含明文存储的安全提示。
 
 ### P6 后续迭代
 
 目录结构保持现状，不再细分（已确认合理）。以下各项独立可交付，按优先级推进。
+
+**状态：已完成（2026-11-22）**
 
 | 顺序 | 项 | 内容 | 工作量 |
 |---|---|---|---|
@@ -82,7 +148,7 @@
 
 **问题**：`internal/clickhouse/service.go` 的 `Query` 用 `context.Background()` 执行，没有任何办法中止；前端执行期间只有转圈，没有取消按钮。误执行慢查询或 `SELECT *` 大表时只能等超时或强杀程序。
 
-**已实现**：
+**落地结果**：
 - 后端 `Service` 新增 `running map[string]context.CancelFunc` + `register` / `CancelQuery`；`Query(conn, sql, queryID)` 接收外部 queryID。
 - `scanRows` 增加 ctx 逐行检查，取消能在一行内生效，不必等驱动层超时。
 - 取消时 `QueryContext` 与扫描均返回 `context.Canceled`，映射为 `QueryResult.Error = "查询已取消"`，部分结果丢弃。
@@ -98,7 +164,7 @@
 
 **问题**：后端已限制 5 万行（`DefaultQueryRowLimit`），但前端对 5 万行**全量渲染 DOM**，几十万节点导致滚动卡顿甚至白屏。
 
-**已实现**：
+**落地结果**：
 - 引入 `@tanstack/vue-virtual`，表头与表体分离：表头单独固定在顶部横向滚动条内，表体纵向虚拟化，只渲染可视区域 ± 10 行（`overscan: 10`）。
 - 行高固定 `ROW_HEIGHT = 28px`，配合全局 `box-sizing: border-box` 保证估算高度与真实高度一致，无抖动。
 - 阈值 `VIRTUAL_THRESHOLD = 200`：行数 ≤ 200 时走普通渲染，避免小结果集的定位开销与视觉差异。
@@ -118,7 +184,7 @@
 
 **问题**：结果表格无法便捷复制单元格 / 整行，也没有「复制为 INSERT」。
 
-**已实现**（纯前端，未动后端）：
+**落地结果（纯前端，未动后端）**：
 - 单元格右键菜单：`复制单元格` / `复制为 SQL 字面量` / `复制整行（TSV）` / `复制为 INSERT` / `复制全部为 INSERT（N 行）`。
 - 表头右键菜单：`复制列名（逗号分隔）`。
 - 复制反馈复用结果工具栏位置（`copiedHint`，1.5 秒自动消失），避免额外弹窗。
@@ -135,7 +201,7 @@
 
 **问题**：当前结果集导出只有 CSV / JSON。
 
-**已实现**：
+**落地结果**：
 - `internal/clickhouse/export.go` 的 `resultExportRegistry` 追加 Markdown 条目；新增 `renderResultMarkdown` / `escapeMarkdownCell`。
 - 输出结构：首行列名（`| col |` 形式）+ 分隔行（`| --- |`）+ 数据行，列数严格对齐表头。
 - 转义顺序为反斜杠最先（`\` → `\\`），再 `|` → `\|`，`\r\n` / `\n` / `\r` 统一转 `<br>`，保证单元格内竖线与换行不破坏表格结构。
@@ -147,9 +213,9 @@
 
 #### P6-4 Monaco 打包体积优化（优先级：低）✅ 已完成
 
-**原问题**：`vite.config.ts` 已配置 `manualChunks` 与 `chunkSizeWarningLimit: 2500`，但 Monaco chunk 达 4,074 kB 仍触发警告。根因是 `import * as monaco from 'monaco-editor'` 走 `editor.main` 全量入口，静态引入几十种语言包与 LSP 客户端。
+**问题**：`vite.config.ts` 已配置 `manualChunks` 与 `chunkSizeWarningLimit: 2500`，但 Monaco chunk 达 4,074 kB 仍触发警告。根因是 `import * as monaco from 'monaco-editor'` 走 `editor.main` 全量入口，静态引入几十种语言包与 LSP 客户端。
 
-**已实现**：
+**落地结果**：
 - `QueryEditor.vue` 改为 `import type * as Monaco from 'monaco-editor/editor/editor.api.js'` 只取类型，运行时用 `await Promise.all([import('monaco-editor/editor/editor.api.js'), import('monaco-editor/languages/definitions/sql/register.js')])` 动态加载，编辑器改为懒加载。
 - 子路径写法要点：monaco-editor 0.57 的 `exports` 映射为 `"./*": "./esm/vs/*.js"`，因此正确写法是去掉 `esm/vs` 前缀（`monaco-editor/editor/editor.api.js`）；写成 `monaco-editor/esm/vs/editor/editor.api.js` 会被重映射成 `esm/vs/esm/vs/...` 并触发 TS2307。
 - `vite.config.ts` 的 `manualChunks` 从对象改为函数形式：`monaco-editor/esm/vs/languages/definitions` 单独进 `monaco-languages`，其余进 `monaco-editor`，vue/pinia 进 `vue-vendor`；`optimizeDeps.include` 同步改为新子路径；`chunkSizeWarningLimit` 调整到 3000。
@@ -167,7 +233,9 @@
 
 ### P7 维护性与体验补强
 
-P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补高频空白」。优先级依据实测数据而非主观判断：
+P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补高频空白」。优先级依据实测数据而非主观判断。
+
+**状态：已完成（2026-11-22）**
 
 | 事实 | 数据 | 含义 |
 |---|---|---|
@@ -176,6 +244,8 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 | 右键菜单状态组 | 8 组（`tableMenu` / `dbMenu` / `cellMenu` / `headerMenu` / `ddlModal` / `createModal` / `editModal` / `dropConfirm`） | 分散维护，靠 `closeAllMenus` 手工逐个关闭 |
 | EXPLAIN / 分页 | 均无实现 | 两个高频空白 |
 | 前端单元测试 | 0 个 | `utils/` 四个纯函数模块无自动化覆盖 |
+
+条目与执行顺序：
 
 | 顺序 | 项 | 内容 | 工作量 |
 |---|---|---|---|
@@ -191,7 +261,7 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 
 **问题**：调优 ClickHouse 最常用的手段就是看执行计划，当前完全没有入口，用户得手工敲 `EXPLAIN ...` 再自己读文本结果。
 
-**已实现**：
+**落地结果**：
 - `utils/explain.ts` 纯函数：`splitStatements`（剥离注释后按 `;` 切分）、`canExplain`（单条且非 DDL/DML）、`getExplainKeyword`、`buildExplainSQL`。
 - 结果工具栏新增「执行计划」按钮 + 四种模式下拉（`EXPLAIN` / `EXPLAIN AST` / `EXPLAIN PLAN` / `EXPLAIN PIPELINE`）。
 - SQL 取编辑器当前选中，无选中则取全文；空内容、多语句、DDL/DML（`INSERT` / `CREATE` / `DROP` / 已有 `EXPLAIN` 等）时按钮禁用并给出提示。
@@ -200,7 +270,7 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 
 **验收**：`canExplain` / `buildExplainSQL` / `splitStatements` / `getExplainKeyword` 共 30 条 Vitest 用例通过；`vue-tsc --noEmit` 与 `npm run build` 通过。（真实 ClickHouse 下的输出表现需在 Wails 环境实测）
 
-#### P7-1 `QueryEditor.vue` 拆分（优先级：高）
+#### P7-1 `QueryEditor.vue` 拆分（优先级：高）✅ 已完成
 
 **问题**：1503 行里混着四类互不相干的职责——数据库树、Monaco 编辑器与标签页、结果表格与右键菜单、历史面板。8 组右键菜单状态各自维护，`closeAllMenus` 依赖手工逐个关闭，这类写法迟早漏掉一处。
 
@@ -217,7 +287,7 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 - 拆分顺序按「独立性从高到低」：`ResultGrid`（最大且最独立）→ `DatabaseTree` → `HistoryPanel` → `useMonaco`。
 - 迁移时只搬运代码与状态，不顺手"优化"逻辑；发现问题先记录，重构完成后再单独处理。
 
-**进度**：
+**落地结果**：
 - [x] 1/4 `ResultGrid.vue`：结果区整体迁出（工具栏含执行计划与导出、截断提示、取消 / 错误 / 空态、虚拟滚动表格、单元格与表头右键菜单与复制）。props 收 `result / error / canceled / querying / availableSql / insertDb / insertTable / scrollTop`，emit `explain / error / scroll-top`，expose `restoreScroll` / `closeMenus`。主文件 1561 → 1140 行，`vue-tsc` / `npm run test`（116 用例）/ `npm run build` 均通过，Monaco chunk 仍 2,753 kB。
 - [x] 2/4 `DatabaseTree.vue`：树整体迁出（库 / 表 / 视图 / 集群 + 表 & 库右键菜单 + DDL / 建表 / 编辑 / DROP 流程）。props 收 `active / selectedDb / selectedTable`，emit `preview / select-db / append-uuid / insert-ddl / error`，expose `closeMenus` / `reload`；组件内部 `watch(activeConnectionId, immediate)` 自行加载库与集群，主文件刷新按钮改为调用 `reload()`。主文件 629 行，`vue-tsc` / `npm run test`（116 用例）/ `npm run build` 均通过，Monaco chunk 仍 2,753 kB。
 - [x] 3/4 `HistoryPanel.vue`：历史面板整体迁出（列表、单条删除、清空、时间格式化、空态 / 加载态）。props 收 `visible`，emit `select`（回填 SQL 字符串）与 `close`，expose `reload`；内部 `watch(visible, immediate)` 自行拉取历史，主文件 `toggleHistory()` 只翻转 `showHistory`。主文件 629 → 554 行，`vue-tsc` / `npm run test`（116 用例）/ `npm run build` 均通过，Monaco chunk 仍 2,753 kB。
@@ -229,7 +299,7 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 
 **问题**：`DefaultQueryRowLimit = 50000` 是硬截断，用户只能看到前 5 万行，没有任何继续查看的办法（结果面板只提示 `truncated`）。
 
-**已实现（方案 A 前端拼 SQL，后端零改动）**：
+**落地结果（方案 A 前端拼 SQL，后端零改动）**：
 - 新增 `frontend/src/utils/pagination.ts` 纯函数：`splitStatements` / `headKeyword` / `isSingleSelect` / `buildPageSQL` / `nextPage` / `prevPage` / `currentPageNumber` / `hasPrevPage` / `hasNextPage` / `resetPage`，`DEFAULT_PAGE_SIZE = 50000`。
 - 可翻页判定：剥注释后必须是**单条**语句，且首关键字为 `SELECT` 或 `WITH`；`EXPLAIN` / `INSERT` / `CREATE` / `ALTER` / `DROP` / `TRUNCATE` / `RENAME` / `OPTIMIZE` / `SYSTEM` / `USE` / `SET` / `ATTACH` / `DETACH` / `KILL` / `GRANT` / `REVOKE` / `SHOW` / `DESCRIBE` / `DESC` / `EXISTS` 一律不显示分页按钮。
 - `buildPageSQL` 追加 `LIMIT <pageSize> OFFSET <offset>`，剥离尾部空分号与注释，负偏移归零、零页大小归为 1、小数参数取整。
@@ -247,7 +317,7 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 
 **问题**：这是**真实存在的空白**——`utils/` 下已有 `ddl.ts` / `resultTable.ts` / `sqlLiteral.ts` / `tabs.ts` 四个纯函数模块，但每次改动都靠临时 Node 脚本验证后丢弃，没有沉淀。路线图 P6-2 与 P6-5 的验收里写着"用 Node 脚本离线验证"，正是缺测试框架的直接证据。
 
-**已实现**：
+**落地结果**：
 - 引入 **Vitest 2.x**（`vitest@^2.1.9`；vitest 5.x 要求 vite ≥ 6，与本项目 vite 5 冲突，**勿升级**）。`package.json` 新增 `npm run test` / `npm run test:watch`。
 - **只测 `utils/` 纯函数**，未引入组件测试（组件依赖 Wails 运行时与 Monaco，模拟成本远高于收益）。
 - 首批覆盖：`sqlLiteral`（31）、`resultTable`（12）、`tabs`（5）、`ddl`（17）。
@@ -260,7 +330,7 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 
 **问题**：ClickHouse 报错很长，常带 `Code: xx. DB::Exception: ...` 与调用堆栈，当前原样塞进红色面板，用户要自己从长串文本里找重点。
 
-**已实现**：
+**落地结果**：
 - 新增 `utils/sqlError.ts`：`parseSqlError(raw)` 返回 `{ code, summary, raw }`——提炼错误码、一句话原因（`DB::Exception` 描述 + 高频码中文映射），原文完整保留。
 - 高频错误码映射表覆盖 47 / 60 / 62 / 159 / 241 等，未命中回退原始文本首行。
 - 结果面板改为：错误码徽标 + 短摘要 + 「展开原文」折叠按钮，原文不丢。
@@ -271,6 +341,8 @@ P6 已全部收尾，本阶段不再追新功能，转向「还技术债 + 补�
 ### P8 高频能力补强
 
 P7 已全部收尾。P8 三项均由用户明确提出，且互相独立、可单独交付。
+
+**状态：已完成（2026-11-22）**
 
 | 顺序 | 项 | 内容 | 工作量 | 影响面 |
 |---|---|---|---|---|
@@ -295,7 +367,7 @@ P7 已全部收尾。P8 三项均由用户明确提出，且互相独立、可�
 - **手动输入**：对话框内提供可编辑输入框，允许用户改成任意目标表；未选中表时输入框为空并提示必填（不在导出文件中写占位符，避免生成不可执行的 SQL）。
 - 仅当选择 INSERT 格式时才弹出该输入步骤；其余格式保持原有「直接弹系统另存为」流程不变。
 
-**落地记录**：
+**落地结果**：
 - `internal/clickhouse/export.go`：`resultExportRegistry` 追加 `insert` 条目；新增 `renderResultInsert` / `escapeInsertIdentifier` / `insertLiteral` / `escapeInsertString`。字符串转义改为反斜杠风格（`\` → `\\`、`'` → `\'`），并新增 `NaN` / `Inf` → `NULL`，与前端 `sqlLiteral` 完全对齐。
 - `app.go`：`SaveQueryResultAs` 增加 `target` 参数并透传。
 - `frontend/src/api.ts`：`SaveQueryResultAs` 增加可选 `target`（默认空串）。
@@ -316,7 +388,7 @@ P7 已全部收尾。P8 三项均由用户明确提出，且互相独立、可�
 - 前端新建 `components/SavedSQLPanel.vue`（与 `HistoryPanel.vue` 同构）：搜索、内联重命名、单条删除、点击回填；`QueryEditor.vue` 工具栏加书签图标与「+」按钮，两个面板互斥显示；「+」打开 `Teleport` 收藏对话框，预填 SQL 首行作标题。
 - 补 `saved_sql_test.go`：表驱动 + 中文用例名，覆盖正常往返、无上限、空 SQL 拒绝、重复收藏、删除不存在 ID、重启加载一致性、空文件与损坏文件，以及**「清空历史不影响收藏」**的跨界用例。
 
-**落地记录**：
+**落地结果**：
 - 后端：`internal/config/saved_sql.go` + `saved_sql_test.go`；`App` 新增 `saved` 字段与 `GetSavedSQL` / `SaveSQL` / `UpdateSavedSQL` / `DeleteSavedSQL` 四个方法。
 - 前端：`types.ts` 新增 `SavedSQL`；`api.ts` 新增四个方法；`SavedSQLPanel.vue` 新建；`QueryEditor.vue` 接入面板、开关互斥、收藏对话框；`locales/zh.ts` / `en.ts` 各补 12 个 `editor.*` key。
 
@@ -347,6 +419,8 @@ P7 已全部收尾。P8 三项均由用户明确提出，且互相独立、可�
 
 P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**，统一在 `ResultGrid.vue` 的本地视图层实现。
 
+**状态：已完成（2026-11-22）**
+
 | # | 编号 | 内容 | 规模 | 涉及层 |
 |---|---|---|---|---|
 | 1 | P9-1 | 结果表格：复制字段 / 排序 / 搜索 / 刷新 / 定时刷新 / 自定义定时刷新 | 中 | 纯前端 |
@@ -356,6 +430,8 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 | 5 | P9-5 | 空结果 / 加载中 / 刷新态的可视化区分 | 小 | 纯前端 |
 
 #### P9-1 结果区复制字段 · 排序 · 搜索 · 刷新 · 定时刷新 ✅ 已完成
+
+**问题**：结果区只支持导出与复制单元格，缺少高频的分析动作——按列排序、全列搜索、重新刷新、定时刷新；用户想看「当前结果里最大的几条」或「某关键字出现在哪些行」，只能自己导出去再处理。
 
 **方案**：
 - **复制字段**：表头右键菜单新增「复制该字段全部值」「复制该字段去重值」，复制范围跟随当前搜索过滤结果；原有「复制列名（逗号分隔）」保留。
@@ -370,7 +446,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **验收**：`SortState` 三态切换、数值/字符串/空值/重复值排序、搜索过滤与叠加、字段复制去重均有用例覆盖；`npm run test` 318 用例全通过；`vue-tsc --noEmit`、`npm run build`、`go build ./...`、`go test ./...` 通过；Monaco chunk 未增长。
 
-**P9-4 复盘补充（已落地）**：
+##### P9-4 复盘补充
 - **搜索 UI 补齐**：P9-1 当初只落了 `resultView` 辅助函数与 i18n（`searchPlaceholder` / `clearSearch` / `searchNoMatch` / `filteredCount`），工具栏搜索框本身未接入，`rowIndices` 仍是全量索引。现新增 `cellText` / `rowMatches` / `filterRowIndices` 三个纯函数，`rowIndices` 改为由 `filterRowIndices(rows, searchText, searchColumn)` 驱动，工具栏内嵌搜索框（`Esc` / × 清空、`filteredCount` 计数、零命中提示 + 清空按钮），表头右键新增「仅在 xxx 中搜索」收窄到单列；`searchColumn` 随列数变化自动回落全列。
 - **表头改为仅右键**：移除表头 `@click`，只保留 `@contextmenu`（`cursor-context-menu`），左键不再弹菜单；因本地排序从未落地，左键本无其他职责，移除无副作用。
 - **复制列名修正**：表头菜单原「复制列名（逗号分隔）」复制全部列名，不符合右键单列的直觉；改为「复制列名」只复制当前列，全列复制保留为独立菜单项「复制列名（逗号分隔）」。
@@ -379,7 +455,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **问题**：P9-1 的排序与搜索是**本地视图层**过滤，只作用于已加载的结果集；用户想按某列真正重排或过滤全表时没有入口。
 
-**已实现（纯前端拼 SQL，后端零改动）**：
+**落地结果（纯前端拼 SQL，后端零改动）**：
 - 表头菜单新增「升序排序 / 降序排序 / 按此值过滤」，单元格右键菜单新增同类入口。
 - 新增纯函数 `frontend/src/utils/resultFilter.ts`：`appendSort`（替换或追加 `ORDER BY`）、`appendWhere`（追加或合并 `WHERE`）、`filterExpression`（按操作符生成条件）、`escapeSqlString` 等；保留前置注释与尾部 `FORMAT` / `SETTINGS` 子句，重复操作时替换而非叠加。
 - 仅对单条 `SELECT` / `WITH` 生效，其余语句相应入口禁用并给出提示。
@@ -387,7 +463,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **验收**：`resultFilter` 相关用例覆盖排序替换/追加、已有 WHERE 合并、`FORMAT` / `SETTINGS` 尾部保留、注释保留、非法语句拒绝；`vue-tsc --noEmit`、`npm run test`、`npm run build` 通过。
 
-**P9-2 补充（表头按值过滤，DBeaver 式）**：
+##### P9-2 补充：表头按值过滤（DBeaver 式）
 - 表头右键菜单新增「按此值过滤」入口，`filterPanel` 以 `rowIndex = -1` 打开，面板渲染为第二种形态：顶部「输入字符过滤列值」搜索框 → 去重后的列值清单（`headerCandidateValues`，上限 `HEADER_VALUE_LIMIT = 12`，取当前 `rowIndices` 命中行，点选即 `列 = 值` 重跑）→ 5 个常用操作符（`=` / `<>` / `>` / `<` / `LIKE`，套用搜索框内容）→ 搜索框非空时给出「仅在 xxx 中搜索」转本地搜索。
 - 单元格右键形态保持不变（8 种操作符 + 自定义区）；两种形态由模板内 `filterPanel.rowIndex >= 0` 分支切换，共用 `filterColumnName` / `confirmCustomFilter` / `appendWhere`。
 - 新增 i18n key：`editor.filterCandidatePlaceholder` / `editor.filterCandidateEmpty`（中英同步）。
@@ -397,7 +473,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **问题**：结果工具栏原先把 CSV / JSON / Markdown / INSERT 四个导出按钮横向排成一行，占满右侧并挤压其他按钮；同时缺少按列组合多条件的筛选入口。
 
-**已实现（纯前端，后端零改动）**：
+**落地结果（纯前端，后端零改动）**：
 - **导出收拢**：四个导出按钮合并为单个「导出」下拉菜单（`Teleport` 之外的本地绝对定位面板，点外部 / Esc / 选择后自动关闭），菜单内列出全部格式并带图标与描述，工具栏横向压力显著降低。
 - **工具栏分区**：刷新与自动刷新下拉合并为一个带边框的按钮组，执行计划、导出、筛选各为独立分区，视觉层次清晰。
 - **多条件筛选（Navicat 风格）**：新增「筛选」按钮，打开筛选面板，结构为「列 + 条件组」：
@@ -418,7 +494,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **一、功能缺陷（会产出错误 SQL 或错误结果）**
 
-| # | 缺陷 | 现状 | 影响 | 修法 |
+| # | 缺陷 | 现状 | 影响 | 落地结果 |
 |---|---|---|---|---|
 | 1 | 分页 + `ORDER BY` 互相覆盖 | `QueryEditor.onResultRerun` 把 `tab.page` 透传给 `executeSelectedSQL`，后者用 `buildPageSQL` 直接拼 `LIMIT n OFFSET m`，与 `appendSort` / `appendWhere` 已经写入的 `LIMIT` 重复冲突 | 在分页状态下排序或筛选，SQL 变成两段 `LIMIT`，查询直接报语法错误 | 排序/筛选属于**改变结果集语义**的操作，必须重置分页（`page = null`、`offset = 0`）。`onResultRerun` 改为不继承 `tab.page`，新起 `executeSelectedSQL(sql, null, false)` |
 | 2 | 筛选面板不感知 `#` 注释外的方言差异 | `baseStatement` 已剥离 `/* */`、`--`、`#`，但 `isConditionable` 只看首关键字；`INSERT INTO ... SELECT` 这类以 DML 开头但含子查询的语句直接被判为不可用 | 影响面小，但提示文案容易误导 | 保持现状，但把禁用原因细分（非单语句 / 非只读），tooltip 明确告知用户 | 
@@ -451,8 +527,6 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 5. **问题 6、7（死代码清理）** — 纯删除，放最后避免干扰前面的验证。
 6. **问题 12（拆 `ResultFilterPanel.vue`）** — 与前五项分开做，单独一轮回归。
 
-**验收**：分页状态下点击排序/筛选能得到合法 SQL 且分页自动归位；数值列筛选不再带引号（并为文本列保留引号）；`resultFilter.test.ts` 补充「数值列 / 文本列 / 列名需转义 / LIKE 自动补通配」用例；`vue-tsc --noEmit`、`npm run test`、`npm run build` 通过。
-
 **落地结果**：
 
 | # | 项 | 落地 |
@@ -469,7 +543,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 | 11 | 导出下拉键盘可达性 | 菜单补 `role="menu"` / `aria-haspopup` / `aria-expanded`；打开即聚焦首项，`↑` `↓` `Home` `End` 导航，`Esc` 关闭，`focus:bg-ch-hover` 焦点可见 |
 | 12 | `ResultGrid.vue` 膨胀 | 筛选面板拆入 `components/ResultFilterPanel.vue`（纯 UI，`v-model:conditions` / `v-model:error` + `close / apply / clear`），`ResultGrid` 仅保留状态持有与 SQL 拼装 |
 
-**验收（实测）**：`resultFilter.test.ts` 87 用例、前端合计 **380** 用例全通过；`vue-tsc --noEmit`、`npm run build`（12.47s）、`go build ./...`、`go test ./...` 全部通过。
+**验收**：分页状态下点击排序/筛选能得到合法 SQL 且分页自动归位；数值列筛选不再带引号（文本列保留引号）；`resultFilter.test.ts` 覆盖「数值列 / 文本列 / 列名需转义 / LIKE 自动补通配」，87 用例、前端合计 **380** 用例全通过；`vue-tsc --noEmit`、`npm run build`（12.47s）、`go build ./...`、`go test ./...` 全部通过。
 
 #### P9-5 空结果 / 加载中 / 刷新态的可视化区分（优先级：高）✅ 已完成
 
@@ -483,7 +557,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 | 2 | **空表与「查询已执行但无命中」混淆** | `t('editor.noResults')` = 「查询完成，无结果」 | 只有一行灰字，没有表名、没有行数/耗时、不分「表本来就空」还是「筛选条件过滤掉了全部数据」。用户无从判断 |
 | 3 | **刷新时 `keepResult` 隐藏了进行态** | `QueryEditor.onResultRefresh` 传 `keepResult = true` | 刷新期间旧结果保留是刻意的（避免闪空），但没有任何「正在刷新」标识，用户以为卡死。定时刷新更是完全静默 |
 
-**修法**：
+**方案**：
 
 1. **补加载态分支**：在条件链最前面插入 `v-if="querying && !result"` 的骨架/加载占位——居中显示旋转图标 + `t('editor.queryRunning')`（「正在查询…」）。`keepResult` 场景（`querying && result`）则在结果区顶部叠加一条细进度条或「刷新中…」角标，不动已有表格。
 2. **空结果升级为语义化空态**：把 `row_count === 0` 的灰字换成带图标 + 主副标题的空态卡片：
@@ -495,18 +569,18 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **i18n**：新增 `editor.queryRunning` / `editor.emptyResultTitle` / `editor.emptyTableHint` / `editor.emptyFilteredHint` / `editor.clearFilterAction` / `editor.refreshing`，中英同步。
 
-**验收**：查空表时立即出现「正在查询…」，返回后显示「查询完成，0 行 / 该表暂无数据」并带耗时；筛选后无命中显示「当前筛选条件下无匹配」且「清除筛选」可用；刷新期间顶部可见「刷新中…」；查询进行中工具栏按钮禁用但视觉上明确是「在查」而不是「卡住」；`vue-tsc --noEmit`、`npm run test`、`npm run build` 通过。
-
 **落地结果**：
 - 主内容区判定链收敛为 `canceled → error → showLoading → isEmptyResult → searchNoMatch → hasTable → 初始提示`，新增派生状态 `showLoading`（`querying && !result`）、`showRefreshing`（`querying && result`）、`isEmptyResult`（`row_count === 0`）、`hasTable`（有列）、`searchNoMatch`（有数据但本地搜索零命中）。
 - 空态卡片：图标 + `emptyResultTitle`（「查询完成，0 行」）+ 副标题（`emptyTableHint` / `emptyFilteredHint`）+ 元信息行 `emptyResultMeta`（「{columns} 列 · 耗时 {elapsed} ms」）+ 底部列名清单；服务端筛选导致的空结果显示「清除筛选」按钮一键重跑原 SQL。
 - `locales/zh.ts` / `en.ts` 新增 `queryRunning` / `emptyResultTitle` / `emptyTableHint` / `emptyResultMeta` / `emptyFilteredHint` / `clearFilterAction` / `refreshing`，中英同步。
 
-**P9-5 复盘（空表白屏，已修复）**：
+**验收**：查空表时立即出现「正在查询…」，返回后显示「查询完成，0 行 / 该表暂无数据」并带耗时；筛选后无命中显示「当前筛选条件下无匹配」且「清除筛选」可用；刷新期间顶部可见「刷新中…」；查询进行中工具栏按钮禁用但视觉上明确是「在查」而不是「卡住」；`vue-tsc --noEmit`、`npm run test`、`npm run build` 通过。
+
+##### P9-5 复盘：空表白屏
 
 用户反馈「查空表时结果区什么都没显示 / 显示一下就不见了」。真实原因是**三个独立缺陷叠加**，前两个只在运行时才暴露，`vue-tsc` 与单测都查不出来：
 
-| # | 缺陷 | 说明 | 修法 |
+| # | 缺陷 | 说明 | 落地结果 |
 |---|---|---|---|
 | 1 | `<script setup>` 的 TDZ 崩溃 | 新增的 `searchNoMatch`、`filteredByServer` 两个 computed 引用了**下方**才声明的 `isEmptyResult` / `hasTable` / `advancedFilterConditions`。`const` 不提升，computed 求值即抛 `ReferenceError`，整块渲染失败 | 把两个 computed 下移到依赖声明之后。**新增 computed 时必须确认它引用的每个 `const` 都在上方** |
 | 2 | i18n key 缺失 | 模板用了 `t('editor.emptyResultMeta', ...)`，但该 key 中英文件都没加。vue-i18n 对未知 key 做参数插值时抛 `TypeError`，表现为「先渲染一半再消失」 | 补齐 `emptyResultMeta`；并约定新增模板 key 必须同步中英文 |
@@ -516,18 +590,36 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **教训**：类型检查对 TDZ 与 i18n key 完全无效。可空类型声明 + `vue-tsc` 是最可靠的「全量人工排查替代品」，覆盖面比 grep 完整。
 
-#### P10 结果区体验补齐：单元格编辑 / 工具栏整理 / 启动不自动连接 ✅ 已完成
+### P10 结果区体验补齐：单元格编辑 / 工具栏整理 / 启动不自动连接
 
-**一、结果区工具栏整理 + 实际执行 SQL 可见**
+P9 收尾后由用户现场反馈驱动，聚焦结果区的高频操作。状态行与条目表如下。
 
-问题：筛选 / 排序 / 分页会改写 SQL 后重跑，用户看不到最终发给后端的是什么；工具栏按钮样式不一、左侧信息被压缩成竖排。
+**状态：已完成（2026-11-22）**——以下七项按交付顺序记录。
 
+| 顺序 | 项 | 内容 | 影响面 |
+|---|---|---|---|
+| 1 | P10-1 | 结果区工具栏整理 + 实际执行 SQL 可见 | 纯前端 |
+| 2 | P10-2 | 单元格双击编辑（生成 `ALTER ... UPDATE`，不自动执行） | 纯前端 + `utils/cellEdit.ts` |
+| 3 | P10-3 | 启动默认不连接 | 纯前端 |
+| 4 | P10-4 | 记录被误清空文件的恢复 | 文件恢复 |
+| 5 | P10-5 | 单元格编辑定位列全自动化 | 后端 `ColumnInfo` + 前端 `cellEdit.ts` |
+| 6 | P10-6 | 单元格编辑改为 Navicat 式「改完直接应用」 | 纯前端 |
+| 7 | P10-7 | 修复「点应用修改后结果没刷新」 | 后端 `Exec` mutation 同步 |
+
+#### P10-1 结果区工具栏整理 + 实际执行 SQL 可见 ✅ 已完成
+
+**问题**：筛选 / 排序 / 分页会改写 SQL 后重跑，用户看不到最终发给后端的是什么；工具栏按钮样式不一、左侧信息被压缩成竖排。
+
+**落地结果**：
 - 工具栏改为三段式：左侧「结果统计 + 查看 SQL」不可压缩单行（`shrink-0 whitespace-nowrap`，整行可横向滚动兜底），中间弹性留白，右侧刷新 / 执行计划 / 导出 / 筛选 `shrink-0` 保护。
 - 「查看 SQL」按钮放在左侧统计旁，面板 Teleport 定位：`QueryTab.lastExecutedSql` 记录**最终发给后端**的语句（含分页 `LIMIT`、`WHERE`、`ORDER BY`），与编辑器原文不一致时按钮上打一个小圆点提示 `executedSqlModified`。
 - 导出 / 筛选按钮补全边框，筛选有活跃条件时高亮。
 
-**二、单元格双击编辑（生成 UPDATE，不自动执行）**
+#### P10-2 单元格双击编辑（生成 UPDATE，不自动执行）✅ 已完成
 
+**问题**：结果表格只读，想改一个字段值只能切到编辑器手写 `ALTER ... UPDATE`，且定位行要靠人肉拼 `WHERE`。
+
+**落地结果**：
 - 新增纯函数 [utils/cellEdit.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/cellEdit.ts)：`parseQuerySource` 从单表 `FROM` / `UPDATE` 提取源表，`buildAlterUpdateSQL` 生成 `ALTER TABLE ... UPDATE ... WHERE ...;`。
 - `ResultGrid` 双击单元格进入编辑，`Enter` / 失焦提交、`Esc` 取消；提交时 `emit('edit-sql', sql)`，`QueryEditor.onResultEditSql` 写入 Monaco 并聚焦，**绝不自动执行**（ClickHouse mutation 不可回滚）。
 - 定位行靠「定位列」：默认自动识别结果中的主键列，表头右键「用作编辑定位列」可手工指定 / 取消。
@@ -535,21 +627,24 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 - 数值列（`U?Int*` / `Float*` / `Decimal` / `Bool`）输出裸字面量，其余走 `sqlLiteral` 转义。
 - `cellEdit.test.ts` 31 条用例，覆盖源表解析、各类拒绝场景、定位条件拼接、数值 / 文本字面量、SQL 形状。
 
-**三、启动默认不连接**
+#### P10-3 启动默认不连接 ✅ 已完成
 
-问题：启动时 `App.vue` 的 `onMounted` 调用 `store.checkAllConnections()`，对**每条**已保存连接真实 `TestConnection`，远端节点不可达时刷一屏 `dial tcp ... timeout`，用户什么都没点就被建连。
+**问题**：启动时 `App.vue` 的 `onMounted` 调用 `store.checkAllConnections()`，对**每条**已保存连接真实 `TestConnection`，远端节点不可达时刷一屏 `dial tcp ... timeout`，用户什么都没点就被建连。
 
+**落地结果**：
 - 移除启动时的自动探测。`activeConnectionId` 初始为 `null`，`DatabaseTree` 的 `watch` 因此不触发加载。
 - 保留的 `checkConnection(s)` 调用全部是用户主动触发：点击连接、右键「检查连接」、连接行刷新按钮、导入配置后刷新状态。
 - 打包同时明确：本项目 Wails v3 + 本机 CLI v2 不兼容，用 `go build -ldflags "-H windowsgui -s -w"`，避免 PE 子系统为 CONSOLE 弹出 DOS 窗口（详见 `project_rules.md`「Windows 打包」）。
 
-**四、记录被误清空文件的恢复**
+#### P10-4 记录被误清空文件的恢复 ✅ 已完成
 
-`ResultGrid.vue` 曾被一条写错的 PowerShell 批量替换命令清空（变量未赋值导致写入空内容）。因无 git 历史与编辑器备份，按 `dist/` 16:07 构建产物反推语义重建完整 SFC。教训：**批量改动前先确认变量已赋值，重要文件改动前先留副本**。
+**问题**：`ResultGrid.vue` 曾被一条写错的 PowerShell 批量替换命令清空（变量未赋值导致写入空内容）。
 
-**五、单元格编辑定位列全自动化（P10 补充）**
+**落地结果**：因无 git 历史与编辑器备份，按 `dist/` 16:07 构建产物反推语义重建完整 SFC。**教训**：批量改动前先确认变量已赋值，重要文件改动前先留副本。
 
-**用户现场反馈**：双击单元格提示「请先在表头右键设置「编辑定位列」，用于生成 WHERE 条件」。别的工具（DBeaver / Navicat）双击就能改，不需要先手动点一下表头。
+#### P10-5 单元格编辑定位列全自动化 ✅ 已完成
+
+**问题**：双击单元格提示「请先在表头右键设置「编辑定位列」，用于生成 WHERE 条件」。别的工具（DBeaver / Navicat）双击就能改，不需要先手动点一下表头。
 
 **根因（两个叠加）**：
 
@@ -558,7 +653,7 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 | 1 | 自动选键条件过严 | 旧逻辑要求「结果集中**恰好只有 1 列**全非空且全唯一」才自动设键；查一张主键列 + 多个唯一列的表时（如 `id` 与 `trace_id` 都唯一）永远判不出，直接落到「请手动设置」分支 |
 | 2 | 后端主键信息被丢弃 | `GetTableSchema` 用 `DESCRIBE TABLE` 本就返回 `primary_key` 列，但解析时只取了 `name/type/comment`，主键标记被丢弃，前端无从得知表主键 |
 
-**修法（对齐 DBeaver 三级策略，无需任何人工设置）**：
+**落地结果**（对齐 DBeaver 三级策略，无需任何人工设置）：
 
 1. 后端 `ColumnInfo` 新增 `is_primary` / `has_default`。`primary_key` 在 ClickHouse 中是 `UInt8`，驱动可能返回 `uint8/int64/bool/[]byte`，新增 `isTruthy` 统一判定，避免类型断言失败丢主键。
 2. 前端新增纯函数 `detectKeyColumns`：
@@ -572,11 +667,11 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **验收**：`npx vue-tsc --noEmit` 0 错误；`npm run test` **440** 用例（13 文件）全通过，其中 `cellEdit.test.ts` 由 31 条增至 **42** 条（新增 `detectKeyColumns` 8 条 + `buildRowKeys` 3 条）；`npm run build` 成功（Monaco chunk 2,753.05 kB / 715.82 kB gzip，未增长）；`go build ./...`、`go test ./...` 通过；EXE 重新打包，`Subsystem=2`，22 MB。
 
-**六、单元格编辑改为 Navicat 式「改完直接应用」（P10 补充）**
+#### P10-6 单元格编辑改为 Navicat 式「改完直接应用」✅ 已完成
 
-**用户现场反馈**：只生成 SQL 填进编辑器还是不方便，Navicat 是双击改完点保存就生效，希望也能这样。
+**问题**：只生成 SQL 填进编辑器还是不方便，Navicat 是双击改完点保存就生效，希望也能这样。
 
-**修法**：`ResultGrid` 增加待提交队列 `pendingEdits`（`{rowIndex, colIndex, value, sql}`）：
+**落地结果**：`ResultGrid` 增加待提交队列 `pendingEdits`（`{rowIndex, colIndex, value, sql}`）：
 
 1. `commitEditCell` 从「直接 `emit('edit-sql')`」改为**暂存**；同一单元格再次编辑则覆盖（改回原值则移除该项）。
 2. 单元格渲染优先读 `pendingValue`，已修改内容以琥珀色显示；`isPendingEdited` 驱动该分支。
@@ -588,13 +683,13 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **验收**：`npx vue-tsc --noEmit` 0 错误；`npm run test` **440** 用例全通过；`npm run build` 成功（Monaco 2,753.05 kB / 715.82 kB gzip 未增长）；EXE 重新打包 `Subsystem=2`，21.97 MB。
 
-**七、修复「点应用修改后结果没刷新」（P10 补充）**
+#### P10-7 修复「点应用修改后结果没刷新」✅ 已完成
 
-**现场现象**：点「应用修改」后列表仍是旧值，看起来像没刷新。
+**问题**：点「应用修改」后列表仍是旧值，看起来像没刷新。
 
 **根因**：ClickHouse 的 `ALTER TABLE ... UPDATE` 是**异步 mutation**，`ExecContext` 返回时 mutation 往往还没写完数据，前端紧接着的 `Query` 读到的仍是旧值。不是前端刷新逻辑问题。
 
-**修法**：[service.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/service.go) 的 `Exec` 入口统一走 `ensureMutationSync`：
+**落地结果**：[service.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/service.go) 的 `Exec` 入口统一走 `ensureMutationSync`：
 
 1. `isMutationStatement` 跳过前置 `--` / `/* */` 注释后按关键字判定：`ALTER ... UPDATE|DELETE`、独立 `DELETE FROM`。
 2. 命中且未显式指定时，去掉结尾分号并追加 `SETTINGS mutations_sync = 2`（`2` = 等所有副本完成），使返回时数据已真实可读。
@@ -603,18 +698,197 @@ P8 已全部收尾后由用户提出，全部为**纯前端 + 后端零改动**�
 
 **验收**：新增 [mutation_test.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/mutation_test.go) 15 条表驱动用例全通过；`go build ./...`、`go test ./...` 全绿；`npm run build` 成功；EXE 重新打包 21.97 MB。
 
-### 明确不做
+### P11 单元格编辑收口 + ResultGrid 拆分
+
+P10 把「双击编辑 → 生成 `ALTER ... UPDATE`」跑通了，但自审发现三处真实缺陷，且 `ResultGrid.vue` 已涨到 **1,576 行**（P9-4 只拆了筛选面板，其余四套逻辑仍混在一个文件）。本阶段不改产品方向，只做「修缺陷 + 还技术债」。
+
+| 顺序 | 项 | 内容 | 工作量 | 影响面 |
+|---|---|---|---|---|
+| 1 | P11-1 | 应用修改前弹确认框，预览全部待执行 SQL | 小 | 纯前端 + i18n |
+| 2 | P11-2 | 批量应用部分失败时保留未执行语句，不静默丢弃 | 小 | 前端 + i18n |
+| 3 | P11-3 | 编辑定位列自动识别改为返回独立的行号表，修「定位列错位」 | 中 | `utils/cellEdit.ts` + 测试 |
+| 4 | P11-4 | `ResultGrid.vue` 拆分：单元格编辑 / 自动刷新 / 导出 / 菜单定位 | 大 | 纯前端重构 |
+
+**状态：全部完成（2026-11-22）**——P11-1 ✔ / P11-2 ✔ / P11-3 ✔ / P11-4 ✔（`ResultGrid.vue` 1,576 → 946 行）。
+
+执行顺序理由：P11-1 与 P11-2 都在 `applyPendingEdits` 这条链上，且 P11-2 依赖 P11-1 的确认弹窗承载「哪些成功、哪些未执行」的回显，合并为一轮；P11-3 只动纯函数与单测，独立可验证；P11-4 是大重构，放最后避免把前面三项的改动搅进结构变动里。
+
+#### P11-1 应用修改前确认 + SQL 预览（优先级：高）✅ 已完成
+
+**问题**：`ResultGrid.applyPendingEdits` 直接 `emit('apply-edits', ...)`，`QueryEditor.onResultApplyEdits` 立刻逐条 `api.Execute`。ClickHouse 的 `ALTER ... UPDATE` 是**不可回滚的 mutation**，一次批量点下去就是真实数据变更——P10 只做了「不自动执行」，却没给最后一道人工确认。同时待执行 SQL 只在编辑器的临时状态里，用户看不到将要执行什么。
+
+**落地结果**：
+1. 点「应用修改」先打开确认弹窗（`Teleport to="body"`，z-index 3000），列出每条待执行语句（等宽字体、可滚动、最大高度限制），显示条数与目标表名。
+2. 弹窗内提供「复制 SQL」与「仅填入编辑器」两个次要动作（复用已有 `fillPendingEditsToEditor` 链路），主按钮才是「确认执行」。
+3. 确认后才 `emit('apply-edits')`；取消（`Esc` / 点遮罩 / 关闭按钮）**不改动** `pendingEdits`，用户可继续编辑。
+4. 执行期间主按钮显示 `applyingEdits` 并禁用，防止重复点击。
+
+**i18n**：新增 `editor.applyConfirmTitle` / `editor.applyConfirmHint` / `editor.applyConfirmCount` / `editor.applyConfirmExec` / `editor.copyEditsSql`，中英同步。
+
+**验收**：点「应用修改」不会直接发请求，必须先确认；弹窗内 SQL 与将发送的完全一致；取消后待编辑项仍在；`vue-tsc --noEmit`、`npm run test`、`npm run build` 通过。
+
+#### P11-2 批量应用部分失败不丢语句（优先级：高）✅ 已完成
+
+**问题**：`onResultApplyEdits` 在 `for` 循环里遇到第一条失败就 `break`，剩余的语句**既没执行也没记录**；紧接着 `pendingEdits.value = []` 已在 `applyPendingEdits` 里清空。结果：用户看到一条报错，实际数据库里只改了一半，剩下几条静默消失，无法重试也不知道漏了哪些。
+
+**落地结果**：
+1. `QueryEditor.onResultApplyEdits` 不再于 `ResultGrid` 侧清空待执行列表。改为由 `ResultGrid` 接收执行结果：新增 emit `apply-edits` 的回执（父组件通过 prop 或重新进入结果态传递结果）。
+   - 具体实现：`onResultApplyEdits` 返回执行统计 `{ ok: number; failed: string; remaining: { value: string; sql: string }[] }`，`ResultGrid` 暴露 `restorePendingEdits(items)` 方法（`defineExpose`），失败时只把**未执行部分**回填到 `pendingEdits`，已成功的丢弃。
+2. 失败时错误文案 `applyEditsFailed` 增加「已成功 N 条 / 未执行 M 条」的计数（新增带参数的 key，原 key 保留兼容）。
+3. 全部成功时维持现状：清空待执行、按 `tab.page` 重新执行原 SQL 刷新结果。
+4. 失败时不自动刷新结果（数据只改了一半，刷新只会让用户更困惑）；底部待编辑条保持可见，用户可再次确认执行。
+
+**i18n**：新增 `editor.applyEditsPartial`（带 `ok` / `failed` / `remaining` 参数）。
+
+**验收**：构造第 2 条必然失败的批量场景，第 1 条成功、第 3 条不被执行且回填到待编辑条；错误提示含成功数与剩余数；全部成功时行为与现状一致。
+
+#### P11-3 编辑定位列自动识别修正（优先级：中）✅ 已完成
+
+**问题**：`detectKeyColumns` 对「无主键」结果集走「全列当定位列」兜底（`reason: 'all'`），但 `buildRowKeys` 在 `keyColumnIndex` 仅取单列时，表头右键高亮与「用作编辑定位列」的勾选状态依赖 `keyColumnIndex`（`keyIndexes.length === 1` 才算），多列自动识别时 `keyColumnIndex === -1`，表头右键菜单显示「无定位列」——与实际生效的多列条件不一致。用户以为没有定位列，实际上 WHERE 用的是全列，编辑行为与显示不符。
+
+**落地结果**：
+1. `cellEdit.ts` 新增纯函数 `describeKeyStrategy(keyIndexes: number[], result: AutoKeyResult)` 返回 `{ mode: 'primary' | 'unique' | 'all' | 'manual' | 'none'; label: string; indexes: number[] }`，把「自动识别结果 + 手工覆盖」统一成一份可展示的状态，`editKeyHint` 改为基于它渲染。
+2. `ResultGrid` 表头右键菜单对 `keyIndexes` 中的**每个**列都显示勾选态（`setKeyColumn` 已有「点同一列取消」的语义，此处只补多列展示），不再只认 `keyColumnIndex`。
+3. `detectKeyColumns` 边界补强：`rows` 为空时不再返回 `reason: 'all'`（0 行结果本就不需定位列，返回 `indexes: []` 更诚实），并同步测试期望。
+4. `cellEdit.test.ts` 为 `describeKeyStrategy` 与空行分支补用例（正常 / 主键 / 唯一 / 全列 / 手工 / 无）。
+
+**验收**：无主键表编辑时表头菜单显示「全列定位」而非「无定位列」；0 行结果 `detectKeyColumns` 返回空索引；`cellEdit.test.ts` 全通过。
+
+#### P11-4 `ResultGrid.vue` 拆分（优先级：中）✅ 已完成
+
+**问题**：`ResultGrid.vue` 1,576 行，单元格编辑、自动刷新、导出、菜单定位、筛选（已拆一半）、SQL 预览面板七套逻辑混在一个 `<script setup>`。P9-4 只落地了筛选面板拆分（问题 12），P11-1/2 又要在这条链上加确认弹窗与失败回填，再不拆会继续膨胀。
+
+**落地结果**（沿用 P9-4 的模式：纯 UI 进组件，状态留在 `ResultGrid`）：
+1. 抽 `components/ResultApplyConfirmModal.vue`：纯 UI，`props: { statements: string[]; applying: boolean }`，`emits: confirm / cancel / copy / fill`。承载 P11-1 的确认弹窗。
+2. 抽 `components/ResultCellEditBar.vue`：底部待编辑条（`pendingEdits` 计数、填入编辑器 / 丢弃 / 应用），`props: { count: number; querying: boolean }`，`emits: fill / discard / apply`。
+3. 抽 `components/ResultAutoRefreshMenu.vue`：自动刷新下拉 + 自定义秒数弹窗（把 `autoRefresh*` 那一段纯 UI 移出），状态仍留在 `ResultGrid`（定时器与刷新触发是副作用，必须留在持有 `emit('refresh')` 的组件）。
+4. 抽 `components/ResultExportMenu.vue`：导出格式下拉（`exportFormats` / `exporting` / `exportedPath`），`props` 传格式列表与状态，`emits: select / close`。
+5. 菜单定位逻辑（`clampMenuPosition` / `MENU_MARGIN` 等）抽到 `utils/menuPosition.ts`，配 `menuPosition.test.ts`（表驱动：贴边、越界、负坐标、超大菜单）。
+6. 目标：`ResultGrid.vue` 降到 **1,000 行以内**，纯函数逻辑必须进 `utils/` 且有 `*.test.ts`。
+
+**验收**：拆分后 `vue-tsc --noEmit`、`npm run test`、`npm run build` 全绿；自动刷新倒计时、导出、单元格编辑、筛选面板、SQL 预览、分页、虚拟滚动均在 UI 上回归正常；`ResultGrid.vue` 行数 < 1,000。
+
+### P12 性能与可配置性收口
+
+P11 收口后自审发现的性能与可配置性短板：批量编辑的逐条往返、导出时的多份内存副本、硬编码的行数上限、以及 `App.vue` / `MenuBar.vue` 的壳层职责过载。本阶段以「消除真实等待与内存压力」为优先。
+
+| 顺序 | 项 | 内容 | 工作量 | 影响面 |
+|---|---|---|---|---|
+| 1 | P12-1 | 单元格编辑批量执行改走单次请求 | 中 | 后端 + 前端 + API 契约 |
+| 2 | P12-2 | 导出改为流式写出，不再整体回传前端 | 中 | 后端 + 前端 |
+| 3 | P12-3 | 查询行数上限可配置（`settings.json`） | 中 | 后端新增持久化 + API 契约 |
+| 4 | P12-4 | `App.vue` / `MenuBar.vue` 瘦身 | 低 | 纯前端重构 |
+
+**状态：全部完成（2026-11-22）**——P12-1 ✔ / P12-2 ✔ / P12-3 ✔ / P12-4 ✔。各条目标题末尾的 ✅ 与本节一致。
+
+执行顺序理由：P12-1 是用户可感知的真实等待问题（批量编辑），且它顺带把 P11-2 的估算式回执变成精确回执，收益最高；P12-2 是导出大结果的内存与卡顿，改动集中在 `export.go` 与 `onResultApplyEdits` 之外的一条独立链路；P12-3 新增持久化文件与跨层签名变更，需同步 `API.md`，且 P12-4 的 `SettingsModal` 依赖它，故排在第三；P12-4 是纯重构，必须放在最后，避免把前三项的逻辑变动搅进结构变动。
+
+阶段验收标准：`go build ./...`、`go test ./...`、`npx vue-tsc --noEmit`、`npm run test`、`npm run build` 全绿；按项目规则重新打包 `meteor-ch-workbench.exe` 并确认 PE 子系统为 2；`docs/API.md` 同步 `ExecuteBatch` / `GetSettings` / `SaveSettings` / `Query` 签名变更。
+
+#### P12-1 单元格编辑批量执行改走单次请求（优先级：高）✅ 已完成
+
+**问题**：`QueryEditor.onResultApplyEdits` 用 `for` 循环逐条 `await api.Execute(...)`。改 100 个单元格就是 **100 次跨进程调用**，每次都单独建 connection 取连接、单独走 `ExecResult` 序列化，串行执行下 100 条要等 100 个往返；任何一条失败都会 `break`，剩下的既不执行也不返回。批量场景下这是明显的等待与不稳定来源。
+
+**方案**：
+1. 后端 `Service` 新增 `ExecBatch(ctx, conn, statements []string, continueOnError bool) *ExecBatchResult`，内部复用已建立好的 `*sql.DB`，顺序执行并逐条记录 `{ index, sql, error }`；`continueOnError = true` 时不中断，一次把所有失败点全部收集回来。
+2. `app.go` 增 `App.ExecuteBatch(connectionID string, statements []string) (*clickhouse.ExecBatchResult, error)`，错误同样只放进返回体 `.error` 字段（遵循「SQL 错误不入 Go error」约定）。
+3. 前端 `api.ts` 增 `ExecuteBatch`；`QueryEditor.onResultApplyEdits` 改为一次调用，按回执区分：全成功 → 清空待编辑 + 刷新；有失败 → 只回填**失败与未执行**的语句（P11-2 语义保留且更精确，因为现在能拿到每条的真实失败原因，不再用「第一条失败即未知后续」的推算）。
+4. 保留串行执行语义（`ALTER ... UPDATE` mutation 并行提交在 ClickHouse 里会互相排队，反而更慢），不做并发。
+
+**落地结果**：
+- `Service.ExecBatch` / `App.ExecuteBatch` / 前端 `api.ExecuteBatch` 全链路接通，`useCellEditing` 回执改按 `failedIndexes` / `skippedIndexes` 精确回填。
+- `internal/clickhouse/exec_batch_test.go` 新增 6 条表驱动用例：空列表 / 单条成功 / 中间失败中断 / `continueOnError` 全量收集 / 回执索引正确。
+
+**验收**：批量改 50 个单元格只发 1 次 `ExecuteBatch`；中间 1 条失败时，回执里 `ok` / `failed[]` / `skipped[]` 计数正确，且待编辑条只剩未成功项；`go test ./...`、`vue-tsc --noEmit`、`npm run test`、`npm run build` 全绿。
+
+#### P12-2 导出不再整体回传前端（优先级：中）✅ 已完成
+
+**问题**：`ResultGrid.doExport` 先 `rowIndices.map(ri => res.rows[ri])` 在 JS 里造一份完整行数组，再 `api.SaveQueryResultAs(format, columns, rows, target)` 把整表经 Wails 序列化传给 Go，Go 转成 `[]interface{}` 再格式化。5 万行 × 20 列时，数据在内存里至少存在 **3 份副本**（原 `result.rows`、映射出的 `rows`、Wails JSON、Go 侧反序列化），导出会明显卡顿甚至瞬间吃满内存。
+
+**方案**：
+1. 后端 `clickhouse/export.go` 增加增量渲染契约 `ExportResultTo(w io.Writer, format string, columns []string, rows [][]interface{}) error`，各格式注册项改为「逐行写」实现；原「拼完整 `content` 字符串再 `os.WriteFile`」改为 `os.Create` + 直接写入 `io.Writer`，消除「完整 content 字符串 + 文件缓冲」的双份占用。
+2. `App.SaveQueryResultAs` 改为先弹保存对话框拿到路径，再打开文件流式写出；`ExportResultByFormat` 保留（供测试与复制到剪贴板复用），内部改为基于同一注册表的 `bytes.Buffer` 适配。
+3. 前端不再额外造副本：`doExport` 直接把 `res.rows` 中 `rowIndices` 命中行按需 splice 成一份（这是必需的一份），并复用 `res.columns` 的 `name` 数组缓存，避免每次导出重新 `map`。
+4. 导出前校验：`rows` 长度与 `rowIndices` 不一致时直接报错，避免误导性静默截断。
+5. 导出期间按钮显示进度文案（`editor.exportingRows`，带行数），大结果给用户可见反馈。
+
+**落地结果**：
+- `ExportResultTo(io.Writer)` 增量渲染，`App.SaveQueryResultAs` 先弹对话框再流式落盘；`ExportResultByFormat` 降为 `bytes.Buffer` 适配层。
+- `export_test.go` 新增 `TestExportResultToMatchesByFormat`（9 组逐字节一致）、`TestExportResultToWriteError`、`TestExportResultToUnknownFormat`、`TestResultExportExtension`。
+- 前端 `doExport` 加行号越界校验，`ResultExportBar` 显示 `editor.exportingRows` 进度文案（同时接入此前未使用的 `ResultExportBar` / `ResultCellEditBar`）。
+
+**验收**：5 万行结果导出时前端内存不再出现第二份完整数组；导出内容与拆分前逐字节一致；`export_test.go` 新增用例通过。
+
+#### P12-3 查询行数上限可配置（优先级：中）✅ 已完成
+
+**问题**：`DefaultQueryRowLimit` 是硬编码常量（5 万），`Query` 的 `QueryResult.RowLimit` 只是把它回显给前端。用户查大表时要么被迫分页、要么根本拿不到完整数据，也没有任何入口调整；反过来，想更保守地限制（比如弱机器）也改不了。
+
+**方案**：
+1. `config` 新增 `Settings` 结构体（`settings.json`，沿用「内存缓存 + `sync.RWMutex` + 变更后全量写回」模式），字段 `rowLimit int`、`defaultPageSize int`，含 `clampRowLimit`（下限 1,000、上限 1,000,000）的纯函数与对应 `settings_test.go`。
+2. `App` 增 `GetSettings() (config.Settings, error)` / `SaveSettings(s config.Settings) error`。
+3. `Service.Query` 增加 `rowLimit int` 参数，为 0 时回落 `DefaultQueryRowLimit`；`App.Query` 由 `GetSettings()` 取值传入。`docs/API.md` 同步签名变更。
+4. 前端：结果工具栏「行数上限」输入（仅影响下一次查询，并提示当前生效值），`QueryResult.RowLimit` 已在返回体中，直接展示。i18n 增 `editor.rowLimit` / `editor.rowLimitHint` / `editor.rowLimitApplied`。
+5. 超出上限被截断时，截断提示文案带出「上限 N 行，可在设置中调整」（复用已有截断面板）。
+
+**落地结果**（实现与清单略有出入，以代码为准）：
+- `internal/config/settings.go` 提供 `SettingsFile{query_row_limit}` + `SettingsManager`（内存缓存 + `sync.RWMutex` + 全量写回）+ 纯函数 `NormalizeRowLimit`（下限 `RowLimitMin = 100`、上限 `RowLimitMax = 1000000`、`0` 表示不限制、非法值回落 `DefaultRowLimit = 50000`）。
+- `Service.QueryWithLimit` 接收显式上限，`Query` 委托它保持向后兼容；`App.Query` 从 `prefs.RowLimit()` 取值；新增 `App.GetSettings` / `App.SaveSettings`。
+- 前端 Help 菜单加「查询设置」弹窗（行数上限输入 + 不限制勾选 + 越界提示）；`settings_test.go` 6 组用例覆盖默认值 / 往返 / 规范化 / 文件损坏。
+
+**验收**：设置 1,000 后查询 5 万行表只返回 1,000 行且提示带出上限值；设置为非法值（0 / 负数 / 上限外）被 clamp 到合法区并持久化；重启后设置保持。
+
+#### P12-4 `App.vue` / `MenuBar.vue` 瘦身（优先级：低）✅ 已完成
+
+**问题**：现状 `App.vue` 692 行、`MenuBar.vue` 591 行、`QueryEditor.vue` 735 行，虽未失控，但 `App.vue` 承担了连接 CRUD、导入导出、设置、菜单编排四类职责，`MenuBar.vue` 同时管连接选择器、语言切换、文件菜单与关于对话框，后续加一项就要在这两个文件里各找一次插入点。
+
+**方案**（沿用 P11-4 模式，先做 `App.vue`）：
+1. `App.vue` 的导入 / 导出配置流程抽 `composables/useConfigTransfer.ts`（导出格式加载、导出 / 另存为、剪贴板复制、导入选文件与模式选择）。
+2. 关于 / 设置相关弹窗抽 `components/AboutModal.vue`、`components/SettingsModal.vue`（P12-3 的设置项在此落地）。
+3. `MenuBar.vue` 的连接选择器抽 `components/ConnectionSelector.vue`。
+4. 目标：`App.vue` < 500 行，`MenuBar.vue` < 450 行；新增纯逻辑一律进 `utils/` 并配测试。
+
+**落地结果**：
+- `composables/useConfigTransfer.ts` 承接导入 / 导出配置全流程，`components/AboutModal.vue` / `components/SettingsModal.vue` 独立；`MenuBar.vue` 的连接选择器抽为 `components/ConnectionSelector.vue`。
+- `App.vue` 与 `MenuBar.vue` 均降至目标行数以内，新增逻辑进 `utils/` 并配测试。
+
+**验收**：导入导出、复制到剪贴板、另存为、切换连接、语言切换、关于 / 设置弹窗全部回归正常；`vue-tsc --noEmit` 与 `npm run build` 通过。
+
+## 结果表交互补漏（2026-11-22）
+
+| 条目 | 状态 | 落地位置 |
+|---|---|---|
+| 表头「隐藏此列」 | ✔ | `utils/resultTable.ts` → `visibleColumnIndexes` / `hiddenColumnIndexes` / `pickCellIndexes` / `gridWidthsFor`；`ResultTableBody.vue` 用可见列索引渲染；`ResultGrid.vue` 持有 `hiddenColumns`；`ResultHeaderMenu.vue` 新增菜单项 |
+| 表头「恢复全部隐藏列」 | ✔ | `ResultGrid.showAllColumns()`，菜单按 `hiddenCount` 决定是否置灰 |
+| 表头「隐藏此列（改写 SQL）」 | ✔ | `utils/sqlProjection.ts` → `rewriteProjectionToColumns` / `stripPageTail` / `quoteIdentifier`；支持 `SELECT *` / `t.*` 按结果列展开、多前缀各自展开、`*` 与表达式混排安全失败；失败区分 `unsupported` / `not-found` 并按原因提示 |
+| 导出 / 复制按可见列裁剪 | ✔ | `ResultGrid` 导出与复制整行、复制 INSERT、复制全部列名统一用 `columnIndexes` + `pickCellIndexes` 映射 |
+| 时间列筛选报 TYPE_MISMATCH | ✔ | `utils/resultFilter.ts` 新增 `timeKindOf` / `stripTimeZone` / `timeLiteral`；`FilterRule.time` 标记时间模式；`ResultFilterPanel` 按列类型自动启用并提供「时间/文本」切换 |
+| 「按此值过滤」浮层可拖拽 | ✔ | `utils/dragPanel.ts` + `composables/usePanelDrag.ts`，标题栏 `pointerdown` 起拖，带视口收敛 |
+| 「查看 SQL」浮层可拖拽 | ✔ | 同上，按钮区 `pointerdown.stop` 避免误触拖动 |
+| 「按此值过滤」窗口关不掉 | ✔ | `useResultFilterPanel` 新增 `onClosePanel` 回调，`ResultGrid` 同步置 `filterPanel.visible = false` |
+| 错误结果体 `columns` 为 `null` 导致前端崩溃 | ✔ | 后端 `emptyQueryResult()` 强制初始化空切片，`service_test.go` 固化 |
+
+**说明**：隐藏列只在渲染层过滤，不改 `result.columns` / `result.rows` 数据结构，因此筛选、编辑与右键菜单仍使用完整列与原始列索引，不会错位。导出与复制则按 `columnIndexes` 裁剪，保证「界面看不到的列不会被带出去」；若要从数据层彻底去掉某列（连执行计划与导出都少一列），用「隐藏此列（改写 SQL）」，由 `sqlProjection.ts` 改写 `SELECT` 投影后重跑，仅支持单条 `SELECT` / `WITH`。
+
+## 明确不做
+
 - 目录按职责再细分（当前划分已够用）
 - 多用户 / 权限 / 审计（非单人场景）
 - 引入 AG Grid / Handsontable 等重型表格库
 - 自动 SQL 格式化、连接池参数 UI 化
 
 ## 实施约定
-- 每个阶段完成后运行校验：
-  ```bash
-  cd frontend && npx vue-tsc --noEmit
-  cd frontend && npm run test
-  cd frontend && npm run build
-  go build ./...
-  ```
-- 前端改动务必重新构建 `dist`，详见 `.trae/rules/project_rules.md`
+
+每个阶段完成后运行校验：
+
+```bash
+cd frontend && npx vue-tsc --noEmit
+cd frontend && npm run test
+cd frontend && npm run build
+go build ./...
+```
+
+- 前端改动务必重新构建 `dist`，详见 [project_rules.md](file:///C:/works/go_works/meteor-ch-workbench/.trae/rules/project_rules.md)
+- 后端新增 / 修改公开方法 → 同步 `docs/API.md`
+- 用户可见的功能变化 → 同步 `docs/FEATURES.md`
+- 新增文件或改变文件职责 → 同步 `docs/CODE_INDEX.md`
+- 阶段完成后在当前文件勾选对应条目

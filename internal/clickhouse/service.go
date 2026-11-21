@@ -74,6 +74,26 @@ type ExecResult struct {
 	Error        string `json:"error,omitempty"` // 执行错误信息，正常时为空
 }
 
+// ExecBatchResult 是一批 DDL/DML 语句顺序执行后的汇总回执。
+// 每条语句的结果按原始下标保存在 Statements 中，便于调用方精确定位
+// 哪些成功、哪些失败、哪些因前序失败而未执行（Skipped / Error 为空）。
+type ExecBatchResult struct {
+	Statements []StatementResult `json:"statements"` // 逐条执行结果，顺序与入参一致
+	Ok         int               `json:"ok"`         // 成功条数
+	Failed     int               `json:"failed"`     // 失败条数
+	Skipped    int               `json:"skipped"`    // 因中断而未执行的条数
+	ElapsedMs  float64           `json:"elapsed_ms"` // 整批耗时（毫秒）
+}
+
+// StatementResult 是批量执行中单条语句的结果。
+// RowsAffected 来自底层 ExecResult；Error 非空表示该条失败。
+type StatementResult struct {
+	Index        int    `json:"index"`         // 在入参列表中的下标
+	SQL          string `json:"sql"`           // 原始语句
+	RowsAffected int64  `json:"rows_affected"` // 受影响的行数（失败时为 0）
+	Error        string `json:"error,omitempty"`
+}
+
 // Service 是 ClickHouse 服务，按连接 ID 缓存 database/sql 连接池。
 // sql.DB 本身即是并发安全的连接池，因此缓存它比缓存单条连接更合适。
 // running 保存正在执行中的查询的取消函数，使前端可以主动中止查询。
@@ -270,15 +290,23 @@ func scanRows(ctx context.Context, rows *sql.Rows, limit int) ([][]interface{}, 
 	return result, truncated, nil
 }
 
-// Query 在指定连接上执行 SQL 并返回结果集。
-// 为避免超大结果拖垮前端，最多返回 DefaultQueryRowLimit 行，
-// 超出部分不会读取，并通过 Truncated 标记提示前端。
+// Query 在指定连接上执行 SQL 并返回结果集，行数上限为 DefaultQueryRowLimit。
+// 如需按用户配置调整上限，请改用 QueryWithLimit。
 // SQL 执行期错误不会向上返回 error，而是写入 QueryResult.Error，
 // 前端据此在结果面板内展示错误；只有连接/列读取等基础设施错误才返回 error。
 //
 // queryID 用于支持主动取消：非空时注册可取消 context，调用 CancelQuery(queryID)
 // 会让本次查询立即返回，错误信息标记为「查询已取消」，已读取的部分结果被丢弃。
 func (s *Service) Query(conn config.Connection, sqlText string, queryID string) (*QueryResult, error) {
+	return s.QueryWithLimit(conn, sqlText, queryID, DefaultQueryRowLimit)
+}
+
+// QueryWithLimit 与 Query 相同，但允许调用方指定行数上限。
+// rowLimit <= 0 时退回 DefaultQueryRowLimit；上游（App）负责传入用户配置的值。
+func (s *Service) QueryWithLimit(conn config.Connection, sqlText string, queryID string, rowLimit int) (*QueryResult, error) {
+	if rowLimit <= 0 {
+		rowLimit = DefaultQueryRowLimit
+	}
 	db, err := s.getDB(conn)
 	if err != nil {
 		return nil, err
@@ -291,13 +319,17 @@ func (s *Service) Query(conn config.Connection, sqlText string, queryID string) 
 	rows, err := db.QueryContext(ctx, sqlText)
 	if err != nil {
 		if isCanceled(ctx) {
-			return &QueryResult{Error: errQueryCanceled, ElapsedMs: elapsedMs(start)}, nil
+			return emptyQueryResult(errQueryCanceled, elapsedMs(start), rowLimit), nil
 		}
-		return &QueryResult{Error: err.Error(), ElapsedMs: elapsedMs(start)}, nil
+		return emptyQueryResult(err.Error(), elapsedMs(start), rowLimit), nil
 	}
 	defer rows.Close()
 
-	result := &QueryResult{RowLimit: DefaultQueryRowLimit}
+	result := &QueryResult{
+		RowLimit: rowLimit,
+		Columns:  []ColumnInfo{},
+		Rows:     make([][]interface{}, 0),
+	}
 	cols, err := rows.Columns()
 	if err != nil {
 		return result, err
@@ -306,10 +338,10 @@ func (s *Service) Query(conn config.Connection, sqlText string, queryID string) 
 		result.Columns = append(result.Columns, ColumnInfo{Name: col})
 	}
 
-	data, truncated, err := scanRows(ctx, rows, DefaultQueryRowLimit)
+	data, truncated, err := scanRows(ctx, rows, rowLimit)
 	if err != nil {
 		if isCanceled(ctx) {
-			return &QueryResult{Error: errQueryCanceled, ElapsedMs: elapsedMs(start)}, nil
+			return emptyQueryResult(errQueryCanceled, elapsedMs(start), rowLimit), nil
 		}
 		return result, err
 	}
@@ -322,6 +354,19 @@ func (s *Service) Query(conn config.Connection, sqlText string, queryID string) 
 
 // errQueryCanceled 是用户主动取消查询时写入 QueryResult.Error 的提示文本。
 const errQueryCanceled = "查询已取消"
+
+// emptyQueryResult 构造一个不含结果集的 QueryResult。
+// Columns / Rows 显式初始化为空切片，保证 JSON 序列化成 [] 而不是 null，
+// 避免前端访问 result.columns[i] 时触发 "Cannot read properties of null"。
+func emptyQueryResult(message string, elapsed float64, rowLimit int) *QueryResult {
+	return &QueryResult{
+		Columns:   []ColumnInfo{},
+		Rows:      make([][]interface{}, 0),
+		ElapsedMs: elapsed,
+		RowLimit:  rowLimit,
+		Error:     message,
+	}
+}
 
 // isCanceled 判断 context 是否已被主动取消。
 // 只认 context.Canceled；由超时导致的 DeadlineExceeded 不算用户取消。
@@ -352,6 +397,69 @@ func (s *Service) Exec(conn config.Connection, sqlText string) (*ExecResult, err
 
 	affected, _ := res.RowsAffected()
 	return &ExecResult{RowsAffected: affected}, nil
+}
+
+// execFunc 执行单条语句并返回受影响行数，供 ExecBatch 注入以便单测。
+type execFunc func(ctx context.Context, sqlText string) (int64, error)
+
+// ExecBatch 在同一个连接池上顺序执行多条 DDL/DML 语句。
+//
+// 相对逐条调用 Exec，批量执行只建立一次连接、只做一次跨进程往返，
+// 避免「改 N 个单元格 = N 次 API 调用」的串行等待。
+// 语句始终串行执行：ClickHouse 的 ALTER ... UPDATE 是 mutation，
+// 并发提交只会让服务端排队，收益为零。
+//
+// continueOnError 为 false 时遇到第一条失败即停止，后续语句标记为 skipped；
+// 为 true 时继续执行剩余语句，一次收集全部失败点。
+//
+// 与 Exec 保持一致：SQL 执行期错误写入回执中的 Error，不向上返回 error；
+// 只有获取连接等基础设施错误才作为 error 返回。
+func (s *Service) ExecBatch(conn config.Connection, statements []string, continueOnError bool) (*ExecBatchResult, error) {
+	return s.execBatchWith(statements, continueOnError, func(ctx context.Context, sqlText string) (int64, error) {
+		db, err := s.getDB(conn)
+		if err != nil {
+			return 0, err
+		}
+		res, err := db.ExecContext(ctx, ensureMutationSync(sqlText))
+		if err != nil {
+			return 0, err
+		}
+		affected, _ := res.RowsAffected()
+		return affected, nil
+	})
+}
+
+// execBatchWith 是 ExecBatch 的内部实现，执行动作由 exec 注入，
+// 便于在没有真实 ClickHouse 的单元测试中覆盖中断 / 全量收集 / 下标回执等分支。
+func (s *Service) execBatchWith(statements []string, continueOnError bool, exec execFunc) (*ExecBatchResult, error) {
+	start := time.Now()
+	result := &ExecBatchResult{Statements: make([]StatementResult, 0, len(statements))}
+
+	ctx := context.Background()
+	stopped := false
+	for i, stmt := range statements {
+		if stopped {
+			result.Statements = append(result.Statements, StatementResult{Index: i, SQL: stmt})
+			result.Skipped++
+			continue
+		}
+		affected, err := exec(ctx, stmt)
+		entry := StatementResult{Index: i, SQL: stmt}
+		if err != nil {
+			entry.Error = err.Error()
+			result.Statements = append(result.Statements, entry)
+			result.Failed++
+			if !continueOnError {
+				stopped = true
+			}
+			continue
+		}
+		entry.RowsAffected = affected
+		result.Statements = append(result.Statements, entry)
+		result.Ok++
+	}
+	result.ElapsedMs = elapsedMs(start)
+	return result, nil
 }
 
 // ensureMutationSync 对 ALTER ... UPDATE / DELETE 类 mutation 语句追加 SETTINGS mutations_sync=2，

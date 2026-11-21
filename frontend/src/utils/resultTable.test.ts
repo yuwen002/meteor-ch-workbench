@@ -8,7 +8,66 @@ import {
   measureColWidths,
   buildGridStyle,
   shouldVirtualize,
+  visibleColumnIndexes,
+  hiddenColumnIndexes,
+  pickCellIndexes,
+  gridWidthsFor,
+  colWidthAt,
+  clampColWidth,
+  resizeColWidths,
 } from './resultTable'
+
+describe('visibleColumnIndexes', () => {
+  it('无隐藏时返回全部索引', () => {
+    expect(visibleColumnIndexes(4, [])).toEqual([0, 1, 2, 3])
+  })
+
+  it('跳过隐藏列且保持原始顺序', () => {
+    expect(visibleColumnIndexes(5, [1, 3])).toEqual([0, 2, 4])
+  })
+
+  it('零列返回空数组', () => {
+    expect(visibleColumnIndexes(0, [])).toEqual([])
+  })
+
+  it('隐藏索引越界时忽略', () => {
+    expect(visibleColumnIndexes(3, [1, 9, -1])).toEqual([0, 2])
+  })
+})
+
+describe('hiddenColumnIndexes', () => {
+  it('去重并升序', () => {
+    expect(hiddenColumnIndexes(5, [3, 1, 3])).toEqual([1, 3])
+  })
+
+  it('过滤越界与小数', () => {
+    expect(hiddenColumnIndexes(4, [-1, 1.5, 4, 2])).toEqual([2])
+  })
+
+  it('空输入返回空数组', () => {
+    expect(hiddenColumnIndexes(3, [])).toEqual([])
+  })
+})
+
+describe('pickCellIndexes', () => {
+  it('按可见列裁剪行数据', () => {
+    expect(pickCellIndexes(['a', 'b', 'c'], [0, 2])).toEqual(['a', 'c'])
+  })
+
+  it('空索引返回空数组', () => {
+    expect(pickCellIndexes(['a'], [])).toEqual([])
+  })
+})
+
+describe('gridWidthsFor', () => {
+  it('按索引取列宽', () => {
+    expect(gridWidthsFor([0, 2], [100, 200, 300])).toEqual([100, 300])
+  })
+
+  it('索引越界时给出 undefined 而非崩溃', () => {
+    expect(gridWidthsFor([5], [100])).toEqual([undefined])
+  })
+})
 
 describe('measureColWidths', () => {
   it('空列返回空数组', () => {
@@ -74,5 +133,74 @@ describe('shouldVirtualize', () => {
 describe('常量', () => {
   it('行高固定为 28px', () => {
     expect(ROW_HEIGHT).toBe(28)
+  })
+})
+
+describe('colWidthAt', () => {
+  it('返回对应列宽', () => {
+    expect(colWidthAt([100, 200], 1)).toBe(200)
+  })
+
+  it('缺列时回落到最小宽度', () => {
+    expect(colWidthAt([100], 2)).toBe(MIN_COL_WIDTH)
+  })
+
+  it('非法值回落到最小宽度', () => {
+    expect(colWidthAt([Number.NaN], 0)).toBe(MIN_COL_WIDTH)
+  })
+})
+
+describe('clampColWidth', () => {
+  it('普通数值四舍五入', () => {
+    expect(clampColWidth(123.6)).toBe(124)
+  })
+
+  it('小于最小值时抬到最小值', () => {
+    expect(clampColWidth(10)).toBe(MIN_COL_WIDTH)
+  })
+
+  it('大于最大值时压到最大值', () => {
+    expect(clampColWidth(9999)).toBe(MAX_COL_WIDTH)
+  })
+
+  it('非法数值返回最小值', () => {
+    expect(clampColWidth(Number.NaN)).toBe(MIN_COL_WIDTH)
+  })
+
+  it('Infinity 返回最大值', () => {
+    expect(clampColWidth(Infinity)).toBe(MAX_COL_WIDTH)
+  })
+})
+
+describe('resizeColWidths', () => {
+  it('向右拖动增大宽度', () => {
+    expect(resizeColWidths([100, 200], [0], 100, 40)).toEqual([140, 200])
+  })
+
+  it('向左拖动减小宽度', () => {
+    expect(resizeColWidths([100, 200], [1], 200, -60)).toEqual([100, 140])
+  })
+
+  it('拖动到负数被夹到最小宽度', () => {
+    expect(resizeColWidths([100], [0], 100, -500)).toEqual([MIN_COL_WIDTH])
+  })
+
+  it('多列同时设置相同宽度', () => {
+    expect(resizeColWidths([100, 100, 100], [0, 2], 100, 30)).toEqual([130, 100, 130])
+  })
+
+  it('空索引时原样返回', () => {
+    const widths = [100, 200]
+    expect(resizeColWidths(widths, [], 100, 50)).toBe(widths)
+  })
+
+  it('原数组不被修改', () => {
+    const widths = [100, 200]
+    resizeColWidths(widths, [0], 100, 40)
+    expect(widths).toEqual([100, 200])
+  })
+
+  it('索引超出当前宽度数组时自动补齐', () => {
+    expect(resizeColWidths([100], [3], 100, 20)).toEqual([100, MIN_COL_WIDTH, MIN_COL_WIDTH, 120])
   })
 })

@@ -14,6 +14,9 @@ import {
   FILTER_LIKE,
   FILTER_NOT_LIKE,
   isNumericType,
+  isTimeType,
+  timeKindOf,
+  ruleMode,
   opSymbol,
   buildFilterWhere,
 } from '../utils/resultFilter'
@@ -36,7 +39,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const columnValues = computed(() => props.columns.map((c) => c.name))
+const columnValues = computed(() => (props.columns ?? []).map((c) => c.name))
 
 const wherePreview = computed(() => buildFilterWhere(props.conditions))
 
@@ -48,13 +51,23 @@ function columnIsNumeric(name: string): boolean {
   return isNumericType(columnType(name))
 }
 
+function columnIsTime(name: string): boolean {
+  return isTimeType(columnType(name))
+}
+
+function columnTimeKind(name: string) {
+  return timeKindOf(columnType(name))
+}
+
 function ruleIsLike(op: FilterOp): boolean {
   return op === FILTER_LIKE || op === FILTER_NOT_LIKE
 }
 
-function rulePlaceholder(op: FilterOp, numeric: boolean): string {
+function rulePlaceholder(op: FilterOp, rule: FilterRule): string {
   if (ruleIsLike(op)) return t('editor.filterLikePlaceholder')
-  return numeric ? t('editor.filterNumericPlaceholder') : t('editor.filterValuePlaceholder')
+  const mode = ruleMode(rule)
+  if (mode === 'time') return t('editor.filterTimePlaceholder')
+  return mode === 'numeric' ? t('editor.filterNumericPlaceholder') : t('editor.filterValuePlaceholder')
 }
 
 function emitConditions(next: FilterCondition[]) {
@@ -65,14 +78,18 @@ function createRule(): FilterRule {
   return { op: FILTER_EQ, value: '' }
 }
 
+function applyColumnType(rule: FilterRule, column: string): FilterRule {
+  const time = columnTimeKind(column) ?? undefined
+  const numeric = !time && columnIsNumeric(column)
+  return { ...rule, numeric: numeric || undefined, time }
+}
+
 function createCondition(): FilterCondition {
   const column = columnValues.value[0] ?? ''
-  const rule = createRule()
-  rule.numeric = columnIsNumeric(column)
   return {
     column,
     join: FILTER_JOIN_AND,
-    rules: [rule],
+    rules: [applyColumnType(createRule(), column)],
   }
 }
 
@@ -88,10 +105,8 @@ function removeCondition(index: number) {
 function addRule(ci: number) {
   const cond = props.conditions[ci]
   if (!cond) return
-  const rule = createRule()
-  rule.numeric = columnIsNumeric(cond.column)
   const next = props.conditions.map((c, i) =>
-    i === ci ? { ...c, rules: [...c.rules, rule] } : c
+    i === ci ? { ...c, rules: [...c.rules, applyColumnType(createRule(), cond.column)] } : c
   )
   emitConditions(next)
 }
@@ -111,11 +126,10 @@ function setConditionJoin(ci: number, join: FilterJoin) {
 }
 
 function setConditionColumn(ci: number, column: string) {
-  const numeric = columnIsNumeric(column)
   emitConditions(
     props.conditions.map((c, i) =>
       i === ci
-        ? { ...c, column, rules: c.rules.map((r) => ({ ...r, numeric })) }
+        ? { ...c, column, rules: c.rules.map((r) => applyColumnType(r, column)) }
         : c
     )
   )
@@ -141,6 +155,23 @@ function toggleRuleNumeric(ci: number, ri: number, numeric: boolean) {
   emitConditions(
     props.conditions.map((c, i) =>
       i === ci ? { ...c, rules: c.rules.map((r, j) => (j === ri ? { ...r, numeric } : r)) } : c
+    )
+  )
+}
+
+function toggleRuleTime(ci: number, ri: number, time: boolean) {
+  emitConditions(
+    props.conditions.map((c, i) =>
+      i === ci
+        ? {
+            ...c,
+            rules: c.rules.map((r, j) =>
+              j === ri
+                ? { ...r, time: time ? columnTimeKind(c.column) ?? undefined : undefined, numeric: time ? undefined : r.numeric }
+                : r
+            ),
+          }
+        : c
     )
   )
 }
@@ -224,12 +255,21 @@ function clear() {
                 :value="rule.value"
                 type="text"
                 class="flex-1 min-w-0 bg-ch-bg border border-ch-border rounded px-1.5 py-0.5 text-[11px] text-ch-text outline-none focus:border-ch-accent font-mono"
-                :placeholder="rulePlaceholder(rule.op, rule.numeric === true)"
+                :placeholder="rulePlaceholder(rule.op, rule)"
                 @input="setRuleValue(ci, ri, ($event.target as HTMLInputElement).value)"
                 @keydown.enter.prevent="emit('apply')"
               />
               <button
-                v-if="!ruleIsLike(rule.op) && columnIsNumeric(cond.column)"
+                v-if="!ruleIsLike(rule.op) && columnIsTime(cond.column)"
+                class="shrink-0 px-1 py-0.5 rounded border text-[10px] leading-4"
+                :class="rule.time ? 'border-ch-accent text-ch-accent' : 'border-ch-border text-ch-muted hover:text-ch-text'"
+                :title="t('editor.filterTimeToggleHint')"
+                @click="toggleRuleTime(ci, ri, !rule.time)"
+              >
+                {{ rule.time ? t('editor.filterTime') : t('editor.filterText') }}
+              </button>
+              <button
+                v-else-if="!ruleIsLike(rule.op) && columnIsNumeric(cond.column)"
                 class="shrink-0 px-1 py-0.5 rounded border text-[10px] leading-4"
                 :class="rule.numeric ? 'border-ch-accent text-ch-accent' : 'border-ch-border text-ch-muted hover:text-ch-text'"
                 :title="t('editor.filterNumericToggleHint')"

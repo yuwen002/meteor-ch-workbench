@@ -196,6 +196,15 @@ export interface FilterRule {
   op: FilterOp
   value: string
   numeric?: boolean
+  time?: TimeKind
+}
+
+export type FilterMode = 'text' | 'numeric' | 'time'
+
+export function ruleMode(rule: FilterRule): FilterMode {
+  if (rule.time) return 'time'
+  if (rule.numeric) return 'numeric'
+  return 'text'
 }
 
 export interface FilterCondition {
@@ -213,6 +222,69 @@ export function isNumericType(type: string | undefined | null): boolean {
   return NUMERIC_TYPE_RE.test(type.trim())
 }
 
+const DATE_TYPE_RE = /^DateTime64/i
+const LEGACY_DATETIME_TYPE_RE = /^DateTime/i
+const DATE_ONLY_TYPE_RE = /^Date(?:32)?/i
+
+export const TIME_KIND_DATETIME64 = 'datetime64'
+export const TIME_KIND_DATETIME = 'datetime'
+export const TIME_KIND_DATE = 'date'
+
+export type TimeKind =
+  | typeof TIME_KIND_DATETIME64
+  | typeof TIME_KIND_DATETIME
+  | typeof TIME_KIND_DATE
+
+export function timeKindOf(type: string | undefined | null): TimeKind | null {
+  if (!type) return null
+  const t = type.trim().replace(/^Nullable\((.*)\)$/i, '$1')
+  if (DATE_TYPE_RE.test(t)) return TIME_KIND_DATETIME64
+  if (LEGACY_DATETIME_TYPE_RE.test(t)) return TIME_KIND_DATETIME
+  if (DATE_ONLY_TYPE_RE.test(t)) return TIME_KIND_DATE
+  return null
+}
+
+export function isTimeType(type: string | undefined | null): boolean {
+  return timeKindOf(type) !== null
+}
+
+function timeKindUnit(kind: TimeKind): string {
+  if (kind === TIME_KIND_DATETIME64) return 'DateTime64'
+  if (kind === TIME_KIND_DATE) return 'Date'
+  return 'DateTime'
+}
+
+const TZ_SUFFIX_RE = /(Z|[+-]\d{2}:\d{2})$/i
+
+export function stripTimeZone(text: string): string {
+  return text.trim().replace(TZ_SUFFIX_RE, '').replace('T', ' ')
+}
+
+export function timeLiteral(
+  column: string,
+  op: FilterOp,
+  value: string,
+  kind: TimeKind
+): string {
+  const col = quoteColumn(column)
+  const text = value.trim()
+  if (!isTimeLiteral(text) && !/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return `${col} ${opSymbol(op)} ${escapeSqlString(text)}`
+  }
+  const target = timeKindUnit(kind)
+  if (kind === TIME_KIND_DATETIME64) {
+    return `${col} ${opSymbol(op)} ${target}(${escapeSqlString(text)})`
+  }
+  const plain = stripTimeZone(text).slice(0, kind === TIME_KIND_DATE ? 10 : 19)
+  return `${col} ${opSymbol(op)} ${target}(${escapeSqlString(plain)})`
+}
+
+export function isTimeLiteral(text: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.[\d]+)?)?)?(Z|[+-]\d{2}:\d{2})?$/i.test(
+    text.trim()
+  )
+}
+
 function likePattern(value: string): string {
   const text = value.trim()
   if (text.includes('%') || text.includes('_')) return text
@@ -223,13 +295,17 @@ export function rawFilterExpression(
   column: string,
   op: FilterOp,
   value: string,
-  numeric = false
+  numeric = false,
+  time?: TimeKind | null
 ): string {
   const col = quoteColumn(column)
   if (op === FILTER_LIKE || op === FILTER_NOT_LIKE) {
     return `${col} ${opSymbol(op)} ${escapeSqlString(likePattern(value))}`
   }
   const trimmed = value.trim()
+  if (time && isTimeLiteral(trimmed)) {
+    return timeLiteral(column, op, trimmed, time)
+  }
   const literal = numeric && isNumericLiteral(trimmed)
     ? trimmed
     : escapeSqlString(trimmed)
@@ -244,10 +320,10 @@ export function conditionExpression(condition: FilterCondition): string {
   const parts = condition.rules.filter((r) => r.value.trim() !== '')
   if (parts.length === 0) return ''
   const group = parts.length === 1
-    ? rawFilterExpression(condition.column, parts[0].op, parts[0].value, parts[0].numeric)
+    ? rawFilterExpression(condition.column, parts[0].op, parts[0].value, parts[0].numeric, parts[0].time)
     : '(' +
       parts
-        .map((r) => rawFilterExpression(condition.column, r.op, r.value, r.numeric))
+        .map((r) => rawFilterExpression(condition.column, r.op, r.value, r.numeric, r.time))
         .join(' OR ') +
       ')'
   return group

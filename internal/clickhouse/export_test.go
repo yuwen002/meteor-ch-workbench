@@ -1,7 +1,9 @@
 package clickhouse
 
 import (
+	"bytes"
 	"encoding/csv"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -13,9 +15,9 @@ func TestRenderResultCSVEscapes(t *testing.T) {
 		{"x,y", nil},
 		{`he said "hi"`, "line\nbreak"},
 	}
-	out, err := renderResultCSV(cols, rows, "")
+	out, _, err := ExportResultByFormat("csv", cols, rows, "")
 	if err != nil {
-		t.Fatalf("renderResultCSV: %v", err)
+		t.Fatalf("ExportResultByFormat csv: %v", err)
 	}
 	records, err := csv.NewReader(strings.NewReader(out)).ReadAll()
 	if err != nil {
@@ -41,9 +43,9 @@ func TestRenderResultJSONPadsMissingCells(t *testing.T) {
 		{1, "two", []interface{}{3, 4}},
 		{5, "six"},
 	}
-	out, err := renderResultJSON(cols, rows, "")
+	out, _, err := ExportResultByFormat("json", cols, rows, "")
 	if err != nil {
-		t.Fatalf("renderResultJSON: %v", err)
+		t.Fatalf("ExportResultByFormat json: %v", err)
 	}
 	if !strings.Contains(out, `"a"`) || !strings.Contains(out, `"c": null`) {
 		t.Fatalf("expected null padding for missing cell, got: %s", out)
@@ -81,12 +83,12 @@ func TestEscapeMarkdownCell(t *testing.T) {
 }
 
 func TestRenderResultMarkdownStructure(t *testing.T) {
-	out, err := renderResultMarkdown([]string{"a", "b"}, [][]interface{}{
+	out, _, err := ExportResultByFormat("markdown", []string{"a", "b"}, [][]interface{}{
 		{"x,y", nil},
 		{`he said "hi"`, "line\nbreak"},
 	}, "")
 	if err != nil {
-		t.Fatalf("renderResultMarkdown: %v", err)
+		t.Fatalf("ExportResultByFormat markdown: %v", err)
 	}
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	if len(lines) != 4 {
@@ -112,12 +114,12 @@ func TestRenderResultMarkdownStructure(t *testing.T) {
 }
 
 func TestRenderResultMarkdownEscapesBreakingChars(t *testing.T) {
-	out, err := renderResultMarkdown([]string{"c|1", "c2"}, [][]interface{}{
+	out, _, err := ExportResultByFormat("markdown", []string{"c|1", "c2"}, [][]interface{}{
 		{"a|b", "multi\nline"},
 		{`back\slash`, "quote\"x"},
 	}, "")
 	if err != nil {
-		t.Fatalf("renderResultMarkdown: %v", err)
+		t.Fatalf("ExportResultByFormat markdown: %v", err)
 	}
 	for i, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
 		if line == "" {
@@ -156,9 +158,9 @@ func TestRenderResultMarkdownEdgeCases(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			out, err := renderResultMarkdown(c.cols, c.rows, "")
+			out, _, err := ExportResultByFormat("markdown", c.cols, c.rows, "")
 			if err != nil {
-				t.Fatalf("renderResultMarkdown: %v", err)
+				t.Fatalf("ExportResultByFormat markdown: %v", err)
 			}
 			if out != c.want {
 				t.Fatalf("got %q, want %q", out, c.want)
@@ -233,13 +235,14 @@ func TestEscapeInsertIdentifier(t *testing.T) {
 }
 
 func TestRenderResultInsertStructure(t *testing.T) {
-	out, err := renderResultInsert(
+	out, _, err := ExportResultByFormat(
+		"insert",
 		[]string{"a", "b"},
 		[][]interface{}{{"x'y", nil}, {"plain", 1}},
 		"`db`.`t`",
 	)
 	if err != nil {
-		t.Fatalf("renderResultInsert: %v", err)
+		t.Fatalf("ExportResultByFormat insert: %v", err)
 	}
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	if len(lines) != 1 {
@@ -268,7 +271,7 @@ func TestRenderResultInsertEdgeCases(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			out, err := renderResultInsert(c.cols, c.rows, c.target)
+			out, _, err := ExportResultByFormat("insert", c.cols, c.rows, c.target)
 			if c.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -276,7 +279,7 @@ func TestRenderResultInsertEdgeCases(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("renderResultInsert: %v", err)
+				t.Fatalf("ExportResultByFormat insert: %v", err)
 			}
 			if !strings.Contains(out, c.wantHas) {
 				t.Fatalf("output %q does not contain %q", out, c.wantHas)
@@ -328,3 +331,80 @@ func TestResultExportFormatsRegistry(t *testing.T) {
 		seen[f.ID] = true
 	}
 }
+
+// TestExportResultToMatchesByFormat 确保流式写出与一次性渲染逐字节一致，
+// 这是「另存为」改为边生成边落盘的前提。
+func TestExportResultToMatchesByFormat(t *testing.T) {
+	cases := []struct {
+		format string
+		cols   []string
+		rows   [][]interface{}
+		target string
+	}{
+		{"csv", []string{"a", "b"}, [][]interface{}{{"x,y", nil}, {1, "z"}}, ""},
+		{"csv", []string{"a"}, nil, ""},
+		{"json", []string{"a", "b"}, [][]interface{}{{"x", 1}, {"y", nil}}, ""},
+		{"json", []string{"a"}, nil, ""},
+		{"json", []string{"a", "b", "c"}, [][]interface{}{{1}}, ""},
+		{"markdown", []string{"a|1", "b"}, [][]interface{}{{"x\ny", 2}}, ""},
+		{"markdown", []string{"a"}, nil, ""},
+		{"insert", []string{"a", "b"}, [][]interface{}{{"x'y", nil}, {3, "z"}}, "t"},
+		{"insert", []string{"a"}, nil, "t"},
+	}
+	for _, c := range cases {
+		t.Run(c.format, func(t *testing.T) {
+			byFormat, ext1, err := ExportResultByFormat(c.format, c.cols, c.rows, c.target)
+			if err != nil {
+				t.Fatalf("ExportResultByFormat: %v", err)
+			}
+			var buf bytes.Buffer
+			ext2, err := ExportResultTo(&buf, c.format, c.cols, c.rows, c.target)
+			if err != nil {
+				t.Fatalf("ExportResultTo: %v", err)
+			}
+			if ext1 != ext2 {
+				t.Fatalf("extension mismatch: %q vs %q", ext1, ext2)
+			}
+			if buf.String() != byFormat {
+				t.Fatalf("stream output differs from buffered output:\nstream=%q\nbuffer=%q", buf.String(), byFormat)
+			}
+		})
+	}
+}
+
+// TestExportResultToWriteError 覆盖 Writer 失败时把错误透传出去的边界。
+func TestExportResultToWriteError(t *testing.T) {
+	errWriter := errors.New("disk full")
+	w := &failingWriter{err: errWriter}
+	if _, err := ExportResultTo(w, "csv", []string{"a"}, [][]interface{}{{1}}, ""); err == nil {
+		t.Fatal("expected write error to be returned")
+	}
+}
+
+// TestExportResultToUnknownFormat 未知格式返回错误且不写任何内容。
+func TestExportResultToUnknownFormat(t *testing.T) {
+	var buf bytes.Buffer
+	if _, err := ExportResultTo(&buf, "xml", []string{"a"}, nil, ""); err == nil {
+		t.Fatal("expected error for unknown format")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("nothing should be written, got %q", buf.String())
+	}
+}
+
+// TestResultExportExtension 扩展名查询与注册表一致，未知格式返回空串。
+func TestResultExportExtension(t *testing.T) {
+	for _, f := range ResultExportFormats() {
+		if got := ResultExportExtension(f.ID); got != f.Extension {
+			t.Fatalf("%s extension = %q, want %q", f.ID, got, f.Extension)
+		}
+	}
+	if got := ResultExportExtension("xml"); got != "" {
+		t.Fatalf("unknown format extension = %q, want empty", got)
+	}
+}
+
+// failingWriter 在写入时立即返回固定错误，用于模拟磁盘写入失败。
+type failingWriter struct{ err error }
+
+func (f *failingWriter) Write(p []byte) (int, error) { return 0, f.err }

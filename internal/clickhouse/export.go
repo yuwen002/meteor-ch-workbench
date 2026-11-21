@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"strings"
 )
@@ -28,39 +29,42 @@ type ResultExportFormat struct {
 // resultExportRegistry 按注册顺序保存所有结果集导出格式实现。
 // 新增格式只需在此追加一项，前端通过 ResultExportFormats 自动感知。
 //
-// Render 统一接收 target（INSERT 族需要目标表名）。CSV / JSON / Markdown
+// RenderTo 直接写 io.Writer，供「另存为」边生成边落盘，避免先拼出完整
+// 字符串再写文件造成的双份内存占用；Render 是 RenderTo 的 bytes.Buffer
+// 适配，两者输出必须逐字节一致（export_test.go 有往返一致性用例）。
+// 统一接收 target（INSERT 族需要目标表名）。CSV / JSON / Markdown
 // 忽略该参数，保证「同一输入必然同一输出」的纯数据渲染语义不变。
 var resultExportRegistry = []struct {
-	Meta   ResultExportFormat
-	Render func([]string, [][]interface{}, string) (string, error)
+	Meta     ResultExportFormat
+	RenderTo func(io.Writer, []string, [][]interface{}, string) error
 }{
 	{
 		Meta: ResultExportFormat{
 			ID: "csv", Name: "CSV", Extension: "csv", Mime: "text/csv",
 			Description: "逗号分隔表格，可直接用 Excel 打开",
 		},
-		Render: renderResultCSV,
+		RenderTo: renderResultCSVTo,
 	},
 	{
 		Meta: ResultExportFormat{
 			ID: "json", Name: "JSON", Extension: "json", Mime: "application/json",
 			Description: "对象数组，键为列名，便于二次处理",
 		},
-		Render: renderResultJSON,
+		RenderTo: renderResultJSONTo,
 	},
 	{
 		Meta: ResultExportFormat{
 			ID: "markdown", Name: "Markdown", Extension: "md", Mime: "text/markdown",
 			Description: "Git 风格的表格，可直接贴进文档或 Issue",
 		},
-		Render: renderResultMarkdown,
+		RenderTo: renderResultMarkdownTo,
 	},
 	{
 		Meta: ResultExportFormat{
 			ID: "insert", Name: "SQL INSERT", Extension: "sql", Mime: "text/plain",
 			Description: "可直接回灌 ClickHouse 的 INSERT 语句，需指定目标表",
 		},
-		Render: renderResultInsert,
+		RenderTo: renderResultInsertTo,
 	},
 }
 
@@ -75,17 +79,198 @@ func ResultExportFormats() []ResultExportFormat {
 
 // ExportResultByFormat 按指定格式把列名与结果行渲染为文本，并返回建议扩展名。
 // target 仅 INSERT 族格式使用，其余格式忽略。
+// 内部走 bytes.Buffer 适配 ExportResultTo，供剪贴板复制与测试复用。
 func ExportResultByFormat(format string, columns []string, rows [][]interface{}, target string) (string, string, error) {
+	var buf strings.Builder
+	ext, err := ExportResultTo(&buf, format, columns, rows, target)
+	if err != nil {
+		return "", "", err
+	}
+	return buf.String(), ext, nil
+}
+
+// ResultExportExtension 返回指定格式的建议扩展名，未知格式返回空串。
+// 供「另存为」在弹对话框前设置默认文件名与过滤器，无需先渲染内容。
+func ResultExportExtension(format string) string {
 	for _, f := range resultExportRegistry {
 		if f.Meta.ID == format {
-			out, err := f.Render(columns, rows, target)
-			if err != nil {
-				return "", "", err
-			}
-			return out, f.Meta.Extension, nil
+			return f.Meta.Extension
 		}
 	}
-	return "", "", errors.New("unsupported format: " + format)
+	return ""
+}
+
+// ExportResultTo 按指定格式把结果集增量写入 w，并返回该格式的建议扩展名。
+// 「另存为」直接传 os.File，边格式化边落盘，避免完整字符串常驻内存。
+// 与 ExportResultByFormat 输出逐字节一致。
+func ExportResultTo(w io.Writer, format string, columns []string, rows [][]interface{}, target string) (string, error) {
+	for _, f := range resultExportRegistry {
+		if f.Meta.ID == format {
+			if err := f.RenderTo(w, columns, rows, target); err != nil {
+				return "", err
+			}
+			return f.Meta.Extension, nil
+		}
+	}
+	return "", errors.New("unsupported format: " + format)
+}
+
+// renderResultCSVTo 把结果集渲染为 CSV，首行为列名。
+// 单元格内换行、逗号、双引号由 encoding/csv 自动处理。
+// csv.Writer 自带缓冲，每写一行即刷新，内存占用与总行数无关。
+func renderResultCSVTo(w io.Writer, columns []string, rows [][]interface{}, _ string) error {
+	cw := csv.NewWriter(w)
+	if err := cw.Write(columns); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		record := make([]string, len(row))
+		for i, v := range row {
+			record[i] = cellText(v)
+		}
+		if err := cw.Write(record); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
+// renderResultJSONTo 把结果集渲染为对象数组，键为列名。
+// 缺少列的单元格以 null 填充，保证每行键集合一致。
+//
+// 输出必须与 json.MarshalIndent(items, "", "  ") 逐字节一致：
+// 每行单独 MarshalIndent 后再缩进两格拼接，避免为整表构造一次性 []map，
+// 同时保证键顺序稳定（encoding/json 对 map 按键名排序）。
+func renderResultJSONTo(w io.Writer, columns []string, rows [][]interface{}, _ string) error {
+	if len(rows) == 0 {
+		_, err := io.WriteString(w, "[]")
+		return err
+	}
+	if _, err := io.WriteString(w, "[\n"); err != nil {
+		return err
+	}
+	for i, row := range rows {
+		if i > 0 {
+			if _, err := io.WriteString(w, ",\n"); err != nil {
+				return err
+			}
+		}
+		item := make(map[string]interface{}, len(columns))
+		for ci, col := range columns {
+			if ci < len(row) {
+				item[col] = row[ci]
+			} else {
+				item[col] = nil
+			}
+		}
+		b, err := json.MarshalIndent(item, "", "  ")
+		if err != nil {
+			return err
+		}
+		indented := strings.ReplaceAll(string(b), "\n", "\n  ")
+		if _, err := io.WriteString(w, "  "+indented); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w, "\n]")
+	return err
+}
+
+// renderResultMarkdownTo 把结果集渲染为 Markdown 表格。
+// 首行为列名，第二行为对齐分隔行；单元格内的 | 与换行会破坏表格结构，
+// 因此 | 转义为 \|、换行转成 <br>、反斜杠本身也要先转义，避免吃掉后面的字符。
+func renderResultMarkdownTo(w io.Writer, columns []string, rows [][]interface{}, _ string) error {
+	var b strings.Builder
+	b.WriteString("| ")
+	for i, col := range columns {
+		if i > 0 {
+			b.WriteString(" | ")
+		}
+		b.WriteString(escapeMarkdownCell(col))
+	}
+	b.WriteString(" |\n|")
+	for range columns {
+		b.WriteString(" --- |")
+	}
+	b.WriteString("\n")
+	if err := flushBuilder(w, &b); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		b.WriteString("| ")
+		for i := range columns {
+			if i > 0 {
+				b.WriteString(" | ")
+			}
+			if i < len(row) {
+				b.WriteString(escapeMarkdownCell(cellText(row[i])))
+			}
+		}
+		b.WriteString(" |\n")
+		if b.Len() >= 4096 {
+			if err := flushBuilder(w, &b); err != nil {
+				return err
+			}
+		}
+	}
+	return flushBuilder(w, &b)
+}
+
+// renderResultInsertTo 把结果集渲染为可直接回灌 ClickHouse 的 INSERT 语句。
+// target 为目标表名；缺少列的单元格以 NULL 填充，转义规则与前端保持一致。
+func renderResultInsertTo(w io.Writer, columns []string, rows [][]interface{}, target string) error {
+	table := strings.TrimSpace(target)
+	if table == "" {
+		return errors.New("insert target table is required")
+	}
+	var b strings.Builder
+	b.WriteString("INSERT INTO ")
+	b.WriteString(table)
+	b.WriteString(" (")
+	for i, col := range columns {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(escapeInsertIdentifier(col))
+	}
+	b.WriteString(") VALUES ")
+	for r, row := range rows {
+		if r > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("(")
+		for i := range columns {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			if i < len(row) {
+				b.WriteString(insertLiteral(row[i]))
+			} else {
+				b.WriteString("NULL")
+			}
+		}
+		b.WriteString(")")
+		if b.Len() >= 4096 {
+			if err := flushBuilder(w, &b); err != nil {
+				return err
+			}
+		}
+	}
+	b.WriteString(";\n")
+	return flushBuilder(w, &b)
+}
+
+// flushBuilder 把缓冲内容写入 w 并清空缓冲区，用于控制流式渲染的峰值内存。
+func flushBuilder(w io.Writer, b *strings.Builder) error {
+	if b.Len() == 0 {
+		return nil
+	}
+	if _, err := io.WriteString(w, b.String()); err != nil {
+		return err
+	}
+	b.Reset()
+	return nil
 }
 
 // renderResultCSV 把结果集渲染为 CSV，首行为列名。

@@ -303,7 +303,9 @@ interface QueryResult {
 
 > **设计说明**：SQL 执行失败时 Go 返回的 `error` 为 nil，错误信息放在 `QueryResult.error` 里。这样前端能正常渲染结果面板并在面板内展示错误文本，而不是当作网络级异常处理。
 
-> **大结果保护**：`Query` 默认最多返回 `DefaultQueryRowLimit = 50000` 行（后端常量），超出部分被丢弃并置 `truncated = true`，前端在结果面板提示用户。这样避免一次性把巨量数据传给前端导致界面卡死。
+> **大结果保护**：`Query` 的行数上限取自 `settings.json` 的 `query_row_limit`（见 `GetSettings` / `SaveSettings`），未配置时退回 `DefaultQueryRowLimit = 50000`；`query_row_limit = 0` 表示不限制。超出上限的部分被丢弃并置 `truncated = true`，前端在结果面板提示用户。这样避免一次性把巨量数据传给前端导致界面卡死。
+
+> **实现要点**：服务层提供 `QueryWithLimit` 接收显式上限，`Query` 委托给它并传 `DefaultQueryRowLimit` 保持向后兼容；`rowLimit <= 0` 一律退回默认值（「不限制」仍由 `scanRows` 的 `limit = 0` 语义表达，不会误判为默认）。
 
 > **取消行为**：查询执行期间调用 `CancelQuery(queryID)`，本次查询立即返回，`QueryResult.error = "查询已取消"`，已读取的部分行被丢弃（`rows` 为空）。前端据此用灰色提示条而非红色错误条展示。
 
@@ -374,6 +376,8 @@ interface ExecResult {
 `target` 仅 `insert` 格式使用（目标表名，可为 `db.table` 或带反引号的完整名）；其余格式传空字符串即可。
 
 > 由前端把已渲染的结果数据传回后端渲染落盘，不重新查库，因此导出的就是用户眼前这份数据（包括被截断的部分）。
+>
+> **流式落盘**：后端先弹文件对话框，再用 `os.Create` 打开文件，然后通过 `clickhouse.ExportResultTo(io.Writer, ...)` 逐行写出，不在内存中构造完整字符串，因此大结果导出不再产生「行数据 + 完整文本」双份内存占用。旧的 `ExportResultByFormat` 保留为基于 `bytes.Buffer` 的适配层，与 `ExportResultTo` 输出逐字节一致（`export_test.go` 有对应一致性与写入失败用例）。
 
 ---
 
@@ -511,6 +515,32 @@ interface TabsFile {
 | TS | `api.SaveTabs(snapshot: TabsFile): Promise<void>` |
 
 > 存于 `tabs.json`。只持久化标题和 SQL，**不持久化查询结果**——重启后标签内容在，结果为空，需要重新执行。
+
+---
+
+### GetSettings()
+返回当前用户偏好设置，供设置面板回显。
+
+| | |
+|---|---|
+| Go | `func (a *App) GetSettings() (config.SettingsFile, error)` |
+| TS | `api.GetSettings(): Promise<SettingsFile>` |
+
+### SaveSettings(settings)
+校验并保存用户偏好设置，返回保存后实际生效的值。
+
+| | |
+|---|---|
+| Go | `func (a *App) SaveSettings(settings config.SettingsFile) (config.SettingsFile, error)` |
+| TS | `api.SaveSettings(settings: SettingsFile): Promise<SettingsFile>` |
+
+```ts
+interface SettingsFile {
+  query_row_limit: number   // 0 表示不限制
+}
+```
+
+> 存于 `settings.json`，采用「内存缓存 + `sync.RWMutex` + 全量写回」。写入前经 `NormalizeRowLimit` 收敛：负数或小于 `RowLimitMin = 100` 退回默认 50000，超过 `RowLimitMax = 1000000` 截断到上限，`0` 原样保留表示不限制。文件损坏或缺失时 `RowLimit()` 静默退回默认值，保证查询不会因设置文件异常而失败。
 
 ---
 

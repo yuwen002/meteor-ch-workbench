@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { FilterOp } from './resultFilter'
 import {
   FILTER_EQ,
   FILTER_NE,
@@ -23,7 +24,157 @@ import {
   opSymbol,
   rawFilterExpression,
   valuePreview,
+  timeKindOf,
+  isTimeType,
+  timeLiteral,
+  stripTimeZone,
+  isTimeLiteral,
+  ruleMode,
+  TIME_KIND_DATETIME64,
+  TIME_KIND_DATETIME,
+  TIME_KIND_DATE,
 } from './resultFilter'
+
+describe('timeKindOf', () => {
+  const cases: { name: string; type: string | null | undefined; want: string | null }[] = [
+    { name: 'DateTime64 识别', type: 'DateTime64(3)', want: TIME_KIND_DATETIME64 },
+    { name: 'DateTime 识别', type: 'DateTime', want: TIME_KIND_DATETIME },
+    { name: 'DateTime 带时区识别', type: "DateTime('Asia/Shanghai')", want: TIME_KIND_DATETIME },
+    { name: 'Date 识别', type: 'Date', want: TIME_KIND_DATE },
+    { name: 'Date32 识别', type: 'Date32', want: TIME_KIND_DATE },
+    { name: 'Nullable 包裹可识别', type: 'Nullable(DateTime)', want: TIME_KIND_DATETIME },
+    { name: 'String 不是时间类型', type: 'String', want: null },
+    { name: 'UInt 不是时间类型', type: 'UInt64', want: null },
+    { name: '空类型返回 null', type: '', want: null },
+    { name: 'undefined 返回 null', type: undefined, want: null },
+    { name: 'null 返回 null', type: null, want: null },
+  ]
+  for (const c of cases) {
+    it(c.name, () => {
+      expect(timeKindOf(c.type)).toBe(c.want)
+    })
+  }
+
+  it('isTimeType 与 timeKindOf 一致', () => {
+    expect(isTimeType('DateTime64(3)')).toBe(true)
+    expect(isTimeType('String')).toBe(false)
+  })
+})
+
+describe('时区剥离与时间字面量识别', () => {
+  const cases: { name: string; input: string; want: string }[] = [
+    { name: '剥离 +08:00', input: '2026-01-12T18:00:00+08:00', want: '2026-01-12 18:00:00' },
+    { name: '剥离 Z', input: '2026-01-12T18:00:00Z', want: '2026-01-12 18:00:00' },
+    { name: '剥离 -05:00', input: '2026-01-12T18:00:00-05:00', want: '2026-01-12 18:00:00' },
+    { name: 'T 换成空格', input: '2026-01-12T18:00:00', want: '2026-01-12 18:00:00' },
+    {
+      name: '带毫秒保留',
+      input: '2026-01-12T18:00:00.123+08:00',
+      want: '2026-01-12 18:00:00.123',
+    },
+    { name: '纯日期原样', input: '2026-01-12', want: '2026-01-12' },
+  ]
+  for (const c of cases) {
+    it(c.name, () => {
+      expect(stripTimeZone(c.input)).toBe(c.want)
+    })
+  }
+
+  const literalCases: { name: string; input: string; want: boolean }[] = [
+    { name: '带时区时间', input: '2026-01-12T18:00:00+08:00', want: true },
+    { name: '空格分隔时间', input: '2026-01-12 18:00:00', want: true },
+    { name: '只有日期', input: '2026-01-12', want: true },
+    { name: '带毫秒', input: '2026-01-12 18:00:00.123', want: true },
+    { name: '普通文本', input: 'abc', want: false },
+    { name: '不带日期的时间', input: '18:00:00', want: false },
+    { name: '空串', input: '   ', want: false },
+  ]
+  for (const c of literalCases) {
+    it(c.name, () => {
+      expect(isTimeLiteral(c.input)).toBe(c.want)
+    })
+  }
+})
+
+describe('timeLiteral', () => {
+  const cases: { name: string; column: string; op: FilterOp; value: string; kind: string; want: string }[] = [
+    {
+      name: 'DateTime 列不直接比较字符串（问题场景）',
+      column: 'stat_hour',
+      op: FILTER_EQ,
+      value: '2026-01-12T18:00:00+08:00',
+      kind: TIME_KIND_DATETIME,
+      want: "`stat_hour` = DateTime('2026-01-12 18:00:00')",
+    },
+    {
+      name: 'DateTime64 保留精度与时区',
+      column: 'stat_time',
+      op: FILTER_GE,
+      value: '2026-01-12T18:00:00.123+08:00',
+      kind: TIME_KIND_DATETIME64,
+      want: "`stat_time` >= DateTime64('2026-01-12T18:00:00.123+08:00')",
+    },
+    {
+      name: 'Date 列截断到日期',
+      column: 'stat_date',
+      op: FILTER_LE,
+      value: '2026-01-12T18:00:00Z',
+      kind: TIME_KIND_DATE,
+      want: "`stat_date` <= Date('2026-01-12')",
+    },
+    {
+      name: '非法时间值退化为普通字符串',
+      column: 'stat_hour',
+      op: FILTER_EQ,
+      value: 'abc',
+      kind: TIME_KIND_DATETIME,
+      want: "`stat_hour` = 'abc'",
+    },
+    {
+      name: '带单引号的值被转义',
+      column: 'stat_hour',
+      op: FILTER_EQ,
+      value: "2026-01-12'",
+      kind: TIME_KIND_DATETIME,
+      want: "`stat_hour` = '2026-01-12\\''",
+    },
+  ]
+  for (const c of cases) {
+    it(c.name, () => {
+      expect(timeLiteral(c.column, c.op, c.value, c.kind as never)).toBe(c.want)
+    })
+  }
+})
+
+describe('ruleMode', () => {
+  it('默认文本', () => {
+    expect(ruleMode({ op: FILTER_EQ, value: '1' })).toBe('text')
+  })
+  it('数值模式', () => {
+    expect(ruleMode({ op: FILTER_EQ, value: '1', numeric: true })).toBe('numeric')
+  })
+  it('时间模式优先于数值', () => {
+    expect(ruleMode({ op: FILTER_EQ, value: '1', numeric: true, time: TIME_KIND_DATETIME })).toBe('time')
+  })
+})
+
+describe('rawFilterExpression 时间模式', () => {
+  it('时间列生成 DateTime() 包裹而不是裸字符串', () => {
+    expect(rawFilterExpression('stat_hour', FILTER_EQ, '2026-01-12T18:00:00+08:00', false, TIME_KIND_DATETIME)).toBe(
+      "`stat_hour` = DateTime('2026-01-12 18:00:00')"
+    )
+  })
+  it('LIKE 仍按文本处理，不用时间包裹', () => {
+    expect(rawFilterExpression('stat_hour', FILTER_LIKE, '2026-01-12', false, TIME_KIND_DATETIME)).toBe(
+      "`stat_hour` LIKE '%2026-01-12%'"
+    )
+  })
+  it('时间模式下非时间值退回字符串', () => {
+    expect(rawFilterExpression('stat_hour', FILTER_EQ, 'abc', false, TIME_KIND_DATETIME)).toBe(
+      "`stat_hour` = 'abc'"
+    )
+  })
+})
 
 describe('valuePreview', () => {
   const cases: { name: string; value: unknown; max?: number; want: string }[] = [

@@ -18,6 +18,12 @@ const emit = defineEmits<{
 const openMenu = ref<string | null>(null)
 const showShortcuts = ref(false)
 const showAbout = ref(false)
+const showSettings = ref(false)
+const rowLimit = ref<number>(50000)
+const rowLimitInput = ref('50000')
+const savingSettings = ref(false)
+const settingsError = ref('')
+const unlimitedRowLimit = ref(false)
 const appVersion = ref('')
 const importing = ref(false)
 const importError = ref('')
@@ -253,6 +259,42 @@ function openShortcuts() {
   closeMenu()
 }
 
+async function openSettings() {
+  settingsError.value = ''
+  try {
+    const sf = await api.GetSettings()
+    rowLimit.value = sf.query_row_limit
+    unlimitedRowLimit.value = sf.query_row_limit === 0
+    rowLimitInput.value = sf.query_row_limit === 0 ? '' : String(sf.query_row_limit)
+  } catch (e: any) {
+    settingsError.value = e?.message || String(e)
+  }
+  showSettings.value = true
+  closeMenu()
+}
+
+async function saveSettings() {
+  if (savingSettings.value) return
+  settingsError.value = ''
+  const limit = unlimitedRowLimit.value ? 0 : Number(rowLimitInput.value)
+  if (!unlimitedRowLimit.value && (!Number.isFinite(limit) || limit < 100)) {
+    settingsError.value = t('menu.rowLimitInvalid')
+    return
+  }
+  savingSettings.value = true
+  try {
+    const sf = await api.SaveSettings({ query_row_limit: limit })
+    rowLimit.value = sf.query_row_limit
+    unlimitedRowLimit.value = sf.query_row_limit === 0
+    rowLimitInput.value = sf.query_row_limit === 0 ? '' : String(sf.query_row_limit)
+    showSettings.value = false
+  } catch (e: any) {
+    settingsError.value = e?.message || String(e)
+  } finally {
+    savingSettings.value = false
+  }
+}
+
 function quit() {
   window.close()
   closeMenu()
@@ -376,6 +418,10 @@ onBeforeUnmount(() => {
           <span>{{ t('menu.shortcuts') }}</span><span class="text-ch-muted text-xs">{{ mod }}/</span>
         </button>
         <div class="h-px bg-ch-border my-1" />
+        <button @click.stop="openSettings()" class="menu-item w-full text-left px-3 py-1.5 hover:bg-ch-hover flex items-center justify-between">
+          <span>{{ t('menu.querySettings') }}</span>
+        </button>
+        <div class="h-px bg-ch-border my-1" />
         <button @click.stop="openAbout()" class="menu-item w-full text-left px-3 py-1.5 hover:bg-ch-hover flex items-center justify-between">
           <span>{{ t('menu.about') }}</span>
         </button>
@@ -435,6 +481,40 @@ onBeforeUnmount(() => {
           </div>
           <div class="px-4 py-3 border-t border-ch-border flex justify-center">
             <button class="btn-primary btn-sm" @click="showAbout = false">{{ t('about.close') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Settings Modal -->
+    <Teleport to="body">
+      <div v-if="showSettings" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" @click="showSettings = false">
+        <div class="bg-ch-panel border border-ch-border rounded-lg shadow-2xl w-[440px] max-w-[90vw]" @click.stop>
+          <div class="flex items-center justify-between px-4 py-3 border-b border-ch-border">
+            <h3 class="text-ch-text font-semibold">{{ t('menu.querySettings') }}</h3>
+            <button class="text-ch-muted hover:text-ch-text" @click="showSettings = false">✕</button>
+          </div>
+          <div class="px-4 py-4 text-sm space-y-3">
+            <div>
+              <label class="block text-ch-text mb-1">{{ t('menu.rowLimitLabel') }}</label>
+              <input
+                v-model="rowLimitInput"
+                :disabled="unlimitedRowLimit"
+                type="number"
+                min="100"
+                class="w-full px-2 py-1 rounded border border-ch-border bg-ch-bg text-ch-text disabled:opacity-40"
+              />
+              <p class="text-ch-muted text-xs mt-1">{{ t('menu.rowLimitHint') }}</p>
+            </div>
+            <label class="flex items-center gap-2 text-ch-text">
+              <input v-model="unlimitedRowLimit" type="checkbox" />
+              <span>{{ t('menu.rowLimitUnlimited') }}</span>
+            </label>
+            <p v-if="settingsError" class="text-red-400 text-xs">{{ settingsError }}</p>
+          </div>
+          <div class="px-4 py-3 border-t border-ch-border flex justify-end gap-2">
+            <button class="px-3 py-1 rounded border border-ch-border text-ch-muted hover:text-ch-text hover:bg-ch-hover" @click="showSettings = false">{{ t('common.cancel') }}</button>
+            <button class="btn-primary btn-sm" :disabled="savingSettings" @click="saveSettings">{{ savingSettings ? t('common.saving') : t('common.save') }}</button>
           </div>
         </div>
       </div>

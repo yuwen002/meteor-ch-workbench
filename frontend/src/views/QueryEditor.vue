@@ -4,14 +4,16 @@ import { useI18n } from 'vue-i18n'
 import type * as Monaco from 'monaco-editor/editor/editor.api.js'
 import { useAppStore } from '../stores/app'
 import { api } from '../api'
-import type { QueryResult } from '../types'
-import { createTab, type QueryTab } from '../utils/tabs'
+import type { QueryResult, ExecBatchResult } from '../types'
+import { createTab, restoreTabs, type QueryTab } from '../utils/tabs'
 import { buildPageSQL, type PageState } from '../utils/pagination'
 import ResultGrid from '../components/ResultGrid.vue'
 import DatabaseTree from '../components/DatabaseTree.vue'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import SavedSQLPanel from '../components/SavedSQLPanel.vue'
 import { useMonaco } from '../composables/useMonaco'
+import type { ApplyResult } from '../composables/useCellEditing'
+import { clampSplitRatio, splitRatioFromY } from '../utils/splitPane'
 
 const { t } = useI18n()
 const store = useAppStore()
@@ -50,6 +52,46 @@ const error = computed(() => activeTab.value?.error ?? null)
 const canceled = computed(() => activeTab.value?.canceled ?? false)
 
 const showHistory = ref(false)
+
+const SPLIT_STORAGE_KEY = 'meteor-ch.splitRatio'
+const splitRatio = ref(0.5)
+const splitDragging = ref(false)
+const splitContainerEl = ref<HTMLElement | null>(null)
+const splitStart = ref<{ y: number; ratio: number; height: number } | null>(null)
+
+function loadSplitRatio() {
+  const saved = localStorage.getItem(SPLIT_STORAGE_KEY)
+  const ratio = saved ? parseFloat(saved) : Number.NaN
+  if (!Number.isNaN(ratio)) splitRatio.value = clampSplitRatio(ratio, 1000)
+}
+
+function onSplitStart(ev: MouseEvent) {
+  if (!splitContainerEl.value) return
+  ev.preventDefault()
+  splitStart.value = {
+    y: ev.clientY,
+    ratio: splitRatio.value,
+    height: splitContainerEl.value.clientHeight,
+  }
+  splitDragging.value = true
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+}
+
+function onSplitMove(ev: MouseEvent) {
+  const state = splitStart.value
+  if (!state) return
+  splitRatio.value = splitRatioFromY(state.y, state.ratio, ev.clientY - state.y, state.height)
+}
+
+function onSplitEnd() {
+  if (!splitStart.value) return
+  splitStart.value = null
+  splitDragging.value = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  localStorage.setItem(SPLIT_STORAGE_KEY, String(splitRatio.value))
+}
 const showSavedSQL = ref(false)
 const savedSQLPanelRef = ref<{ reload: () => Promise<void> } | null>(null)
 const saveDialogVisible = ref(false)
@@ -63,6 +105,7 @@ const selectedSQL = ref('')
 const availableSQL = computed(() => (selectedSQL.value.trim() ? selectedSQL.value : activeTab.value?.sql ?? ''))
 const resultGridRef = ref<{ closeMenus: () => void; restoreScroll: (value: number) => void } | null>(null)
 const databaseTreeRef = ref<{ closeMenus: () => void; reload: () => Promise<void> } | null>(null)
+const applyResult = ref<ApplyResult | null>(null)
 
 function closeAllMenus() {
   databaseTreeRef.value?.closeMenus()
@@ -204,24 +247,44 @@ async function onResultApplyEdits(statements: string[]) {
     return
   }
   tab.querying = true
+  applyResult.value = null
   let failed = ''
+  let ok = 0
+  let failedIndexes: number[] = []
+  let skippedIndexes: number[] = []
   try {
-    for (const stmt of statements) {
-      const r = await api.Execute(store.activeConnectionId, stmt)
-      if (r.error) {
-        failed = r.error
-        break
-      }
+    const r: ExecBatchResult = await api.ExecuteBatch(store.activeConnectionId, statements)
+    ok = r.ok
+    const all = r.statements ?? []
+    for (const st of all) {
+      if (st.error) failedIndexes.push(st.index)
     }
+    const lastFailed = failedIndexes.length ? Math.max(...failedIndexes) : -1
+    for (let i = 0; i < statements.length; i++) {
+      if (failedIndexes.includes(i)) continue
+      const st = all[i]
+      if (!st) skippedIndexes.push(i)
+      else if (!st.error && lastFailed >= 0 && i > lastFailed) skippedIndexes.push(i)
+    }
+    const first = all.find((st) => st.error)
+    if (first) failed = first.error || t('editor.queryFailed')
   } catch (e: any) {
     failed = e?.message || t('editor.queryFailed')
+    skippedIndexes = statements.map((_, i) => i)
   } finally {
     tab.querying = false
   }
   if (failed) {
-    tab.error = t('editor.applyEditsFailed', { error: failed })
+    applyResult.value = { ok, error: failed, failedIndexes, skippedIndexes }
+    tab.error = t('editor.applyEditsPartial', {
+      ok,
+      failed: failedIndexes.length || 1,
+      error: failed,
+      remaining: skippedIndexes.length,
+    })
     return
   }
+  applyResult.value = { ok, error: '' }
   const sql = availableSQL.value
   if (!sql) return
   await executeSelectedSQL(sql, tab.page, true)
@@ -310,24 +373,11 @@ async function restorePersistedTabs() {
   try {
     const snapshot = await api.GetTabs()
     if (!snapshot || !snapshot.tabs || snapshot.tabs.length === 0) return
-    const restored: QueryTab[] = snapshot.tabs.map((t, i) => ({
-      id: t.id || 'tab-' + i,
-      title: t.title || `Query ${i + 1}`,
-      sql: t.sql ?? '',
-      result: null,
-      error: null,
-      querying: false,
-      queryId: null,
-      canceled: false,
-      resultScrollTop: 0,
-      viewState: null,
-      page: null,
-      lastExecutedSql: '',
-    }))
-    tabs.value = restored
-    const active = restored.find((t) => t.id === snapshot.active_tab_id)
-    activeTabId.value = (active || restored[0]).id
-    if (getEditor()) restoreTab(active || restored[0])
+    const restored = restoreTabs(snapshot)
+    tabs.value = restored.tabs
+    activeTabId.value = restored.activeId
+    const active = restored.tabs.find((t) => t.id === restored.activeId)!
+    if (getEditor()) restoreTab(active)
   } catch {
     // 读取失败时保留默认标签，不打断用户
   }
@@ -470,6 +520,9 @@ function insertClusterUUID(uuid: string) {
 onMounted(async () => {
   window.addEventListener('click', closeAllMenus)
   window.addEventListener('contextmenu', closeAllMenus)
+  window.addEventListener('mousemove', onSplitMove)
+  window.addEventListener('mouseup', onSplitEnd)
+  loadSplitRatio()
 
   await initEditor('-- ClickHouse SQL\nSELECT version()')
 
@@ -502,6 +555,8 @@ onBeforeUnmount(() => {
   api.SaveTabs(snapshot).catch(() => {})
   window.removeEventListener('click', closeAllMenus)
   window.removeEventListener('contextmenu', closeAllMenus)
+  window.removeEventListener('mousemove', onSplitMove)
+  window.removeEventListener('mouseup', onSplitEnd)
 })
 </script>
 
@@ -635,9 +690,23 @@ onBeforeUnmount(() => {
         @insert-ddl="onTreeInsertDDL"
         @error="onTreeError"
       />
-      <div class="flex-1 flex flex-col min-w-0">
-        <div :class="showHistory || showSavedSQL ? 'h-[35%]' : 'h-1/2'" class="min-h-[120px]">
+      <div ref="splitContainerEl" class="flex-1 flex flex-col min-w-0 min-h-0">
+        <div
+          class="min-h-[120px] shrink-0"
+          :style="{ height: (splitRatio * 100).toFixed(3) + '%' }"
+        >
           <div ref="editorRef" class="w-full h-full"></div>
+        </div>
+
+        <div
+          class="h-1.5 shrink-0 cursor-row-resize group relative select-none"
+          @mousedown="onSplitStart"
+        >
+          <div
+            class="absolute inset-x-0 -top-0.5 -bottom-0.5 transition-colors"
+            :class="splitDragging ? 'bg-ch-accent/40' : 'bg-transparent group-hover:bg-ch-accent/30'"
+          ></div>
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-1 w-10 rounded-full bg-ch-muted/30 group-hover:bg-ch-accent/60 transition-colors"></div>
         </div>
 
         <HistoryPanel
@@ -663,11 +732,12 @@ onBeforeUnmount(() => {
           :canceled="canceled"
           :querying="querying"
           :available-sql="availableSQL"
-          :executed-sql="activeTab.lastExecutedSql"
+          :executed-sql="activeTab?.lastExecutedSql ?? ''"
           :insert-db="selectedDB"
           :insert-table="selectedTable"
-          :scroll-top="activeTab.resultScrollTop || 0"
-          :page="activeTab.page"
+          :scroll-top="activeTab?.resultScrollTop || 0"
+          :apply-result="applyResult"
+          :page="activeTab?.page ?? null"
           @explain="executeSelectedSQL"
           @error="onResultError"
           @scroll-top="onResultScrollTop"

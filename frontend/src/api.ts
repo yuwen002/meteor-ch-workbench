@@ -1,5 +1,5 @@
 import { Call } from '@wailsio/runtime'
-import type { Connection, Folder, DataFile, QueryResult, ExecResult, TableInfo, ColumnInfo, ClusterInfo, ExportFormat, ImportFormat, ImportOptions, ImportResult, ResultExportFormat, HistoryEntry, SavedSQL, TabsFile } from './types'
+import type { Connection, Folder, DataFile, QueryResult, ExecResult, ExecBatchResult, TableInfo, ColumnInfo, ClusterInfo, ExportFormat, ImportFormat, ImportOptions, ImportResult, ResultExportFormat, HistoryEntry, SavedSQL, TabsFile, SettingsFile } from './types'
 
 type AnyError = { message?: string; cause?: unknown; name?: string }
 
@@ -94,6 +94,10 @@ export const api = {
     return call<ExecResult>('main.App.Execute', connectionID, sql)
   },
 
+  ExecuteBatch(connectionID: string, statements: string[]): Promise<ExecBatchResult> {
+    return call<ExecBatchResult>('main.App.ExecuteBatch', connectionID, statements)
+  },
+
   GetDatabases(connectionID: string): Promise<string[]> {
     return call<string[]>('main.App.GetDatabases', connectionID)
   },
@@ -156,6 +160,14 @@ export const api = {
 
   GetTabs(): Promise<TabsFile> {
     return call<TabsFile>('main.App.GetTabs')
+  },
+
+  GetSettings(): Promise<SettingsFile> {
+    return call<SettingsFile>('main.App.GetSettings')
+  },
+
+  SaveSettings(settings: SettingsFile): Promise<SettingsFile> {
+    return call<SettingsFile>('main.App.SaveSettings', settings)
   },
 
   OpenConfigFolder(): Promise<void> {

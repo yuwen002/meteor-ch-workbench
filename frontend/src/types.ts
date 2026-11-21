@@ -129,3 +129,22 @@ export interface ExecResult {
   rows_affected: number
   error?: string
 }
+
+export interface StatementResult {
+  index: number
+  sql: string
+  rows_affected: number
+  error?: string
+}
+
+export interface ExecBatchResult {
+  statements: StatementResult[]
+  ok: number
+  failed: number
+  skipped: number
+  elapsed_ms: number
+}
+
+export interface SettingsFile {
+  query_row_limit: number
+}
