@@ -1,0 +1,116 @@
+frontend/src/locales/en.ts
+  h_a3f313f3d96276 54-58,197,199-202,216-222,229,240-241,311-312
+frontend/src/views/QueryEditor.vue
+  h_a3f313f3d96276 7-8,15-16,55-94,108,250,252-254,256-260,262-270,273,278-284,287,376-379,523-525,558-559,693,695-696,701-709,711,735,738-740
+frontend/src/utils/cellEdit.test.ts
+  h_a3f313f3d96276 8,152,174-239
+frontend/src/utils/menuPosition.test.ts
+  h_a3f313f3d96276 1-34
+frontend/src/components/ResultTableBody.vue
+  h_a3f313f3d96276 1-295
+frontend/src/components/ResultGrid.vue
+  h_a3f313f3d96276 8-18,40-44,61-63,65-66,79,99-101,127-142,145,192,251,263,272,295,314-351,398,405,407-409,416,418-422,446-449,451,521,531,548-580,583,585-586,589-591,601-627,645-648,659-678,721-726,730-736,740-743,768-783,788-807,810-817,835-874,907-953,968-1016
+frontend/src/utils/resultFilter.ts
+  h_a3f313f3d96276 199-207,225-287,298-299,306-308,323,326
+docs/FEATURES.md
+  h_a3f313f3d96276 30,33-36,59,63
+frontend/src/locales/zh.ts
+  h_a3f313f3d96276 27-32,115,117-120,134-140,147,158-159,192
+frontend/src/utils/splitPane.ts
+  h_a3f313f3d96276 1-35
+frontend/src/utils/dragPanel.ts
+  h_a3f313f3d96276 1-45
+frontend/src/components/ResultApplyConfirmModal.vue
+  h_a3f313f3d96276 1-68
+frontend/src/components/ResultToolbarActions.vue
+  h_a3f313f3d96276 1-109
+frontend/src/types.ts
+  h_a3f313f3d96276 131-149
+frontend/src/api.ts
+  h_a3f313f3d96276 2,97-100,165-172
+frontend/src/components/ResultExportBar.vue
+  h_a3f313f3d96276 1-34
+frontend/src/components/ResultToolbarInfo.vue
+  h_a3f313f3d96276 1-79
+internal/clickhouse/service.go
+  h_a3f313f3d96276 77-96,293-294,301-309,322,324,329-331,341,344,358-370,402-464
+internal/clickhouse/service_test.go
+  h_a3f313f3d96276 1-57
+frontend/src/composables/useResultFilterPanel.ts
+  h_a3f313f3d96276 1-173
+frontend/src/components/ResultCellEditBar.vue
+  h_a3f313f3d96276 1-44
+frontend/src/composables/useCellEditing.ts
+  h_a3f313f3d96276 1-255
+frontend/src/utils/tabs.ts
+  h_a3f313f3d96276 38-67
+docs/CODE_INDEX.md
+  h_a3f313f3d96276 29,125-126,128-131,216-225,357-361,373-407,563,565-570,575-576,607,663-674,679,690-692
+frontend/src/composables/useAutoRefresh.ts
+  h_a3f313f3d96276 1-141
+frontend/src/components/ResultHeaderMenu.vue
+  h_a3f313f3d96276 1-113
+.trae/rules/roadmap.md
+  h_a3f313f3d96276 1,3-5,7-26,43-48,50,52-54,57,60-62,70-71,73,76-78,85-86,88,91-93,100-101,103-108,117-118,120-128,130-131,137-138,151,167,187,204,216,218,236-238,248-249,264,273,290,302,320,333,345-346,370,391,422-423,434-435,449,458,466,476,497,546,560,577-579,583,593,595,597,599-613,618-620,622,630,632,634,639,641,643,645-647,656,670,672,674,686,688,692,701-873,880-894
+frontend/src/utils/menuPosition.ts
+  h_a3f313f3d96276 1-27
+internal/config/settings_test.go
+  h_a3f313f3d96276 1-102
+frontend/src/utils/resultTable.ts
+  h_a3f313f3d96276 37-85
+frontend/src/utils/cellEdit.ts
+  h_a3f313f3d96276 126,133,148-167
+frontend/src/components/ResultCellMenu.vue
+  h_a3f313f3d96276 1-69
+frontend/src/utils/tabs.test.ts
+  h_a3f313f3d96276 2,32-79
+frontend/src/utils/dragPanel.test.ts
+  h_a3f313f3d96276 1-50
+docs/API.md
+  h_a3f313f3d96276 306-308,379-380,521-546
+internal/clickhouse/export.go
+  h_a3f313f3d96276 10,32-35,39,46,53,60,67,82,84-106,109-245,247-256,260-270,272-273
+app.go
+  h_a3f313f3d96276 26,38,158-160,226,234-245,337-348,359,368-370,376-377,380-386
+internal/clickhouse/exec_batch_test.go
+  h_a3f313f3d96276 1-155
+frontend/src/composables/usePanelDrag.ts
+  h_a3f313f3d96276 1-66
+frontend/src/utils/sqlProjection.ts
+  h_a3f313f3d96276 1-353
+frontend/src/components/ResultAutoRefreshPicker.vue
+  h_a3f313f3d96276 1-116
+frontend/src/components/MenuBar.vue
+  h_a3f313f3d96276 21-26,262-297,421-424,488-521
+frontend/src/components/ResultFilterPanel.vue
+  h_a3f313f3d96276 17-19,42,54-61,66,68-70,81-86,92,109,132,162-178,258,263-272
+frontend/src/utils/sqlProjection.test.ts
+  h_a3f313f3d96276 1-327
+frontend/src/utils/resultTable.test.ts
+  h_a3f313f3d96276 11-17,20-71,137-205
+frontend/src/utils/splitPane.test.ts
+  h_a3f313f3d96276 1-110
+frontend/src/utils/resultFilter.test.ts
+  h_a3f313f3d96276 2,27-35,38-178
+frontend/src/components/ResultCellFilterPanel.vue
+  h_a3f313f3d96276 1-139
+frontend/src/components/DatabaseTree.vue
+  h_a3f313f3d96276 2,10,31-82,325-338
+internal/config/settings.go
+  h_a3f313f3d96276 1-120
+internal/clickhouse/export_test.go
+  h_a3f313f3d96276 4,6,18,20,46,48,86,91,117,122,161,163,238-239,245,274,282,334-410
+frontend/src/components/ResultSqlPanel.vue
+  h_a3f313f3d96276 1-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "e8abb3e6a42e8698b86aee2a385fc5ef250690b1",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
