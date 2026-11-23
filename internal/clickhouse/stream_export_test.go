@@ -5,7 +5,8 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"testing"\n\t"time"
+	"testing"
+	"time"
 )
 
 type fakeSQLRows struct {
