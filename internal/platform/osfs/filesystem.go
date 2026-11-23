@@ -2,7 +2,7 @@
 package osfs
 
 import (
-	"io"
+	"io/fs"
 	"os"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/platform"
@@ -23,7 +23,7 @@ func (f *FileSystem) ReadFile(path string) ([]byte, error) {
 }
 
 // WriteFile 按指定权限创建或覆盖文件。
-func (f *FileSystem) WriteFile(path string, content []byte, perm io.FileMode) error {
+func (f *FileSystem) WriteFile(path string, content []byte, perm fs.FileMode) error {
 	return os.WriteFile(path, content, perm)
 }
 
