@@ -1,6 +1,8 @@
 package gioapp
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
