@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"os"
-	"strings"
+		"strings"
 
 	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 	platformport "github.com/yuwen002/meteor-ch-workbench/internal/platform"
 	wailsadapter "github.com/yuwen002/meteor-ch-workbench/internal/platform/wailsadapter"
+	"github.com/yuwen002/meteor-ch-workbench/internal/platform/osfs"
 )
 
 // App 是旧版 Wails 前端的适配对象。
@@ -19,6 +19,7 @@ type App struct {
 	ctx     context.Context         // Wails 注入的应用上下文，随应用生命周期结束而关闭
 	service *appsvc.Service         // 与 GUI 无关的应用服务
 	platform platformport.Platform // 系统对话框与操作系统集成
+	files    platformport.FileSystem // 本地文件读写能力
 }
 
 // NewApp 创建 App 实例，并初始化配置管理器、查询历史管理器和 ClickHouse 服务。
@@ -29,6 +30,11 @@ func NewApp() *App {
 
 // NewAppWithPlatform 使用注入的平台实现创建应用，便于测试及未来 Gio 入口复用。
 func NewAppWithPlatform(platform platformport.Platform) *App {
+	return NewAppWithDependencies(platform, osfs.New())
+}
+
+// NewAppWithDependencies 注入平台交互与文件系统实现，供测试及不同 GUI 入口复用。
+func NewAppWithDependencies(platform platformport.Platform, files platformport.FileSystem) *App {
 	conf := config.NewManager()
 	hist := config.NewHistoryManager(conf.ConfigDir())
 	tabs := config.NewTabsManager(conf.ConfigDir())
@@ -37,6 +43,7 @@ func NewAppWithPlatform(platform platformport.Platform) *App {
 	chSvc := clickhouse.NewService()
 	return &App{
 		platform: platform,
+		files:    files,
 		service:  appsvc.NewService(conf, hist, tabs, saved, chSvc, prefs),
 	}
 }
@@ -151,7 +158,7 @@ func (a *App) SaveExportAs(format string, includePassword bool) (string, error) 
 	if err != nil || path == "" {
 		return path, err
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := a.files.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -180,7 +187,7 @@ func (a *App) PickImportFile() (string, string, error) {
 	if err != nil || path == "" {
 		return "", "", err
 	}
-	content, err := os.ReadFile(path)
+	content, err := a.files.ReadFile(path)
 	if err != nil {
 		return "", "", err
 	}
@@ -305,7 +312,7 @@ func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interf
 	if err != nil || path == "" {
 		return path, err
 	}
-	file, err := os.Create(path)
+	file, err := a.files.Create(path)
 	if err != nil {
 		return "", err
 	}
