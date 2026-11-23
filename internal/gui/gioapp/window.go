@@ -176,6 +176,7 @@ func (s *screen) startExport(format string) {
 	connectionID, sqlText := s.lastExecutedConnectionID, s.lastExecutedSQL
 	queryID := fmt.Sprintf("gio-export-%d", time.Now().UnixNano())
 	s.exportRunning = true
+	s.runningQueryID, s.queryRunning = queryID, true
 	s.status = "正在重新执行当前 SQL，并流式导出完整结果…"
 	go func() {
 		file, err := s.explorer.CreateFile("query-result." + format)
@@ -202,6 +203,7 @@ func (s *screen) drainExportResults() {
 		select {
 		case result := <-s.exportResults:
 			s.exportRunning = false
+			s.queryRunning, s.runningQueryID = false, ""
 			switch {
 			case result.canceled:
 				s.status = "已取消导出"
