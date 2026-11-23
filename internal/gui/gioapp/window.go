@@ -1175,7 +1175,7 @@ func (s *screen) closeTab(id string) {
 		s.status = "该标签仍有查询或导出任务，完成或取消后才能关闭"
 		return
 	}
-	if index := activeTabIndex(s.tabs, id); index >= 0 && id == s.activeTabID && s.sqlEditor.Text() != s.tabs[index].SQL {
+	if tabHasUnsavedChanges(s.tabs, s.activeTabID, id, s.sqlEditor.Text()) {
 		s.pendingCloseTabID = id
 		s.status = "当前 SQL 有未保存修改，请确认丢弃后关闭"
 		return
