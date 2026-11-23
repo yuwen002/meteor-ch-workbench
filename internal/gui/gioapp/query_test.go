@@ -34,3 +34,22 @@ func TestFormatResultCellTruncatesByRune(t *testing.T) {
 		t.Fatalf("truncated value should end with ellipsis, got %q", got)
 	}
 }
+
+func TestResultColumnWidth(t *testing.T) {
+	tests := []struct {
+		name string
+		weight float32
+		want float32
+	}{
+		{name: "低于最小权重", weight: 5, want: 80},
+		{name: "正常权重", weight: 20, want: 160},
+		{name: "高于最大权重", weight: 40, want: 256},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := float32(resultColumnWidth(tt.weight)); got != tt.want {
+				t.Fatalf("resultColumnWidth(%v) = %v dp，期望 %v dp", tt.weight, got, tt.want)
+			}
+		})
+	}
+}
