@@ -916,3 +916,10 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/gui/gioapp/table_preview.go`：`buildTablePreviewPageSQL` 构造 LIMIT/OFFSET 分页 SQL；第一页省略 OFFSET 0。
 - `internal/gui/gioapp/table_preview_test.go`：覆盖第一页、后续页、每页行数变化、负页码和无效行数回退。
 - `window.go`：表预览分页控件支持上一页 / 下一页及 50 / 100 / 200 行切换；切换页数回到第一页，并校验活动标签 ID、连接 ID、库表和 SQL，避免切换标签 / 连接 / 表后分页状态残留；结果错误、空页或短页不允许继续翻页。
+
+
+### Gio 查询结果按列筛选
+
+- `internal/gui/gioapp/result_view.go`：`buildResultRowViewWithColumnFilters` 在全局关键字筛选基础上支持多个列条件 AND 组合；列条件为大小写无关包含匹配，支持 NULL 文本和空条件忽略。
+- `internal/gui/gioapp/result_view_test.go`：覆盖多列组合、全局与列条件组合、NULL 匹配及空条件。
+- `internal/gui/gioapp/window.go`：结果表头下方按列宽显示独立筛选输入框，支持横向滚动和清空全部列条件；新查询重置筛选状态。
