@@ -458,8 +458,8 @@ func (s *screen) drainQueryResults() {
 			if result.err != nil {
 				state.result = nil
 				s.tabRuntime[result.tabID] = state
-					if result.tabID == s.activeTabID { s.queryResult = nil; s.resetResultWidgets(nil); s.status = "查询失败：" + result.err.Error() }
-					continue
+				if result.tabID == s.activeTabID { s.queryResult = nil; s.resetResultWidgets(nil); s.status = "查询失败：" + result.err.Error() }
+				continue
 			}
 			state.result = result.result
 			s.tabRuntime[result.tabID] = state
@@ -1112,6 +1112,7 @@ func (s *screen) restoreActiveTabRuntime() {
 }
 
 func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
+	s.resultList.Position = layout.Position{}
 	s.resultColumnHeader.Position = layout.Position{}
 	s.resultColumnRow.Position = layout.Position{}
 	s.resultCellClicks, s.resultRowCopyClicks = nil, nil
