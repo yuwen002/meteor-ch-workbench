@@ -15,6 +15,7 @@ meteor-ch-workbench/
 ├── wails.json           Wails 打包配置
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
+│   ├── app_platform_test.go 应用入口平台文件交互行为测试（仓库根目录）
 │   ├── app/             GUI 无关的应用服务编排（连接 / 查询 / 配置 / 历史 / 收藏 / 标签 / 设置）
 │   ├── platform/        文件对话框与本地文件系统能力端口
 │   │   ├── wailsadapter/ Wails v3 对话框与系统操作实现
