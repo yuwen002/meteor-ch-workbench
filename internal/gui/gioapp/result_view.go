@@ -30,6 +30,9 @@ func buildResultRowView(rows [][]interface{}, filter string, sortColumn int, des
 			var left, right interface{}
 			if sortColumn < len(view[i].Values) { left = view[i].Values[sortColumn] }
 			if sortColumn < len(view[j].Values) { right = view[j].Values[sortColumn] }
+			if left == nil && right != nil { return false }
+			if left != nil && right == nil { return true }
+			if left == nil && right == nil { return false }
 			cmp := compareResultValues(left, right)
 			if descending { return cmp > 0 }
 			return cmp < 0
