@@ -1,3 +1,5 @@
+# 代码索引
+
 ## 新架构（重写中）
 
 ### [internal/domain/connection/connection.go](../internal/domain/connection/connection.go)
@@ -10,7 +12,6 @@
 
 ---
 
-# 代码索引
 
 > 按文件列出职责、关键入口与依赖关系，便于人和 AI 快速定位。
 > 与 `.trae/PROJECT.md`（AI 检索地图）互补：本文更偏「文件清单」，PROJECT.md 更偏「怎么改」。
