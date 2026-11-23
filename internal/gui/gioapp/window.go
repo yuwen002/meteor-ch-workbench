@@ -5,7 +5,7 @@
 package gioapp
 
 import (
-	"context"
+	stdcontext "context"
 	"errors"
 	"fmt"
 	"image"
@@ -225,7 +225,7 @@ func (s *screen) startExport(format string) {
 		} else if closeErr != nil {
 			err = closeErr
 		}
-		result := exportResult{format: format, err: err, rows: rows, bytes: writer.bytes, duration: time.Since(startedAt), canceled: errors.Is(writeErr, context.Canceled) || errors.Is(writeErr, context.DeadlineExceeded)}
+		result := exportResult{format: format, err: err, rows: rows, bytes: writer.bytes, duration: time.Since(startedAt), canceled: errors.Is(writeErr, stdcontext.Canceled) || errors.Is(writeErr, stdcontext.DeadlineExceeded)}
 		if err != nil {
 			supported, removeErr := removeIncompleteExport(file)
 			result.cleanupUnsupported = !supported
