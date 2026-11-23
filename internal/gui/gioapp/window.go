@@ -693,9 +693,6 @@ func (s *screen) applyTheme() {
 }
 
 func (s *screen) layout(gtx context) dimensions {
-	for s.newTab.Clicked(gtx) {
-		s.createTab()
-	}
 	s.drainConnectResults()
 	s.drainDatabaseResults()
 	s.drainSchemaResults()
@@ -1085,7 +1082,11 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 			})
 		}),
 		layout.Rigid(func(gtx context) dimensions {
-			return material.Button(s.theme, &s.newTab, "+ 新建").Layout(gtx)
+			dims := material.Button(s.theme, &s.newTab, "+ 新建").Layout(gtx)
+			for s.newTab.Clicked(gtx) {
+				s.createTab()
+			}
+			return dims
 		}),
 	)
 }
