@@ -85,6 +85,14 @@ type screen struct {
 	previewDatabase string
 	previewTableName string
 	previewMode bool
+	previewTabID string
+	previewConnectionID string
+	selectedCellLabel string
+	selectedCellValue string
+	cellDetailLines []string
+	cellDetailList widget.List
+	copyCellDetail widget.Clickable
+	closeCellDetail widget.Clickable
 	detailsToggle widget.Clickable
 	copyDDL widget.Clickable
 	schemaList widget.List
@@ -662,6 +670,14 @@ func formatClipboardCell(value interface{}) string {
 	return fmt.Sprint(value)
 }
 
+
+func splitCellDetailLines(value string) []string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	if value == "" { return []string{""} }
+	return strings.Split(value, "\n")
+}
+
 func formatResultCell(value interface{}) string {
 	if value == nil {
 		return "NULL"
@@ -792,6 +808,8 @@ func (s *screen) connectConnection(connection config.Connection) {
 		s.runningTabID = ""
 	}
 	s.selectedConnectionID = connection.ID
+	s.previewMode = false
+	s.previewTabID, s.previewConnectionID = "", ""
 	s.connectionSequence++
 	sequence := s.connectionSequence
 	s.treeConnected = false
@@ -1359,6 +1377,7 @@ func (s *screen) previewSelectedTable() {
 	}
 	if s.previewPageLimit <= 0 { s.previewPageLimit = 100 }
 	s.previewMode = true
+	s.previewTabID, s.previewConnectionID = s.activeTabID, s.selectedConnectionID
 	s.previewDatabase, s.previewTableName = s.selectedSchemaDatabase, s.selectedSchemaTable
 	s.runTablePreviewPage()
 }
@@ -1375,14 +1394,19 @@ func (s *screen) runTablePreviewPage() {
 func (s *screen) isCurrentTablePreview() bool {
 	if !s.previewMode || s.previewDatabase == "" || s.previewTableName == "" { return false }
 	want := buildTablePreviewPageSQL(s.previewDatabase, s.previewTableName, s.previewPageLimit, s.previewPage)
-	return strings.TrimSpace(s.lastExecutedSQL) == want
+	return s.activeTabID == s.previewTabID &&
+		s.selectedConnectionID == s.previewConnectionID &&
+		s.lastExecutedConnectionID == s.previewConnectionID &&
+		s.selectedSchemaDatabase == s.previewDatabase &&
+		s.selectedSchemaTable == s.previewTableName &&
+		strings.TrimSpace(s.lastExecutedSQL) == want
 }
 
 func (s *screen) changePreviewPage(delta int) {
 	if !s.isCurrentTablePreview() || s.queryRunning || s.exportRunning { return }
 	next := s.previewPage + delta
 	if next < 0 { return }
-	if delta > 0 && (s.queryResult == nil || len(s.queryResult.Rows) < s.previewPageLimit) { return }
+	if delta > 0 && (s.queryResult == nil || s.queryResult.Error != "" || len(s.queryResult.Rows) < s.previewPageLimit) { return }
 	s.previewPage = next
 	s.runTablePreviewPage()
 }
@@ -1796,6 +1820,8 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultCellClicks, s.resultRowCopyClicks = nil, nil
 	s.resultColumnWidths, s.resultColumnDrags = nil, nil
 	s.resultColumnDragLastX, s.resultColumnDragActive = nil, nil
+	s.selectedCellLabel, s.selectedCellValue, s.cellDetailLines = "", "", nil
+	s.cellDetailList.Position = layout.Position{}
 	if result == nil { return }
 	s.resultColumnWidths = make([]unit.Dp, len(result.Columns))
 	for i, weight := range resultColumnWeights(result.Columns, result.Rows) { s.resultColumnWidths[i] = resultColumnWidth(weight) }
@@ -1839,6 +1865,8 @@ func (s *screen) createTab() {
 	s.queryResult = nil
 	s.lastExecutedSQL = ""
 	s.lastExecutedConnectionID = ""
+	s.previewMode = false
+	s.previewTabID, s.previewConnectionID = "", ""
 	s.tabRuntime[tab.ID] = tabRuntimeState{}
 	s.resetResultWidgets(nil)
 	s.persistTabs()
@@ -1981,7 +2009,11 @@ func (s *screen) layoutResults(gtx context) dimensions {
 				for cellIndex := range row {
 					if cellIndex < len(s.resultCellClicks[index]) && s.resultCellClicks[index][cellIndex].Clicked(gtx) {
 						gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatClipboardCell(row[cellIndex])))})
-						s.status = fmt.Sprintf("已复制第 %d 行第 %d 列", index+1, cellIndex+1)
+						s.selectedCellLabel = fmt.Sprintf("第 %d 行 · %s", index+1, result.Columns[cellIndex].Name)
+						s.selectedCellValue = formatClipboardCell(row[cellIndex])
+						s.cellDetailLines = splitCellDetailLines(s.selectedCellValue)
+						s.cellDetailList.Position = layout.Position{}
+						s.status = fmt.Sprintf("已复制第 %d 行第 %d 列，并显示完整内容", index+1, cellIndex+1)
 					}
 				}
 				s.resultColumnHeader.Position = s.resultColumnRow.Position
@@ -1989,6 +2021,30 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			})
 		}))
 		if len(result.Rows) == 0 && result.Error == "" { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "查询成功，但没有返回数据行").Layout(gtx) })) }
+		if s.selectedCellLabel != "" {
+			children = append(children, layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout))
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, "单元格详情 · "+s.selectedCellLabel).Layout(gtx) }),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.copyCellDetail, "复制完整内容").Layout(gtx)
+						for s.copyCellDetail.Clicked(gtx) { gtx.Execute(clipboard.WriteCmd{Type:"application/text", Data:io.NopCloser(strings.NewReader(s.selectedCellValue))}); s.status = "已复制单元格完整内容" }
+						return d
+					}),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.closeCellDetail, "关闭").Layout(gtx)
+						for s.closeCellDetail.Clicked(gtx) { s.selectedCellLabel, s.selectedCellValue, s.cellDetailLines = "", "", nil; s.cellDetailList.Position = layout.Position{} }
+						return d
+					}),
+				)
+			}))
+			children = append(children, layout.Flexed(0.35, func(gtx context) dimensions {
+				s.cellDetailList.Axis = layout.Vertical
+				return material.List(s.theme, &s.cellDetailList).Layout(gtx, len(s.cellDetailLines), func(gtx context, index int) dimensions {
+					return layout.Inset{Top:unit.Dp(1),Bottom:unit.Dp(1)}.Layout(gtx,func(gtx context) dimensions { return material.Caption(s.theme,s.cellDetailLines[index]).Layout(gtx) })
+				})
+			}))
+		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
 }
