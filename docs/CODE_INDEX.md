@@ -958,3 +958,12 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 已删除 Wails 根入口 `main.go`、绑定门面 `app.go`、Wails 平台适配器、对应测试和 `wails.json`；`go.mod` 已移除 Wails v3 直接依赖。
 - 当前唯一桌面入口：`cmd/meteor-ch-gio/main.go`。
 - `internal/app.Service` 仍是 Gio 的临时依赖，后续需按新架构重写；旧 Vue `frontend/` 仅供功能盘点，不能作为运行或发布入口。
+
+
+## 全量重写索引（2026-11-24）
+
+- [Gio 原生工作台全量重写计划](architecture/GIO_REWRITE_PLAN.md)：当前 GUI、后端、存储和旧 Vue 工程的重写范围与验收标准。
+- 当前 Gio 唯一入口：cmd/meteor-ch-gio/main.go。
+- 当前 Gio 单体原型：internal/gui/gioapp/window.go（约 82 KB），只作为功能行为参考，后续拆分重写。
+- 当前临时后端：internal/app、internal/clickhouse、internal/config；均不属于最终架构。
+- 旧 Vue 前端：frontend/，仅供功能盘点，完成替代后删除。
