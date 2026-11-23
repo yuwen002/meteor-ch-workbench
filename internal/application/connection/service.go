@@ -11,7 +11,6 @@ import (
 
 var (
 	ErrNotFound = errors.New("连接不存在")
-	ErrDuplicateID = errors.New("连接 ID 已存在")
 )
 
 // Service 提供连接列表、保存、删除和连通性测试用例。
@@ -48,11 +47,6 @@ func (s *Service) Save(ctx context.Context, item connection.Connection) (connect
 
 	items, err := s.repository.List(ctx)
 	if err != nil { return connection.Connection{}, fmt.Errorf("读取连接列表: %w", err) }
-	for _, existing := range items {
-		if existing.ID == item.ID && existing.ID != item.ID {
-			return connection.Connection{}, ErrDuplicateID
-		}
-	}
 	if err := s.repository.Save(ctx, item); err != nil {
 		return connection.Connection{}, fmt.Errorf("保存连接: %w", err)
 	}
