@@ -215,3 +215,9 @@ func (s *Service) GetResultExportFormats() []clickhouse.ResultExportFormat {
 func (s *Service) ExportQueryResult(w io.Writer, format string, columns []string, rows [][]interface{}, target string) (string, error) {
 	return clickhouse.ExportResultTo(w, format, columns, rows, target)
 }
+
+
+// Close 释放应用持有的数据库连接池，应在 GUI 生命周期结束时调用。
+func (s *Service) Close() {
+	s.ch.CloseAll()
+}
