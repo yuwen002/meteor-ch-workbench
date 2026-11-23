@@ -372,6 +372,32 @@ func TestExportResultToMatchesByFormat(t *testing.T) {
 	}
 }
 
+func TestExportResultToCSVAndTSVPreservesUnicodeAndSpecialCharacters(t *testing.T) {
+	columns := []string{"用户", "备注", "空值"}
+	rows := [][]interface{}{{"小明", "逗号, 制表符\t换行\n和\"引号\"", nil}}
+
+	var csvBuffer bytes.Buffer
+	if _, err := ExportResultTo(&csvBuffer, "csv", columns, rows, ""); err != nil {
+		t.Fatalf("导出 CSV 失败：%v", err)
+	}
+	records, err := csv.NewReader(&csvBuffer).ReadAll()
+	if err != nil {
+		t.Fatalf("解析 CSV 失败：%v", err)
+	}
+	if len(records) != 2 || records[1][0] != "小明" || records[1][1] != rows[0][1] || records[1][2] != "" {
+		t.Fatalf("CSV 内容不匹配：%q", records)
+	}
+
+	var tsvBuffer bytes.Buffer
+	if _, err := ExportResultTo(&tsvBuffer, "tsv", columns, rows, ""); err != nil {
+		t.Fatalf("导出 TSV 失败：%v", err)
+	}
+	wantTSV := "用户\t备注\t空值\n小明\t逗号, 制表符\\t换行\\n和\"引号\"\t\n"
+	if got := tsvBuffer.String(); got != wantTSV {
+		t.Fatalf("TSV 内容 = %q，期望 %q", got, wantTSV)
+	}
+}
+
 // TestExportResultToWriteError 覆盖 Writer 失败时把错误透传出去的边界。
 func TestExportResultToWriteError(t *testing.T) {
 	errWriter := errors.New("disk full")
