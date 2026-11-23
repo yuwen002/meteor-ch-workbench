@@ -3,6 +3,8 @@ package gioapp
 import (
 	"strings"
 	"testing"
+
+	"gioui.org/unit"
 )
 
 func TestFormatResultCell(t *testing.T) {
@@ -50,6 +52,27 @@ func TestFormatResultRowUsesQuotedTSV(t *testing.T) {
 	want := "普通文本\t\"包含\t制表符\"\t\"包含\n换行\"\tNULL\t\"包含\"\"引号\"\"\""
 	if got := formatResultRow(row); got != want {
 		t.Fatalf("formatResultRow() = %q，期望 %q", got, want)
+	}
+}
+
+func TestAdjustResultColumnWidth(t *testing.T) {
+	tests := []struct {
+		name string
+		current unit.Dp
+		delta float32
+		want unit.Dp
+	}{
+		{name: "正常增加", current: 160, delta: 24, want: 184},
+		{name: "正常缩小", current: 160, delta: -24, want: 136},
+		{name: "限制最小宽度", current: 90, delta: -30, want: minResultColumnWidth},
+		{name: "限制最大宽度", current: 470, delta: 30, want: maxResultColumnWidth},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := adjustResultColumnWidth(tt.current, tt.delta); got != tt.want {
+				t.Fatalf("adjustResultColumnWidth(%v, %v) = %v，期望 %v", tt.current, tt.delta, got, tt.want)
+			}
+		})
 	}
 }
 
