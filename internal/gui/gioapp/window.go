@@ -42,7 +42,8 @@ func Run(window *app.Window, service *appsvc.Service) error {
 		evt := window.Event()
 		state.explorer.ListenEvents(evt)
 		switch event := evt.(type) {
-		case app.DestroyEvent:
+			case app.DestroyEvent:
+			state.persistTabs()
 			return event.Err
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, event)
@@ -109,6 +110,11 @@ type screen struct {
 	service *appsvc.Service
 	connections        []config.Connection
 	connectionClicks   []widget.Clickable
+	tabs               []config.TabState
+	activeTabID        string
+	tabClicks          []widget.Clickable
+	tabList            widget.List
+	newTab             widget.Clickable
 	selectedConnectionID string
 	theme       *material.Theme
 	sqlEditor   widget.Editor
@@ -163,7 +169,22 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 			s.status = fmt.Sprintf("已加载 %d 个连接配置 · 请选择一个连接", len(connections))
 		}
 	}
-	s.sqlEditor.SetText("SELECT\n    database,\n    table,\n    engine\nFROM system.tables\nORDER BY database, table\nLIMIT 100;")
+	const defaultSQL = "SELECT\n    database,\n    table,\n    engine\nFROM system.tables\nORDER BY database, table\nLIMIT 100;"
+	var snapshot config.TabsFile
+	if service != nil {
+		if saved, err := service.GetTabs(); err == nil {
+			snapshot = saved
+		} else {
+			s.status = "读取 SQL 标签失败：" + err.Error()
+		}
+	}
+	snapshot = normalizeTabSnapshot(snapshot, defaultSQL)
+	s.tabs = snapshot.Tabs
+	s.activeTabID = snapshot.ActiveTabID
+	s.tabClicks = make([]widget.Clickable, len(s.tabs))
+	if index := activeTabIndex(s.tabs, s.activeTabID); index >= 0 {
+		s.sqlEditor.SetText(s.tabs[index].SQL)
+	}
 	s.applyTheme()
 	return s
 }
@@ -397,6 +418,7 @@ func (s *screen) drainSchemaResults() {
 }
 
 func (s *screen) executeSQL() {
+	s.persistTabs()
 	if s.service == nil { s.status = "应用服务尚未初始化"; return }
 	if !s.treeConnected || s.selectedConnectionID == "" { s.status = "请先连接 ClickHouse"; return }
 	sqlText := strings.TrimSpace(s.sqlEditor.Text())
@@ -671,6 +693,9 @@ func (s *screen) applyTheme() {
 }
 
 func (s *screen) layout(gtx context) dimensions {
+	for s.newTab.Clicked(gtx) {
+		s.createTab()
+	}
 	s.drainConnectResults()
 	s.drainDatabaseResults()
 	s.drainSchemaResults()
@@ -1027,7 +1052,9 @@ func (s *screen) layoutEditor(gtx context) dimensions {
 			layout.Rigid(func(gtx context) dimensions {
 				return material.H6(s.theme, "SQL 编辑器").Layout(gtx)
 			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			layout.Rigid(s.layoutTabBar),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 			layout.Flexed(1, func(gtx context) dimensions {
 				return material.Editor(s.theme, &s.sqlEditor, "输入 ClickHouse SQL...").Layout(gtx)
 			}),
@@ -1036,6 +1063,91 @@ func (s *screen) layoutEditor(gtx context) dimensions {
 			}),
 		)
 	})
+}
+
+func (s *screen) layoutTabBar(gtx context) dimensions {
+	s.tabList.Axis = layout.Horizontal
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Flexed(1, func(gtx context) dimensions {
+			return material.List(s.theme, &s.tabList).Layout(gtx, len(s.tabs), func(gtx context, index int) dimensions {
+				tab := s.tabs[index]
+				label := tab.Title
+				if tab.ID == s.activeTabID {
+					label = "● " + label
+				}
+				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx context) dimensions {
+					dims := material.Button(s.theme, &s.tabClicks[index], label).Layout(gtx)
+					for s.tabClicks[index].Clicked(gtx) {
+						s.activateTab(tab.ID)
+					}
+					return dims
+				})
+			})
+		}),
+		layout.Rigid(func(gtx context) dimensions {
+			return material.Button(s.theme, &s.newTab, "+ 新建").Layout(gtx)
+		}),
+	)
+}
+
+func (s *screen) saveActiveTabText() {
+	if index := activeTabIndex(s.tabs, s.activeTabID); index >= 0 {
+		s.tabs[index].SQL = s.sqlEditor.Text()
+	}
+}
+
+func (s *screen) persistTabs() {
+	if s.service == nil {
+		return
+	}
+	s.saveActiveTabText()
+	if err := s.service.SaveTabs(config.TabsFile{Tabs: s.tabs, ActiveTabID: s.activeTabID}); err != nil {
+		s.status = "保存 SQL 标签失败：" + err.Error()
+	}
+}
+
+func (s *screen) activateTab(id string) {
+	if id == s.activeTabID {
+		return
+	}
+	if s.queryRunning {
+		s.status = "查询执行期间暂不能切换标签，请等待查询结束或先停止查询"
+		return
+	}
+	s.saveActiveTabText()
+	index := activeTabIndex(s.tabs, id)
+	if index < 0 {
+		return
+	}
+	s.activeTabID = id
+	s.sqlEditor.SetText(s.tabs[index].SQL)
+	s.queryResult = nil
+	s.lastExecutedSQL = ""
+	s.lastExecutedConnectionID = ""
+	s.persistTabs()
+	s.status = "已切换到 " + s.tabs[index].Title
+}
+
+func (s *screen) createTab() {
+	if s.queryRunning {
+		s.status = "查询执行期间暂不能新建标签，请等待查询结束或先停止查询"
+		return
+	}
+	if len(s.tabs) >= config.TabMaxCount {
+		s.status = fmt.Sprintf("标签页最多支持 %d 个", config.TabMaxCount)
+		return
+	}
+	s.saveActiveTabText()
+	tab := nextTabState(s.tabs, fmt.Sprintf("query-%d", time.Now().UnixNano()))
+	s.tabs = append(s.tabs, tab)
+	s.tabClicks = append(s.tabClicks, widget.Clickable{})
+	s.activeTabID = tab.ID
+	s.sqlEditor.SetText("")
+	s.queryResult = nil
+	s.lastExecutedSQL = ""
+	s.lastExecutedConnectionID = ""
+	s.persistTabs()
+	s.status = "已新建空白 SQL 标签"
 }
 
 func (s *screen) layoutResults(gtx context) dimensions {
