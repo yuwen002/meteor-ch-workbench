@@ -3,14 +3,13 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
 	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
+	platformport "github.com/yuwen002/meteor-ch-workbench/internal/platform"
+	wailsadapter "github.com/yuwen002/meteor-ch-workbench/internal/platform/wailsadapter"
 )
 
 // App 是旧版 Wails 前端的适配对象。
@@ -19,12 +18,17 @@ import (
 type App struct {
 	ctx     context.Context         // Wails 注入的应用上下文，随应用生命周期结束而关闭
 	service *appsvc.Service         // 与 GUI 无关的应用服务
-	chSvc   *clickhouse.Service // ClickHouse 连接池与查询服务
+	platform platformport.Platform // 系统对话框与操作系统集成
 }
 
 // NewApp 创建 App 实例，并初始化配置管理器、查询历史管理器和 ClickHouse 服务。
 // 此时尚未连接数据库，连接是在首次调用查询类方法时惰性建立的。
 func NewApp() *App {
+	return NewAppWithPlatform(wailsadapter.New())
+}
+
+// NewAppWithPlatform 使用注入的平台实现创建应用，便于测试及未来 Gio 入口复用。
+func NewAppWithPlatform(platform platformport.Platform) *App {
 	conf := config.NewManager()
 	hist := config.NewHistoryManager(conf.ConfigDir())
 	tabs := config.NewTabsManager(conf.ConfigDir())
@@ -32,8 +36,8 @@ func NewApp() *App {
 	prefs := config.NewSettingsManager(conf.ConfigDir())
 	chSvc := clickhouse.NewService()
 	return &App{
-		chSvc:   chSvc,
-		service: appsvc.NewService(conf, hist, tabs, saved, chSvc, prefs),
+		platform: platform,
+		service:  appsvc.NewService(conf, hist, tabs, saved, chSvc, prefs),
 	}
 }
 
@@ -46,7 +50,7 @@ func (a *App) OnStartup(ctx context.Context) {
 // OnShutdown 是 Wails 的生命周期回调，应用退出时被调用。
 // 负责关闭所有缓存的数据库连接池，避免残留连接与服务端泄漏。
 func (a *App) OnShutdown(ctx context.Context) {
-	a.chSvc.CloseAll()
+	a.service.Close()
 }
 
 // GetAll 一次性读取全部配置数据（文件夹 + 连接列表），供前端启动时初始化侧边栏。
@@ -135,22 +139,17 @@ func (a *App) SaveExportAs(format string, includePassword bool) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	dialog := application.Get().Dialog.SaveFile()
-	dialog.SetMessage("选择配置文件的保存位置")
-	dialog.SetFilename("meteor-ch-config." + ext)
-	dialog.SetButtonText("保存")
+	request := platformport.SaveFileRequest{
+		Title: "选择配置文件的保存位置",
+		FileName: "meteor-ch-config." + ext,
+		ButtonText: "保存",
+	}
 	if ext != "" {
-		dialog.AddFilter(strings.ToUpper(ext), "*."+ext)
+		request.Filters = []platformport.FileFilter{{Name: strings.ToUpper(ext), Pattern: "*." + ext}}
 	}
-	path, err := dialog.PromptForSingleSelection()
-	if err != nil {
-		if strings.Contains(err.Error(), "cancelled") {
-			return "", nil
-		}
-		return "", err
-	}
-	if path == "" {
-		return "", nil
+	path, err := a.platform.SaveFile(request)
+	if err != nil || path == "" {
+		return path, err
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", err
@@ -171,26 +170,22 @@ func (a *App) GetImportFormats() []config.ImportFormat {
 // PickImportFile 弹出系统文件选择对话框，读取所选文件内容并返回文本与文件名。
 // 用户取消时返回空字符串，不视为错误。
 func (a *App) PickImportFile() (string, string, error) {
-	dialog := application.Get().Dialog.OpenFile()
-	dialog.SetMessage("选择要导入的配置文件")
-	dialog.AddFilter("配置文件", "*.json;*.yaml;*.yml;*.csv;*.txt")
-	dialog.AddFilter("所有文件", "*.*")
-	path, err := dialog.PromptForSingleSelection()
-	if err != nil {
-		if strings.Contains(err.Error(), "cancelled") {
-			return "", "", nil
-		}
+	path, err := a.platform.OpenFile(platformport.OpenFileRequest{
+		Title: "选择要导入的配置文件",
+		Filters: []platformport.FileFilter{
+			{Name: "配置文件", Pattern: "*.json;*.yaml;*.yml;*.csv;*.txt"},
+			{Name: "所有文件", Pattern: "*.*"},
+		},
+	})
+	if err != nil || path == "" {
 		return "", "", err
-	}
-	if path == "" {
-		return "", "", nil
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", "", err
 	}
 	name := path
-	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
+	if i := strings.LastIndexAny(path, `/\\`); i >= 0 {
 		name = path[i+1:]
 	}
 	return string(content), name, nil
@@ -297,23 +292,18 @@ func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat {
 // target 为目标表名，仅 INSERT 族格式使用（其余格式忽略）。
 // 返回实际保存路径；用户取消时返回空字符串。
 func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interface{}, target string) (string, error) {
-	dialog := application.Get().Dialog.SaveFile()
 	ext := clickhouse.ResultExportExtension(format)
-	dialog.SetMessage("选择查询结果的保存位置")
-	dialog.SetFilename("query-result." + ext)
-	dialog.SetButtonText("保存")
+	request := platformport.SaveFileRequest{
+		Title: "选择查询结果的保存位置",
+		FileName: "query-result." + ext,
+		ButtonText: "保存",
+	}
 	if ext != "" {
-		dialog.AddFilter(strings.ToUpper(ext), "*."+ext)
+		request.Filters = []platformport.FileFilter{{Name: strings.ToUpper(ext), Pattern: "*." + ext}}
 	}
-	path, err := dialog.PromptForSingleSelection()
-	if err != nil {
-		if strings.Contains(err.Error(), "cancelled") {
-			return "", nil
-		}
-		return "", err
-	}
-	if path == "" {
-		return "", nil
+	path, err := a.platform.SaveFile(request)
+	if err != nil || path == "" {
+		return path, err
 	}
 	file, err := os.Create(path)
 	if err != nil {
@@ -358,17 +348,7 @@ func (a *App) GetClusters(connectionID string) ([]clickhouse.ClusterInfo, error)
 // OpenConfigFolder 用系统文件管理器打开配置文件所在目录。
 // 按操作系统选择不同的打开命令：Windows 用 explorer，macOS 用 open，其余用 xdg-open。
 func (a *App) OpenConfigFolder() error {
-	dir := a.service.ConfigDir()
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer", dir)
-	case "darwin":
-		cmd = exec.Command("open", dir)
-	default:
-		cmd = exec.Command("xdg-open", dir)
-	}
-	return cmd.Start()
+	return a.platform.OpenDirectory(a.service.ConfigDir())
 }
 
 // GetAppVersion 返回当前应用版本号，供前端关于页面展示。
