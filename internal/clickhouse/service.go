@@ -922,6 +922,11 @@ func serializeValue(v interface{}) interface{} {
 	if v == nil {
 		return nil
 	}
+	// database/sql 将 ClickHouse String / FixedString 可能返回为 []byte；
+	// 这里按文本处理，避免 encoding/json 将字节切片编码成 Base64 字符串。
+	if b, ok := v.([]byte); ok {
+		return string(b)
+	}
 	if b, err := json.Marshal(v); err == nil {
 		var out interface{}
 		if err := json.Unmarshal(b, &out); err == nil {
