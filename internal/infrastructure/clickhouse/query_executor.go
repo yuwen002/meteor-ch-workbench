@@ -52,7 +52,12 @@ func (e *QueryExecutor) Execute(ctx context.Context, item connection.Connection,
 
 	rows, err := db.QueryContext(execCtx, request.SQL)
 	if err != nil { return query.Summary{}, fmt.Errorf("查询 SQL: %w", err) }
-	defer rows.Close()
+	rowsClosed := false
+	defer func() {
+		if !rowsClosed {
+			_ = rows.Close()
+		}
+	}()
 
 	columnTypes, err := rows.ColumnTypes()
 	if err != nil { return query.Summary{}, fmt.Errorf("读取结果列信息: %w", err) }
@@ -85,7 +90,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, item connection.Connection,
 
 	for rows.Next() {
 		if err := execCtx.Err(); err != nil { return query.Summary{}, err }
-		if int(summary.RowCount) >= maxRows {
+		if summary.RowCount >= int64(maxRows) {
 			summary.Truncated = true
 			break
 		}
@@ -109,6 +114,10 @@ func (e *QueryExecutor) Execute(ctx context.Context, item connection.Connection,
 		return query.Summary{}, fmt.Errorf("遍历查询结果: %w", err)
 	}
 	if err := flush(); err != nil { return query.Summary{}, err }
+	if err := rows.Close(); err != nil {
+		return query.Summary{}, fmt.Errorf("关闭查询结果游标: %w", err)
+	}
+	rowsClosed = true
 	if err := execCtx.Err(); err != nil { return query.Summary{}, err }
 	summary.Elapsed = time.Since(started)
 	return summary, nil
