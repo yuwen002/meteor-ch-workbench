@@ -145,3 +145,31 @@ func TestHistorySQLPreview(t *testing.T) {
 		})
 	}
 }
+
+func TestSavedSQLMatches(t *testing.T) {
+	entry := config.SavedSQL{Name: "日常巡检", SQL: "SELECT count() FROM system.tables", ConnectionID: "conn-a"}
+	tests := []struct {
+		name string
+		keyword string
+		connectionID string
+		connectionName string
+		onlyCurrent bool
+		want bool
+	}{
+		{name: "空关键字匹配", want: true},
+		{name: "名称不区分大小写", keyword: "巡检", want: true},
+		{name: "SQL 内容搜索", keyword: "SYSTEM.TABLES", want: true},
+		{name: "连接名称搜索", keyword: "生产库", connectionName: "生产库", want: true},
+		{name: "当前连接匹配", connectionID: "conn-a", onlyCurrent: true, want: true},
+		{name: "其他连接排除", connectionID: "conn-b", onlyCurrent: true, want: false},
+		{name: "未选连接不匹配当前连接筛选", onlyCurrent: true, want: false},
+		{name: "无关关键字排除", keyword: "不存在", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := savedSQLMatches(entry, tt.keyword, tt.connectionID, tt.connectionName, tt.onlyCurrent); got != tt.want {
+				t.Fatalf("savedSQLMatches() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
