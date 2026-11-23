@@ -55,7 +55,7 @@ func Run(window *app.Window, service *appsvc.Service) error {
 
 type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
 type queryResult struct { queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
-type exportResult struct { format string; err error; canceled bool; rows int64; cleanupErr error; cleanupUnsupported bool }
+type exportResult struct { format string; err error; canceled bool; rows int64; bytes int64; duration time.Duration; cleanupErr error; cleanupUnsupported bool }
 type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
 type schemaResult struct { connectionID string; connectionSequence uint64; database string; table string; requestID uint64; columns []clickhouse.ColumnInfo; details *clickhouse.TableDetails; detailsErr error; err error }
 type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; tableClicks map[string]*widget.Clickable; err error }
@@ -188,7 +188,7 @@ func (s *screen) startExport(format string) {
 			s.window.Invalidate()
 			return
 		}
-		rows, writeErr := s.service.ExportQueryToWithProgress(file, connectionID, sqlText, queryID, format, func(count int64) {
+		startedAt := time.Now()\n\t\twriter := &countingWriter{writer: file}\n\t\trows, writeErr := s.service.ExportQueryToWithProgress(writer, connectionID, sqlText, queryID, format, func(count int64) {
 			select {
 			case s.exportProgress <- count:
 			default:
@@ -202,7 +202,7 @@ func (s *screen) startExport(format string) {
 		} else if closeErr != nil {
 			err = closeErr
 		}
-		result := exportResult{format: format, err: err, rows: rows, canceled: errors.Is(writeErr, context.Canceled) || errors.Is(writeErr, context.DeadlineExceeded)}
+		result := exportResult{format: format, err: err, rows: rows, bytes: writer.bytes, duration: time.Since(startedAt), canceled: errors.Is(writeErr, context.Canceled) || errors.Is(writeErr, context.DeadlineExceeded)}
 		if err != nil {
 			supported, removeErr := removeIncompleteExport(file)
 			result.cleanupUnsupported = !supported
@@ -234,11 +234,11 @@ drainResults:
 			s.queryRunning, s.runningQueryID = false, ""
 			switch {
 			case result.canceled:
-				s.status = fmt.Sprintf("已取消导出（已处理 %d 行）", result.rows)
+				s.status = fmt.Sprintf("已取消导出（已处理 %d 行，已写入 %s）", result.rows, formatExportSize(result.bytes))
 			case result.err != nil:
-				s.status = fmt.Sprintf("导出中断：%s（已处理 %d 行）", result.err.Error(), result.rows)
+				s.status = fmt.Sprintf("导出中断：%s（已处理 %d 行，已写入 %s）", result.err.Error(), result.rows, formatExportSize(result.bytes))
 			default:
-				s.status = fmt.Sprintf("已成功流式导出 %d 行 %s 查询结果（已重新执行 SQL）", result.rows, strings.ToUpper(result.format))
+				s.status = fmt.Sprintf("已成功导出 %d 行 %s（%s，耗时 %s，平均 %.1f 行/秒；已重新执行 SQL）", result.rows, strings.ToUpper(result.format), formatExportSize(result.bytes), result.duration.Round(time.Millisecond), exportRowsPerSecond(result.rows, result.duration))
 			}
 			if result.err != nil {
 				if result.cleanupErr != nil {
