@@ -6,7 +6,6 @@ require (
 	gioui.org v0.10.3
 	gioui.org/x v0.10.3
 	github.com/ClickHouse/clickhouse-go/v2 v2.35.0
-	github.com/wailsapp/wails/v3 v3.1.0
 	github.com/xuri/excelize/v2 v2.11.1
 )
 
