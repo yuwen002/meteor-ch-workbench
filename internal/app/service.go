@@ -151,6 +151,15 @@ func (s *Service) GetTableSchema(connectionID, database, table string) ([]clickh
 	return s.ch.GetTableSchema(*conn, database, table)
 }
 
+// GetTableDetails 获取指定表的 ClickHouse 引擎、DDL、分区键、排序键、主键和 TTL。
+func (s *Service) GetTableDetails(connectionID, database, table string) (*clickhouse.TableDetails, error) {
+	conn, err := s.conf.GetConnection(connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ch.GetTableDetails(*conn, database, table)
+}
+
 // GetClusters 获取 ClickHouse 集群拓扑。
 func (s *Service) GetClusters(connectionID string) ([]clickhouse.ClusterInfo, error) {
 	conn, err := s.conf.GetConnection(connectionID)
