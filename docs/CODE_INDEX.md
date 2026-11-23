@@ -810,4 +810,4 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 ### [internal/platform/wailsadapter/adapter_test.go](../internal/platform/wailsadapter/adapter_test.go)
 
-职责：验证 Wails 文件对话框取消错误的归一化判断，覆盖空错误、正常取消、大小写差异和非取消错误。该测试不启动 Wails 应用；系统对话框交互仍需在真实桌面环境中补充集成验证。
+职责：验证 Wails 文件对话框取消错误的归一化判断，覆盖空错误、英式与美式取消拼写、大小写差异和非取消错误。该测试不启动 Wails 应用；系统对话框交互仍需在真实桌面环境中补充集成验证。
