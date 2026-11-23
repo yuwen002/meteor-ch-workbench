@@ -273,3 +273,16 @@ Gio 编辑区读取并恢复 `TabsManager` 保存的标签快照，支持新建�
 5. **验收与发布**：建立 CI；运行 `gofmt`、`go test ./...`、`go vet ./...`、`go build ./cmd/meteor-ch-gio`；验证 Windows/macOS/Linux 桌面交互、数据迁移、启动内存、安装包体积。
 
 当前禁止将仍依赖旧 `internal/app.Service` 的 Gio 功能标记为“新后端已迁移”；功能界面已接入与后端独立重写是两项不同验收。
+
+
+## 2026-11-24：现有 Gio 程序也纳入全量重写
+
+用户进一步明确：已经写出的程序本身也需要更改。因此不能只删除 Wails、重写后端，再把当前 Gio 原型原样保留下来。现有 Gio GUI 的布局、状态组织、组件边界和交互实现都需要重新设计；原型功能仅作为行为清单和验收参考。
+
+详细目标、模块拆分、阶段和验收口径见 [GIO_REWRITE_PLAN.md](GIO_REWRITE_PLAN.md)。关键约束：
+
+- 当前约 82 KB 的 gioapp/window.go 是单体原型，后续按工作区、连接、对象浏览、SQL 编辑器、结果表格、历史、收藏和设置拆分；不再向单体文件继续堆功能。
+- 新 GUI 不直接依赖旧 internal/app、internal/config、internal/clickhouse 类型。
+- 新后端采用 domain / application / infrastructure 分层；ClickHouse 驱动可以保留，但旧 Service 的业务实现必须重写。
+- Vue frontend 也不是兼容产品，待新 Gio 功能替代和数据迁移验收后删除。
+- 历史 PR 描述中的 63% / 66% 迁移估算作废。旧代码仍在使用或 Gio 原型已有界面，均不计入新架构完成度。
