@@ -175,3 +175,11 @@ func TestBuildResultRowViewCombinesDifferentColumnOperators(t *testing.T) {
 		t.Fatalf("operator filters = %#v, want rows 1 and 3", got)
 	}
 }
+
+func TestGlobalFilterKeepsLiteralOperatorCharacters(t *testing.T) {
+	rows := [][]interface{}{{"!important"}, {"important"}}
+	got := buildResultRowView(rows, "!", -1, false)
+	if len(got) != 1 || got[0].Index != 0 {
+		t.Fatalf("global keyword filter should treat operator characters literally: %#v", got)
+	}
+}
