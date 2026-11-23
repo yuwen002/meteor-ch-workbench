@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"strings"
+	"time"
 
 	"gioui.org/app"
 	"gioui.org/gesture"
@@ -44,6 +46,7 @@ func Run(window *app.Window, service *appsvc.Service) error {
 }
 
 type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
+type queryResult struct { queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
 type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
 type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
 
@@ -51,6 +54,12 @@ type screen struct {
 	window *app.Window
 	connectResults chan connectResult
 	databaseResults chan databaseResult
+	queryResults chan queryResult
+	querySequence uint64
+	runningQueryID string
+	queryRunning bool
+	queryResult *clickhouse.QueryResult
+	resultList widget.List
 	connectionSequence uint64
 	databaseSequence uint64
 	databaseNames []string
@@ -84,6 +93,7 @@ func newScreen(window *app.Window, service *appsvc.Service) *screen {
 		window: window,
 		connectResults: make(chan connectResult, 4),
 		databaseResults: make(chan databaseResult, 16),
+		queryResults: make(chan queryResult, 4),
 		databaseNodes: make(map[string]*databaseNode),
 		service:     service,
 		theme:       material.NewTheme(),
@@ -171,6 +181,49 @@ func (s *screen) drainDatabaseResults() {
 	}
 }
 
+func (s *screen) executeSQL() {
+	if s.service == nil { s.status = "应用服务尚未初始化"; return }
+	if !s.treeConnected || s.selectedConnectionID == "" { s.status = "请先连接 ClickHouse"; return }
+	sqlText := strings.TrimSpace(s.sqlEditor.Text())
+	if sqlText == "" { s.status = "SQL 不能为空"; return }
+	if s.queryRunning { s.status = "已有查询正在执行，请先停止或等待完成"; return }
+	s.querySequence++
+	queryID := fmt.Sprintf("gio-%d-%d", time.Now().UnixNano(), s.querySequence)
+	sequence, connectionID := s.querySequence, s.selectedConnectionID
+	s.runningQueryID, s.queryRunning, s.queryResult = queryID, true, nil
+	s.status = "正在执行 SQL…"
+	go func() {
+		result, err := s.service.Query(connectionID, sqlText, queryID)
+		s.queryResults <- queryResult{queryID: queryID, sequence: sequence, result: result, err: err}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *screen) stopQuery() {
+	if !s.queryRunning || s.runningQueryID == "" { s.status = "当前没有正在执行的查询"; return }
+	if s.service.CancelQuery(s.runningQueryID) { s.status = "已发送取消请求…" } else { s.status = "查询已结束，正在接收最终结果…" }
+}
+
+func (s *screen) drainQueryResults() {
+	for {
+		select {
+		case result := <-s.queryResults:
+			if result.queryID != s.runningQueryID || result.sequence != s.querySequence { continue }
+			s.queryRunning, s.runningQueryID = false, ""
+			if result.err != nil { s.queryResult = nil; s.status = "查询失败：" + result.err.Error(); continue }
+			s.queryResult = result.result
+			if result.result == nil { s.status = "查询未返回结果" } else if result.result.Error != "" { s.status = "SQL 执行失败：" + result.result.Error } else { s.status = fmt.Sprintf("查询完成：%d 行 · %.2f ms", result.result.RowCount, result.result.ElapsedMs) }
+		default: return
+		}
+	}
+}
+
+func formatResultCell(value interface{}) string {
+	if value == nil { return "NULL" }
+	valueText := fmt.Sprint(value)
+	if len(valueText) > 120 { return valueText[:117] + "..." }
+	return valueText
+}
 func (s *screen) connectSelected() {
 	for _, connection := range s.connections {
 		if connection.ID == s.selectedConnectionID {
@@ -237,14 +290,15 @@ func (s *screen) applyTheme() {
 func (s *screen) layout(gtx context) dimensions {
 	s.drainConnectResults()
 	s.drainDatabaseResults()
+	s.drainQueryResults()
 	for s.execute.Clicked(gtx) {
-		s.status = "SQL 编辑器已就绪；查询执行将在服务装配阶段接入"
+		s.executeSQL()
 	}
 	for s.connect.Clicked(gtx) {
 		s.connectSelected()
 	}
 	for s.stop.Clicked(gtx) {
-		s.status = "当前没有正在执行的查询"
+		s.stopQuery()
 	}
 	for s.sidebarToggle.Clicked(gtx) {
 		s.sidebarOpen = !s.sidebarOpen
