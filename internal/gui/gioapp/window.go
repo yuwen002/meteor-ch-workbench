@@ -1077,7 +1077,7 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 			return layout.Inset{Right: unit.Dp(5)}.Layout(gtx, func(gtx context) dimensions {
 				if s.renameTabID == tab.ID {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx context) dimensions { gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(140), gtx.Dp(140); return material.Editor(s.theme, &s.tabTitleEditor, "标签名称").Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions { width := gtx.Dp(140); if width > gtx.Constraints.Max.X { width = gtx.Constraints.Max.X }; gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width; return material.Editor(s.theme, &s.tabTitleEditor, "标签名称").Layout(gtx) }),
 						layout.Rigid(func(gtx context) dimensions {
 							d := material.Button(s.theme, &s.tabRenameSave, "保存").Layout(gtx)
 							for s.tabRenameSave.Clicked(gtx) { s.commitTabRename() }
