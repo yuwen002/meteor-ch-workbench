@@ -80,6 +80,10 @@ type screen struct {
 	resultList widget.List
 	resultColumnHeader widget.List
 	resultColumnRow widget.List
+	resultColumnWidths []unit.Dp
+	resultColumnDrags []gesture.Drag
+	resultColumnDragLastX []float32
+	resultColumnDragActive []bool
 	resultCellClicks [][]widget.Clickable
 	resultRowCopyClicks []widget.Clickable
 	connectionSequence uint64
@@ -322,9 +326,17 @@ func (s *screen) drainQueryResults() {
 			s.queryRunning, s.runningQueryID = false, ""
 			if result.err != nil { s.queryResult = nil; s.status = "查询失败：" + result.err.Error(); continue }
 			s.queryResult = result.result
+			s.resultColumnWidths = nil
+			s.resultColumnDrags = nil
+			s.resultColumnDragLastX = nil
+			s.resultColumnDragActive = nil
 			s.resultCellClicks = nil
 			s.resultRowCopyClicks = nil
 			if result.result != nil {
+				s.resultColumnWidths = make([]unit.Dp, len(result.result.Columns))
+				s.resultColumnDrags = make([]gesture.Drag, len(result.result.Columns))
+				s.resultColumnDragLastX = make([]float32, len(result.result.Columns))
+				s.resultColumnDragActive = make([]bool, len(result.result.Columns))
 				s.resultCellClicks = make([][]widget.Clickable, len(result.result.Rows))
 				s.resultRowCopyClicks = make([]widget.Clickable, len(result.result.Rows))
 				for rowIndex := range result.result.Rows {
@@ -367,6 +379,59 @@ func resultColumnWeights(columns []clickhouse.ColumnInfo, rows [][]interface{}) 
 }
 
 // resultColumnWidth 将列宽权重转换为固定 dp 宽度，使所有结果行列对齐并可横向滚动。
+const (
+	minResultColumnWidth unit.Dp = 80
+	maxResultColumnWidth unit.Dp = 480
+	resultColumnResizeHandleWidth unit.Dp = 8
+)
+
+func adjustResultColumnWidth(current unit.Dp, delta float32) unit.Dp {
+	width := unit.Dp(float32(current) + delta)
+	if width < minResultColumnWidth {
+		return minResultColumnWidth
+	}
+	if width > maxResultColumnWidth {
+		return maxResultColumnWidth
+	}
+	return width
+}
+
+func (s *screen) layoutResultColumnResizeHandle(gtx context, columnIndex int) dimensions {
+	handleWidth := gtx.Dp(resultColumnResizeHandleWidth)
+	gtx.Constraints.Min.X, gtx.Constraints.Max.X = handleWidth, handleWidth
+	area := clip.Rect(image.Rect(0, 0, handleWidth, gtx.Constraints.Max.Y)).Push(gtx.Ops)
+	pointer.CursorColResize.Add(gtx.Ops)
+	s.resultColumnDrags[columnIndex].Add(gtx.Ops)
+	area.Pop()
+
+	for {
+		event, ok := s.resultColumnDrags[columnIndex].Update(gtx.Metric, gtx.Source, gesture.Horizontal)
+		if !ok {
+			break
+		}
+		if event.Kind == pointer.Drag {
+			if !s.resultColumnDragActive[columnIndex] {
+				s.resultColumnDragLastX[columnIndex] = event.Position.X
+				s.resultColumnDragActive[columnIndex] = true
+			} else {
+				current := s.resultColumnWidths[columnIndex]
+				if current <= 0 {
+					current = minResultColumnWidth
+				}
+				s.resultColumnWidths[columnIndex] = adjustResultColumnWidth(current, event.Position.X-s.resultColumnDragLastX[columnIndex])
+				s.resultColumnDragLastX[columnIndex] = event.Position.X
+			}
+		}
+	}
+	if !s.resultColumnDrags[columnIndex].Pressed() {
+		s.resultColumnDragActive[columnIndex] = false
+	}
+
+	return layout.Center.Layout(gtx, func(gtx context) dimensions {
+		return material.Caption(s.theme, "⋮").Layout(gtx)
+	})
+}
+
 func resultColumnWidth(weight float32) unit.Dp {
 	if weight < 10 {
 		weight = 10
@@ -894,10 +959,21 @@ func (s *screen) layoutResults(gtx context) dimensions {
 					gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(80), gtx.Dp(80)
 					return material.Body2(s.theme, "操作").Layout(gtx)
 				}
-				column := result.Columns[index-1]
-				width := resultColumnWidth(columnWeights[index-1])
+				columnIndex := index - 1
+				column := result.Columns[columnIndex]
+				width := resultColumnWidth(columnWeights[columnIndex])
+				if columnIndex < len(s.resultColumnWidths) && s.resultColumnWidths[columnIndex] > 0 {
+					width = s.resultColumnWidths[columnIndex]
+				}
 				gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
-				return material.Body2(s.theme, column.Name).Layout(gtx)
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx context) dimensions {
+						return material.Body2(s.theme, column.Name).Layout(gtx)
+					}),
+					layout.Rigid(func(gtx context) dimensions {
+						return s.layoutResultColumnResizeHandle(gtx, columnIndex)
+					}),
+				)
 			})
 		}))
 		children = append(children, layout.Flexed(1, func(gtx context) dimensions {
@@ -917,6 +993,9 @@ func (s *screen) layoutResults(gtx context) dimensions {
 					cellText := "NULL"
 					if cellIndex < len(row) { cellText = formatResultCell(row[cellIndex]) }
 					width := resultColumnWidth(columnWeights[cellIndex])
+					if cellIndex < len(s.resultColumnWidths) && s.resultColumnWidths[cellIndex] > 0 {
+						width = s.resultColumnWidths[cellIndex]
+					}
 					gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
 					return s.resultCellClicks[index][cellIndex].Layout(gtx, func(gtx context) dimensions {
 						return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions {
