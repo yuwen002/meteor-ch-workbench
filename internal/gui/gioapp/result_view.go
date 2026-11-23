@@ -86,7 +86,13 @@ func resultValueMatchesColumnCondition(value interface{}, expression string) boo
 	if operator == "=" || operator == "!=" {
 		matched := strings.EqualFold(actual, expected)
 		if left, err := strconv.ParseFloat(actual, 64); err == nil {
-			if right, rightErr := strconv.ParseFloat(expected, 64); rightErr == nil { matched = left == right }
+			if right, rightErr := strconv.ParseFloat(expected, 64); rightErr == nil {
+				matched = left == right
+			}
+		} else if leftTime, err := parseResultTime(actual); err == nil {
+			if rightTime, rightErr := parseResultTime(expected); rightErr == nil {
+				matched = leftTime.Equal(rightTime)
+			}
 		}
 		if operator == "!=" { return !matched }
 		return matched
