@@ -219,9 +219,14 @@ func (s *screen) drainQueryResults() {
 }
 
 func formatResultCell(value interface{}) string {
-	if value == nil { return "NULL" }
+	if value == nil {
+		return "NULL"
+	}
 	valueText := fmt.Sprint(value)
-	if len(valueText) > 120 { return valueText[:117] + "..." }
+	runes := []rune(valueText)
+	if len(runes) > 120 {
+		return string(runes[:117]) + "..."
+	}
 	return valueText
 }
 func (s *screen) connectSelected() {
@@ -239,6 +244,13 @@ func (s *screen) connectConnection(connection config.Connection) {
 		s.status = "应用服务尚未初始化"
 		return
 	}
+	if s.queryRunning && s.runningQueryID != "" {
+		s.service.CancelQuery(s.runningQueryID)
+		s.querySequence++
+		s.queryRunning = false
+		s.runningQueryID = ""
+	}
+	s.queryResult = nil
 	s.selectedConnectionID = connection.ID
 	s.connectionSequence++
 	sequence := s.connectionSequence
