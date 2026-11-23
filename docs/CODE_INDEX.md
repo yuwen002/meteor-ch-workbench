@@ -16,8 +16,9 @@ meteor-ch-workbench/
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
 │   ├── app/             GUI 无关的应用服务编排（连接 / 查询 / 配置 / 历史 / 收藏 / 标签 / 设置）
-│   ├── platform/        文件对话框、打开目录等平台能力端口
-│   │   └── wailsadapter/ Wails v3 平台能力实现
+│   ├── platform/        文件对话框与本地文件系统能力端口
+│   │   ├── wailsadapter/ Wails v3 对话框与系统操作实现
+│   │   └── osfs/       Go 标准库文件系统实现
 │   ├── clickhouse/      数据库交互层（service.go / export.go）
 │   └── config/          持久化层（manager / export / import / history / tabs / saved_sql / settings）
 ├── frontend/
@@ -43,6 +44,7 @@ meteor-ch-workbench/
 ```
 app.go（Wails 兼容适配层）
   ├─► internal/platform/wailsadapter（系统对话框 / 打开目录）
+  ├─► internal/platform/osfs（本地文件读写）
   └─► internal/app（GUI 无关的应用用例）
         ├─► internal/config
         └─► internal/clickhouse ──► internal/config（仅引用 Connection 类型）
@@ -75,7 +77,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 
 ### [app.go](file:///C:/works/go_works/meteor-ch-workbench/app.go)
 
-职责：**旧版前端调用的兼容入口**，保留历史方法签名并委托给 `internal/app.Service`；文件对话框和打开目录通过 `internal/platform` 端口调用；文件内容读写仍在兼容适配层。
+职责：**旧版前端调用的兼容入口**，保留历史方法签名并委托给 `internal/app.Service`；文件对话框和打开目录通过 `internal/platform.Platform` 调用；配置文件与查询结果的读写通过 `internal/platform.FileSystem` 调用。
 
 | 区块 | 方法 | 说明 |
 |---|---|---|
@@ -774,12 +776,13 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 ### [internal/platform](../internal/platform/platform.go)
 
-职责：定义 GUI 适配层需要的平台能力，不依赖具体 GUI 框架。
+职责：定义 GUI 适配层与本地文件系统需要的能力端口，不依赖具体 GUI 框架。
 
-- `Platform.SaveFile`：保存文件对话框。
-- `Platform.OpenFile`：打开文件对话框。
+- `Platform.SaveFile` / `Platform.OpenFile`：保存与打开文件对话框。
 - `Platform.OpenDirectory`：使用系统文件管理器打开目录。
-- `internal/platform/wailsadapter`：当前 Wails v3 实现；未来 Gio 适配器实现同一接口即可。
+- `FileSystem.ReadFile` / `WriteFile` / `Create`：读取配置、写出配置与流式创建结果文件。
+- `internal/platform/wailsadapter`：当前 Wails v3 对话框与系统操作实现。
+- `internal/platform/osfs`：基于 Go 标准库的文件系统实现，可在 Gio 入口复用。
 
 
 ### [internal/app/service.go](../internal/app/service.go)
@@ -801,4 +804,4 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 ### [internal/platform/wailsadapter/adapter.go](../internal/platform/wailsadapter/adapter.go)
 
-职责：将平台能力端口适配到 Wails v3。未来 Gio 入口可实现相同接口，应用服务无需改动。
+职责：将系统对话框与目录打开能力适配到 Wails v3。未来 Gio 入口可实现相同接口，应用服务无需改动。
