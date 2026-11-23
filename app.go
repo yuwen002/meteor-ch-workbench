@@ -8,8 +8,8 @@ import (
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 	platformport "github.com/yuwen002/meteor-ch-workbench/internal/platform"
-	wailsadapter "github.com/yuwen002/meteor-ch-workbench/internal/platform/wailsadapter"
 	"github.com/yuwen002/meteor-ch-workbench/internal/platform/osfs"
+	wailsadapter "github.com/yuwen002/meteor-ch-workbench/internal/platform/wailsadapter"
 )
 
 // App 是旧版 Wails 前端的适配对象。
