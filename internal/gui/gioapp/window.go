@@ -80,6 +80,7 @@ type screen struct {
 	ddlLines []string
 	queryResults chan queryResult
 	exportResults chan exportResult
+	exportProgress chan int64
 	explorer *gioexplorer.Explorer
 	exportCSV widget.Clickable
 	exportTSV widget.Clickable
@@ -136,6 +137,7 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 		schemaResults: make(chan schemaResult, 8),
 		queryResults: make(chan queryResult, 4),
 		exportResults: make(chan exportResult, 2),
+		exportProgress: make(chan int64, 1),
 		databaseNodes: make(map[string]*databaseNode),
 		service:     service,
 		theme:       material.NewTheme(),
@@ -185,7 +187,14 @@ func (s *screen) startExport(format string) {
 			s.window.Invalidate()
 			return
 		}
-		rows, writeErr := s.service.ExportQueryTo(file, connectionID, sqlText, queryID, format)
+		rows, writeErr := s.service.ExportQueryToWithProgress(file, connectionID, sqlText, queryID, format, func(count int64) {
+			select {
+			case s.exportProgress <- count:
+			default:
+				select { case <-s.exportProgress: default: }
+				select { case s.exportProgress <- count: default: }
+			}
+		})
 		closeErr := file.Close()
 		if writeErr != nil {
 			err = writeErr
@@ -201,14 +210,26 @@ func (s *screen) startExport(format string) {
 func (s *screen) drainExportResults() {
 	for {
 		select {
+		case count := <-s.exportProgress:
+			if s.exportRunning {
+				s.status = fmt.Sprintf("正在流式导出… 已写入 %d 行（每 1000 行更新）", count)
+			}
+		default:
+			goto drainResults
+		}
+	}
+
+drainResults:
+	for {
+		select {
 		case result := <-s.exportResults:
 			s.exportRunning = false
 			s.queryRunning, s.runningQueryID = false, ""
 			switch {
 			case result.canceled:
-				s.status = "已取消导出"
+				s.status = fmt.Sprintf("已取消导出（已写入 %d 行，文件可能不完整）", result.rows)
 			case result.err != nil:
-				s.status = "导出失败：" + result.err.Error()
+				s.status = fmt.Sprintf("导出中断：%s（已写入 %d 行，文件可能不完整）", result.err.Error(), result.rows)
 			default:
 				s.status = fmt.Sprintf("已成功流式导出 %d 行 %s 查询结果（已重新执行 SQL）", result.rows, strings.ToUpper(result.format))
 			}
