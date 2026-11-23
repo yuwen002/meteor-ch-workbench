@@ -927,6 +927,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 ### Gio 查询结果列筛选操作符
 
-- `internal/gui/gioapp/result_view.go`：列筛选支持默认包含、`!` 不包含、`=` / `!=` 等值比较、`>` / `<` / `>=` / `<=` 数值比较，以及 `is:null` / `is:not-null`。
-- `internal/gui/gioapp/result_view_test.go`：覆盖文本操作符、数值比较、NULL 判断和多列操作符组合。
+- `internal/gui/gioapp/result_view.go`：列筛选支持默认包含、`!` 不包含、`=` / `!=` 等值比较、`>` / `<` / `>=` / `<=` 数值或时间比较，以及 `is:null` / `is:not-null`。
+- 时间比较支持日期、ClickHouse DateTime / DateTime64（含小数秒）和 RFC3339；RFC3339 保留显式时区偏移，无时区文本按 UTC 解释。
+- `internal/gui/gioapp/result_view_test.go`：覆盖文本操作符、数值比较、NULL 判断、多列操作符组合、DateTime64 小数秒和 RFC3339 时区比较。
 - `internal/gui/gioapp/window.go`：结果表格显示操作符说明；列筛选仍与对应列对齐，并与全局关键字按 AND 组合。
