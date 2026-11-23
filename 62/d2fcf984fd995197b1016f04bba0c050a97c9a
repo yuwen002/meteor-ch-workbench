@@ -1,0 +1,14 @@
+go.mod
+  h_a3f313f3d96276 13,22,40-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "62d2fcf984fd995197b1016f04bba0c050a97c9a",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
