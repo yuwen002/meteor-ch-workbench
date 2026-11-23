@@ -20,6 +20,7 @@ import (
 	"gioui.org/widget/material"
 
 	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
+	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 )
 
@@ -42,12 +43,18 @@ func Run(window *app.Window, service *appsvc.Service) error {
 	}
 }
 
-type connectResult struct { connectionID string; databases []string; err error }
+type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
+type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
+type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
 
 type screen struct {
 	window *app.Window
 	connectResults chan connectResult
+	databaseResults chan databaseResult
+	connectionSequence uint64
+	databaseSequence uint64
 	databaseNames []string
+	databaseNodes map[string]*databaseNode
 	treeConnected bool
 	service *appsvc.Service
 	connections        []config.Connection
@@ -76,6 +83,8 @@ func newScreen(window *app.Window, service *appsvc.Service) *screen {
 	s := &screen{
 		window: window,
 		connectResults: make(chan connectResult, 4),
+		databaseResults: make(chan databaseResult, 16),
+		databaseNodes: make(map[string]*databaseNode),
 		service:     service,
 		theme:       material.NewTheme(),
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
@@ -108,7 +117,7 @@ func (s *screen) drainConnectResults() {
 	for {
 		select {
 		case result := <-s.connectResults:
-			if result.connectionID != s.selectedConnectionID { continue }
+			if result.connectionID != s.selectedConnectionID || result.sequence != s.connectionSequence { continue }
 			if result.err != nil {
 				s.treeConnected = false
 				s.databaseNames = nil
@@ -116,7 +125,45 @@ func (s *screen) drainConnectResults() {
 			} else {
 				s.treeConnected = true
 				s.databaseNames = result.databases
+				s.databaseNodes = make(map[string]*databaseNode)
+				for _, name := range result.databases { s.databaseNodes[name] = &databaseNode{} }
 				s.status = fmt.Sprintf("连接成功，已加载 %d 个数据库", len(result.databases))
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (s *screen) toggleDatabase(name string, node *databaseNode) {
+	node.expanded = !node.expanded
+	if !node.expanded || node.loaded || node.loading { return }
+	s.databaseSequence++
+	requestID := s.databaseSequence
+	node.requestID, node.loading, node.err = requestID, true, nil
+	connectionID, connectionSequence := s.selectedConnectionID, s.connectionSequence
+	go func() {
+		tables, err := s.service.GetTables(connectionID, name)
+		var views []clickhouse.TableInfo
+		if err == nil { views, err = s.service.GetViews(connectionID, name) }
+		s.databaseResults <- databaseResult{connectionID: connectionID, connectionSequence: connectionSequence, database: name, requestID: requestID, tables: tables, views: views, err: err}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *screen) drainDatabaseResults() {
+	for {
+		select {
+		case result := <-s.databaseResults:
+			if result.connectionID != s.selectedConnectionID || result.connectionSequence != s.connectionSequence { continue }
+			node := s.databaseNodes[result.database]
+			if node == nil || node.requestID != result.requestID { continue }
+			node.loading, node.err = false, result.err
+			if result.err == nil {
+				node.tables, node.views, node.loaded = result.tables, result.views, true
+				s.status = fmt.Sprintf("数据库 %s：已加载 %d 张表、%d 个视图", result.database, len(node.tables), len(node.views))
+			} else {
+				s.status = "加载数据库对象失败：" + result.err.Error()
 			}
 		default:
 			return
@@ -140,6 +187,11 @@ func (s *screen) connectConnection(connection config.Connection) {
 		return
 	}
 	s.selectedConnectionID = connection.ID
+	s.connectionSequence++
+	sequence := s.connectionSequence
+	s.treeConnected = false
+	s.databaseNames = nil
+	s.databaseNodes = make(map[string]*databaseNode)
 	s.status = "正在连接 " + connection.Name + "…"
 	go func() {
 		err := s.service.TestConnection(connection)
@@ -147,7 +199,7 @@ func (s *screen) connectConnection(connection config.Connection) {
 		if err == nil {
 			databases, err = s.service.GetDatabases(connection.ID)
 		}
-		s.connectResults <- connectResult{connectionID: connection.ID, databases: databases, err: err}
+		s.connectResults <- connectResult{connectionID: connection.ID, sequence: sequence, databases: databases, err: err}
 		s.window.Invalidate()
 	}()
 }
@@ -184,6 +236,7 @@ func (s *screen) applyTheme() {
 
 func (s *screen) layout(gtx context) dimensions {
 	s.drainConnectResults()
+	s.drainDatabaseResults()
 	for s.execute.Clicked(gtx) {
 		s.status = "SQL 编辑器已就绪；查询执行将在服务装配阶段接入"
 	}
@@ -300,9 +353,26 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 			}))
 			for _, database := range s.databaseNames {
 				name := database
+				node := s.databaseNodes[name]
 				children = append(children, layout.Rigid(func(gtx context) dimensions {
-					return material.Body2(s.theme, "  ▸ "+name).Layout(gtx)
+					label := "  ▸ " + name
+					if node.expanded { label = "  ▾ " + name }
+					if node.loading { label += "（加载中）" }
+					dims := material.Button(s.theme, &node.click, label).Layout(gtx)
+					for node.click.Clicked(gtx) { s.toggleDatabase(name, node) }
+					return dims
 				}))
+				if node.expanded && node.err != nil {
+					message := node.err.Error()
+					children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "加载失败："+message).Layout(gtx) }))
+				}
+				if node.expanded && node.loaded {
+					children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, fmt.Sprintf("表（%d）", len(node.tables))).Layout(gtx) }))
+					for _, table := range node.tables { label := "    "+table.Name+" · "+table.Engine; children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, label).Layout(gtx) })) }
+					children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, fmt.Sprintf("视图（%d）", len(node.views))).Layout(gtx) }))
+					for _, view := range node.views { label := "    "+view.Name; children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, label).Layout(gtx) })) }
+					if len(node.tables)+len(node.views)==0 { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "    此数据库暂无表或视图").Layout(gtx) })) }
+				}
 			}
 			if len(s.databaseNames) == 0 {
 				children = append(children, layout.Rigid(func(gtx context) dimensions {
