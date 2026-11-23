@@ -15,8 +15,9 @@ meteor-ch-workbench/
 ├── wails.json           Wails 打包配置
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
+│   ├── app/             GUI 无关的应用服务编排（连接 / 查询 / 配置 / 历史 / 收藏 / 标签 / 设置）
 │   ├── clickhouse/      数据库交互层（service.go / export.go）
-│   └── config/          持久化层（manager / export / import / history / tabs）
+│   └── config/          持久化层（manager / export / import / history / tabs / saved_sql / settings）
 ├── frontend/
 │   └── src/             Vue 3 前端
 │       ├── main.ts      应用装配（Pinia / Router / i18n / 自定义指令）
@@ -38,9 +39,10 @@ meteor-ch-workbench/
 依赖方向是单向的：
 
 ```
-app.go
-  ├─► internal/clickhouse   ──► internal/config（仅引用 Connection 类型）
-  └─► internal/config
+app.go（Wails 兼容适配层）
+  └─► internal/app（GUI 无关的应用用例）
+        ├─► internal/config
+        └─► internal/clickhouse ──► internal/config（仅引用 Connection 类型）
 frontend/src/api.ts ──► app.go（经 Wails Call.ByName）
 ```
 
@@ -70,7 +72,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 
 ### [app.go](file:///C:/works/go_works/meteor-ch-workbench/app.go)
 
-职责：**前端调用的唯一入口**，负责编排 config 与 clickhouse 两个包。
+职责：**旧版前端调用的兼容入口**，保留历史方法签名并委托给 `internal/app.Service`；文件对话框和结果文件写入仍留在适配层。
 
 | 区块 | 方法 | 说明 |
 |---|---|---|
@@ -750,3 +752,18 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 | 文件 | 职责 |
 |---|---|
 | `NATIVE_GUI_MIGRATION.md` | Gio 原生 GUI 迁移目标分层、当前迁移边界、阶段顺序与验收原则。 |
+
+
+### [internal/app/service.go](../internal/app/service.go)
+
+职责：GUI 无关的应用服务编排，供旧 Wails 适配层与后续 Gio 界面共同调用。
+
+| 能力 | 说明 |
+|---|---|
+| 连接与查询 | 连接保存/删除/测试/断开、查询/取消、DDL/DML、批量执行 |
+| 元数据 | 数据库、表、视图、表结构、集群拓扑 |
+| 配置用例 | 连接与文件夹读取、排序、配置导入导出 |
+| 工作区 | 查询历史、收藏 SQL、标签页快照 |
+| 用户设置 | 设置读取/保存，查询行数上限仍通过设置管理器生效 |
+
+**边界**：本包不得依赖 Wails、Gio、WebView 或前端运行时。文件选择、保存对话框、剪贴板和系统打开目录等平台交互继续留在适配层，下一批再抽取为 `internal/platform` 端口。
