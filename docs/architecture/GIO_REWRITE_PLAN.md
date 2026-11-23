@@ -143,4 +143,4 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 新增 `internal/infrastructure/clickhouse/query_executor.go`：使用新连接池执行 QueryContext / ExecContext；查询结果通过批次回调流式交付，不在应用层累积完整结果集。
 - 默认查询超时 30 秒、结果行数上限 10,000、批次大小 256；支持请求级覆盖、context 取消、列名 / ClickHouse 类型 / Go 扫描类型元数据、截断标记和 DDL/DML 受影响行数。
 - 增加应用用例测试和 fake database/sql driver 测试，覆盖连接读取、请求校验、列元数据、批次、行数截断、Exec 结果、取消和回调失败后的 Rows 释放。
-- **尚未完成**：尚未在本地运行 gofmt / go test / go vet / build；当前 GitHub Actions 未发现运行记录。查询执行器尚未接入 Gio GUI，也没有真实 ClickHouse 集成测试。结果回调的消费方必须自行限制 UI 队列 / 缓冲区，不能把所有批次重新累积到内存。
+- **尚未完成**：尚未在本地运行 gofmt / go test / go vet / build；仓库当前没有 `.github/workflows/`，因此没有可触发的 GitHub Actions 工作流。查询执行器尚未接入 Gio GUI，也没有真实 ClickHouse 集成测试。结果回调的消费方必须自行限制 UI 队列 / 缓冲区，不能把所有批次重新累积到内存。
