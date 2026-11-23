@@ -8,10 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"image"
 	"image/color"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -242,19 +242,15 @@ drainResults:
 				s.status = fmt.Sprintf("已取消导出（已处理 %d 行）", result.rows)
 			case result.err != nil:
 				s.status = fmt.Sprintf("导出中断：%s（已处理 %d 行）", result.err.Error(), result.rows)
-			}
-			if result.cleanupErr != nil {
-				s.status += "；删除不完整文件失败：" + result.cleanupErr.Error()
-			} else if result.cleanupUnsupported && result.err != nil {
-				s.status += "；当前平台无法自动删除不完整文件，请手动检查目标文件"
-			}
-			switch {
-			case result.canceled:
-				// 取消状态已在上方设置。
-			case result.err != nil:
-				// 错误状态已在上方设置。
 			default:
 				s.status = fmt.Sprintf("已成功流式导出 %d 行 %s 查询结果（已重新执行 SQL）", result.rows, strings.ToUpper(result.format))
+			}
+			if result.err != nil {
+				if result.cleanupErr != nil {
+					s.status += "；删除不完整文件失败：" + result.cleanupErr.Error()
+				} else if result.cleanupUnsupported {
+					s.status += "；当前平台无法自动删除不完整文件，请手动检查目标文件"
+				}
 			}
 		default:
 			return
