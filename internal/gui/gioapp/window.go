@@ -390,7 +390,7 @@ func splitDDLLines(ddl string) []string {
 func formatResultRow(row []interface{}) string {
 	cells := make([]string, len(row))
 	for i, value := range row {
-		cell := formatResultCell(value)
+		cell := formatClipboardCell(value)
 		if strings.ContainsAny(cell, "\t\r\n\"") {
 			cell = "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
 		}
@@ -398,6 +398,13 @@ func formatResultRow(row []interface{}) string {
 	}
 	return strings.Join(cells, "\t")
 }
+func formatClipboardCell(value interface{}) string {
+	if value == nil {
+		return "NULL"
+	}
+	return fmt.Sprint(value)
+}
+
 func formatResultCell(value interface{}) string {
 	if value == nil {
 		return "NULL"
@@ -923,7 +930,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 				}
 				for cellIndex := range row {
 					if cellIndex < len(s.resultCellClicks[index]) && s.resultCellClicks[index][cellIndex].Clicked(gtx) {
-						gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatResultCell(row[cellIndex])))})
+						gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatClipboardCell(row[cellIndex])))})
 						s.status = fmt.Sprintf("已复制第 %d 行第 %d 列", index+1, cellIndex+1)
 					}
 				}
