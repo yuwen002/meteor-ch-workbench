@@ -6,9 +6,13 @@ package gioapp
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 
 	"gioui.org/app"
+	"gioui.org/gesture"
+	"gioui.org/io/pointer"
+	"gioui.org/op/clip"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -52,7 +56,11 @@ type screen struct {
 	sidebarToggle widget.Clickable
 	editorSmaller widget.Clickable
 	editorLarger widget.Clickable
-	editorRatio float32
+	 editorRatio float32
+	splitDrag gesture.Drag
+	lastDragY float32
+	dragActive bool
+	workspaceHeight int
 	status      string
 	lightTheme  bool
 	sidebarOpen bool
@@ -222,6 +230,7 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 }
 
 func (s *screen) layoutEditorAndResults(gtx context) dimensions {
+	s.workspaceHeight = gtx.Constraints.Max.Y
 	return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Flexed(s.editorRatio, s.layoutEditor),
@@ -238,19 +247,39 @@ func clampEditorRatio(value float32) float32 {
 }
 
 func (s *screen) layoutSplitControls(gtx context) dimensions {
+	// 用固定高度的命中区域承载 Gio 拖拽手势，拖动增量按工作区高度换算为比例。
+	height := gtx.Dp(22)
+	gtx.Constraints.Min.Y = height
+	gtx.Constraints.Max.Y = height
+	area := clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops)
+	s.splitDrag.Add(gtx.Ops)
+	area.Pop()
+
+	for {
+		event, ok := s.splitDrag.Update(gtx.Metric, gtx.Source, gesture.Vertical)
+		if !ok {
+			break
+		}
+		switch event.Kind {
+		case pointer.Press:
+			s.lastDragY = event.Position.Y
+			s.dragActive = true
+		case pointer.Drag:
+			if s.dragActive && s.workspaceHeight > 0 {
+				delta := event.Position.Y - s.lastDragY
+				s.editorRatio = clampEditorRatio(s.editorRatio + delta/float32(s.workspaceHeight))
+			}
+			s.lastDragY = event.Position.Y
+		case pointer.Release, pointer.Cancel:
+			s.dragActive = false
+		}
+	}
+
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx context) dimensions {
-			return material.Caption(s.theme, "编辑器 / 结果区比例").Layout(gtx)
+			return material.Caption(s.theme, "⠿ 拖动调整编辑器 / 结果区比例").Layout(gtx)
 		}),
-		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx context) dimensions {
-			return material.Button(s.theme, &s.editorSmaller, "编辑器 −").Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
-		layout.Rigid(func(gtx context) dimensions {
-			return material.Button(s.theme, &s.editorLarger, "编辑器 +").Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
 		layout.Rigid(func(gtx context) dimensions {
 			return material.Caption(s.theme, fmt.Sprintf("%.0f%% / %.0f%%", s.editorRatio*100, (1-s.editorRatio)*100)).Layout(gtx)
 		}),
