@@ -131,7 +131,7 @@ func (a *App) ExportConfigByFormat(format string, includePassword bool) (string,
 // SaveExportAs 弹出系统「另存为」对话框，让用户选择保存位置后写入导出内容。
 // 返回实际保存的完整路径；用户取消时返回空字符串。
 func (a *App) SaveExportAs(format string, includePassword bool) (string, error) {
-	content, ext, err := a.conf.ExportByFormat(format, includePassword)
+	content, ext, err := a.service.ExportConfigByFormat(format, includePassword)
 	if err != nil {
 		return "", err
 	}
