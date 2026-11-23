@@ -94,3 +94,30 @@ func TestResultColumnWidth(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitCellDetailLines(t *testing.T) {
+	tests := []struct {
+		name string
+		value string
+		want []string
+	}{
+		{name: "保留多行文本", value: "第一行\n第二行", want: []string{"第一行", "第二行"}},
+		{name: "统一 Windows 换行", value: "第一行\r\n第二行", want: []string{"第一行", "第二行"}},
+		{name: "统一旧式换行", value: "第一行\r第二行", want: []string{"第一行", "第二行"}},
+		{name: "保留空行", value: "第一行\n\n第三行", want: []string{"第一行", "", "第三行"}},
+		{name: "空内容仍可展示", value: "", want: []string{""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitCellDetailLines(tt.value)
+			if len(got) != len(tt.want) {
+				t.Fatalf("splitCellDetailLines() = %#v，期望 %#v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("splitCellDetailLines()[%d] = %q，期望 %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
