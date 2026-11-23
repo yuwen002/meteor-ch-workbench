@@ -77,6 +77,14 @@ type screen struct {
 	tableDetailsError string
 	detailsOpen bool
 	previewTable widget.Clickable
+	previewPrev widget.Clickable
+	previewNext widget.Clickable
+	previewPageSize widget.Clickable
+	previewPage int
+	previewPageLimit int
+	previewDatabase string
+	previewTableName string
+	previewMode bool
 	detailsToggle widget.Clickable
 	copyDDL widget.Clickable
 	schemaList widget.List
@@ -1346,10 +1354,42 @@ func (s *screen) previewSelectedTable() {
 		s.status = "当前有查询或导出任务正在执行，请稍后再预览"
 		return
 	}
-	sqlText := buildTablePreviewSQL(s.selectedSchemaDatabase, s.selectedSchemaTable, 100)
+	if s.previewMode && (s.previewDatabase != s.selectedSchemaDatabase || s.previewTableName != s.selectedSchemaTable) {
+		s.previewPage = 0
+	}
+	if s.previewPageLimit <= 0 { s.previewPageLimit = 100 }
+	s.previewMode = true
+	s.previewDatabase, s.previewTableName = s.selectedSchemaDatabase, s.selectedSchemaTable
+	s.runTablePreviewPage()
+}
+
+func (s *screen) runTablePreviewPage() {
+	if s.previewPage < 0 { s.previewPage = 0 }
+	if s.previewPageLimit <= 0 { s.previewPageLimit = 100 }
+	sqlText := buildTablePreviewPageSQL(s.previewDatabase, s.previewTableName, s.previewPageLimit, s.previewPage)
 	s.sqlEditor.SetText(sqlText)
 	s.persistTabs()
 	s.executeSQL()
+}
+
+func (s *screen) changePreviewPage(delta int) {
+	if !s.previewMode || s.queryRunning || s.exportRunning { return }
+	next := s.previewPage + delta
+	if next < 0 { return }
+	if delta > 0 && (s.queryResult == nil || len(s.queryResult.Rows) < s.previewPageLimit) { return }
+	s.previewPage = next
+	s.runTablePreviewPage()
+}
+
+func (s *screen) cyclePreviewPageSize() {
+	if !s.previewMode || s.queryRunning || s.exportRunning { return }
+	switch s.previewPageLimit {
+	case 50: s.previewPageLimit = 100
+	case 100: s.previewPageLimit = 200
+	default: s.previewPageLimit = 50
+	}
+	s.previewPage = 0
+	s.runTablePreviewPage()
 }
 
 func (s *screen) layoutTableDetails(gtx context) dimensions {
@@ -1806,6 +1846,34 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 		}
 		if s.queryRunning && s.runningTabID == s.activeTabID { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "查询正在执行，可点击停止取消。").Layout(gtx) })) }
+		if s.previewMode {
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.previewPrev, "上一页").Layout(gtx)
+						if s.previewPrev.Clicked(gtx) { s.changePreviewPage(-1) }
+						return d
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+					layout.Rigid(func(gtx context) dimensions {
+						label := fmt.Sprintf("第 %d 页", s.previewPage+1)
+						return material.Body2(s.theme, label).Layout(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.previewNext, "下一页").Layout(gtx)
+						if s.previewNext.Clicked(gtx) { s.changePreviewPage(1) }
+						return d
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.previewPageSize, fmt.Sprintf("每页 %d 行", s.previewPageLimit)).Layout(gtx)
+						if s.previewPageSize.Clicked(gtx) { s.cyclePreviewPageSize() }
+						return d
+					}),
+				)
+			}))
+		}
 		if s.queryResult == nil {
 			children = append(children, layout.Flexed(1, func(gtx context) dimensions {
 				message := "执行查询后，结果将在这里展示"
