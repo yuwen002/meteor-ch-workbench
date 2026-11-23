@@ -131,6 +131,11 @@ func (s *SavedSQLManager) Update(id, name, sql string) (SavedSQL, error) {
 	if trimmed == "" {
 		return SavedSQL{}, errors.New("saved sql is empty")
 	}
+	for _, existing := range s.entries {
+		if existing.ID != id && strings.TrimSpace(existing.SQL) == trimmed {
+			return SavedSQL{}, ErrSavedSQLDuplicate
+		}
+	}
 	if name = strings.TrimSpace(name); name == "" {
 		name = firstLine(trimmed)
 	}
