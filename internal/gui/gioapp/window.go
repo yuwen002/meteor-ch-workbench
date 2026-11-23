@@ -11,7 +11,6 @@ import (
 	"image"
 	"image/color"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -205,13 +204,9 @@ func (s *screen) startExport(format string) {
 		}
 		result := exportResult{format: format, err: err, rows: rows, canceled: errors.Is(writeErr, context.Canceled) || errors.Is(writeErr, context.DeadlineExceeded)}
 		if err != nil {
-			if localFile, ok := file.(*os.File); ok {
-				if removeErr := os.Remove(localFile.Name()); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-					result.cleanupErr = removeErr
-				}
-			} else {
-				result.cleanupUnsupported = true
-			}
+			supported, removeErr := removeIncompleteExport(file)
+			result.cleanupUnsupported = !supported
+			result.cleanupErr = removeErr
 		}
 		s.exportResults <- result
 		s.window.Invalidate()
