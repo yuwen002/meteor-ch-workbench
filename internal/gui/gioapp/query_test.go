@@ -35,6 +35,14 @@ func TestFormatResultCellTruncatesByRune(t *testing.T) {
 	}
 }
 
+func TestFormatResultRowUsesQuotedTSV(t *testing.T) {
+	row := []interface{}{"普通文本", "包含\t制表符", "包含\n换行", nil, "包含\"引号\""}
+	want := "普通文本\t\"包含\t制表符\"\t\"包含\n换行\"\tNULL\t\"包含\"\"引号\"\"\""
+	if got := formatResultRow(row); got != want {
+		t.Fatalf("formatResultRow() = %q，期望 %q", got, want)
+	}
+}
+
 func TestResultColumnWidth(t *testing.T) {
 	tests := []struct {
 		name string
