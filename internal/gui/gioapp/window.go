@@ -112,6 +112,24 @@ type screen struct {
 	treeConnected bool
 	service *appsvc.Service
 	historyOpen bool
+	savedSQLOpen bool
+	savedSQLToggle widget.Clickable
+	savedSQLEntries []config.SavedSQL
+	savedSQLList widget.List
+	savedSQLUseClicks []widget.Clickable
+	savedSQLEditClicks []widget.Clickable
+	savedSQLDeleteClicks []widget.Clickable
+	savedSQLSearch widget.Editor
+	savedSQLNameEditor widget.Editor
+	savedSQLEditor widget.Editor
+	savedSQLSaveCurrent widget.Clickable
+	savedSQLSaveEdit widget.Clickable
+	savedSQLCancelEdit widget.Clickable
+	savedSQLClose widget.Clickable
+	savedSQLRefresh widget.Clickable
+	savedSQLScopeToggle widget.Clickable
+	savedSQLOnlyCurrentConnection bool
+	savedSQLEditingID string
 	historyToggle widget.Clickable
 	historyEntries []config.HistoryEntry
 	historyList widget.List
@@ -185,6 +203,8 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 		sidebarOpen: true,
 		editorRatio: 0.62,
 	}
+	s.savedSQLSearch.SingleLine = true
+	s.savedSQLNameEditor.SingleLine = true
 	if service != nil {
 		if settings, err := service.GetSettings(); err == nil {
 			s.sidebarOpen = !settings.SidebarCollapsed
@@ -842,7 +862,10 @@ func (s *screen) layout(gtx context) dimensions {
 		}
 	}
 	for s.historyToggle.Clicked(gtx) {
-		if s.historyOpen { s.historyOpen = false } else { s.detailsOpen = false; s.openHistory() }
+		if s.historyOpen { s.historyOpen = false } else { s.detailsOpen = false; s.savedSQLOpen = false; s.openHistory() }
+	}
+	for s.savedSQLToggle.Clicked(gtx) {
+		if s.savedSQLOpen { s.savedSQLOpen = false } else { s.detailsOpen = false; s.historyOpen = false; s.openSavedSQL() }
 	}
 	for s.editorSmaller.Clicked(gtx) {
 		s.editorRatio = clampEditorRatio(s.editorRatio - 0.05)
@@ -898,6 +921,12 @@ func (s *screen) layoutToolbar(gtx context) dimensions {
 				return material.Button(s.theme, &s.historyToggle, label).Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+			layout.Rigid(func(gtx context) dimensions {
+				label := "收藏 SQL"
+				if s.savedSQLOpen { label = "隐藏收藏" }
+				return material.Button(s.theme, &s.savedSQLToggle, label).Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 			layout.Flexed(1, func(gtx context) dimensions {
 				return layout.Dimensions{}
 			}),
@@ -935,6 +964,9 @@ func (s *screen) layoutWorkspace(gtx context) dimensions {
 	}
 	if s.historyOpen {
 		children = append(children, layout.Rigid(s.layoutHistoryPanel))
+	}
+	if s.savedSQLOpen {
+		children = append(children, layout.Rigid(s.layoutSavedSQLPanel))
 	}
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 }
@@ -1108,6 +1140,178 @@ func (s *screen) layoutHistoryPanel(gtx context) dimensions {
 									if s.historyDeleteClicks[index].Clicked(gtx) { s.deleteHistoryEntry(entry.ID) }
 									return d
 								}),
+							)
+						}),
+					)
+				})
+			})
+		}))
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	})
+}
+
+type savedSQLListItem struct {
+	entry config.SavedSQL
+	index int
+}
+
+func (s *screen) refreshSavedSQL(showError bool) {
+	if s.service == nil { return }
+	entries, err := s.service.GetSavedSQL()
+	if err != nil {
+		if showError { s.status = "读取收藏 SQL 失败：" + err.Error() }
+		return
+	}
+	s.savedSQLEntries = entries
+	s.savedSQLUseClicks = make([]widget.Clickable, len(entries))
+	s.savedSQLEditClicks = make([]widget.Clickable, len(entries))
+	s.savedSQLDeleteClicks = make([]widget.Clickable, len(entries))
+}
+
+func (s *screen) openSavedSQL() {
+	s.savedSQLOpen = true
+	s.refreshSavedSQL(true)
+}
+
+func (s *screen) filteredSavedSQL() []savedSQLListItem {
+	keyword := strings.ToLower(strings.TrimSpace(s.savedSQLSearch.Text()))
+	filtered := make([]savedSQLListItem, 0, len(s.savedSQLEntries))
+	for i, entry := range s.savedSQLEntries {
+		if s.savedSQLOnlyCurrentConnection && (s.selectedConnectionID == "" || entry.ConnectionID != s.selectedConnectionID) { continue }
+		if keyword != "" {
+			searchable := strings.ToLower(entry.Name + "\n" + entry.SQL + "\n" + s.historyConnectionName(entry.ConnectionID))
+			if !strings.Contains(searchable, keyword) { continue }
+		}
+		filtered = append(filtered, savedSQLListItem{entry: entry, index: i})
+	}
+	return filtered
+}
+
+func (s *screen) saveCurrentSQL() {
+	if s.service == nil { s.status = "应用服务尚未初始化"; return }
+	sqlText := strings.TrimSpace(s.sqlEditor.Text())
+	if sqlText == "" { s.status = "SQL 不能为空，无法收藏"; return }
+	item, err := s.service.SaveSQL(s.savedSQLNameEditor.Text(), sqlText, s.selectedConnectionID)
+	if err != nil {
+		if errors.Is(err, config.ErrSavedSQLDuplicate) { s.status = "这条 SQL 已经收藏过了" } else { s.status = "收藏 SQL 失败：" + err.Error() }
+		return
+	}
+	s.savedSQLNameEditor.SetText("")
+	s.refreshSavedSQL(false)
+	s.status = "已收藏 SQL：" + item.Name
+}
+
+func (s *screen) useSavedSQL(entry config.SavedSQL) {
+	s.sqlEditor.SetText(entry.SQL)
+	s.persistTabs()
+	s.status = "已将收藏 SQL 回填到当前标签"
+}
+
+func (s *screen) beginEditSavedSQL(entry config.SavedSQL) {
+	s.savedSQLEditingID = entry.ID
+	s.savedSQLNameEditor.SetText(entry.Name)
+	s.savedSQLEditor.SetText(entry.SQL)
+	s.status = "正在编辑收藏 SQL：" + entry.Name
+}
+
+func (s *screen) saveEditedSQL() {
+	if s.service == nil || s.savedSQLEditingID == "" { return }
+	item, err := s.service.UpdateSavedSQL(s.savedSQLEditingID, s.savedSQLNameEditor.Text(), s.savedSQLEditor.Text())
+	if err != nil {
+		if errors.Is(err, config.ErrSavedSQLDuplicate) { s.status = "这条 SQL 已经收藏过了" } else { s.status = "更新收藏 SQL 失败：" + err.Error() }
+		return
+	}
+	s.savedSQLEditingID = ""
+	s.savedSQLNameEditor.SetText("")
+	s.savedSQLEditor.SetText("")
+	s.refreshSavedSQL(false)
+	s.status = "已更新收藏 SQL：" + item.Name
+}
+
+func (s *screen) cancelEditSavedSQL() {
+	s.savedSQLEditingID = ""
+	s.savedSQLNameEditor.SetText("")
+	s.savedSQLEditor.SetText("")
+}
+
+func (s *screen) deleteSavedSQL(id string) {
+	if s.service == nil { return }
+	if err := s.service.DeleteSavedSQL(id); err != nil {
+		s.status = "删除收藏 SQL 失败：" + err.Error()
+		return
+	}
+	if s.savedSQLEditingID == id { s.cancelEditSavedSQL() }
+	s.refreshSavedSQL(false)
+	s.status = "已删除一条收藏 SQL"
+}
+
+func (s *screen) layoutSavedSQLPanel(gtx context) dimensions {
+	width := gtx.Dp(380)
+	if width > gtx.Constraints.Max.X { width = gtx.Constraints.Max.X }
+	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+	return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
+		children := []layout.FlexChild{
+			layout.Rigid(func(gtx context) dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx context) dimensions { return material.H6(s.theme, "收藏 SQL").Layout(gtx) }),
+					layout.Rigid(func(gtx context) dimensions { d := material.Button(s.theme, &s.savedSQLRefresh, "刷新").Layout(gtx); if s.savedSQLRefresh.Clicked(gtx) { s.refreshSavedSQL(true) }; return d }),
+					layout.Rigid(func(gtx context) dimensions { d := material.Button(s.theme, &s.savedSQLClose, "关闭").Layout(gtx); if s.savedSQLClose.Clicked(gtx) { s.savedSQLOpen = false }; return d }),
+				)
+			}),
+			layout.Rigid(func(gtx context) dimensions { return material.Editor(s.theme, &s.savedSQLSearch, "搜索名称、SQL 或连接").Layout(gtx) }),
+			layout.Rigid(func(gtx context) dimensions {
+				label := "仅当前连接"
+				if s.savedSQLOnlyCurrentConnection { label = "显示全部连接" }
+				d := material.Button(s.theme, &s.savedSQLScopeToggle, label).Layout(gtx)
+				if s.savedSQLScopeToggle.Clicked(gtx) { s.savedSQLOnlyCurrentConnection = !s.savedSQLOnlyCurrentConnection }
+				return d
+			}),
+		}
+		if s.savedSQLEditingID != "" {
+			children = append(children,
+				layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "编辑收藏").Layout(gtx) }),
+				layout.Rigid(func(gtx context) dimensions { return material.Editor(s.theme, &s.savedSQLNameEditor, "收藏名称").Layout(gtx) }),
+				layout.Flexed(0.35, func(gtx context) dimensions { return material.Editor(s.theme, &s.savedSQLEditor, "SQL 内容").Layout(gtx) }),
+				layout.Rigid(func(gtx context) dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Rigid(func(gtx context) dimensions { d := material.Button(s.theme, &s.savedSQLSaveEdit, "保存修改").Layout(gtx); if s.savedSQLSaveEdit.Clicked(gtx) { s.saveEditedSQL() }; return d }),
+						layout.Rigid(func(gtx context) dimensions { d := material.Button(s.theme, &s.savedSQLCancelEdit, "取消").Layout(gtx); if s.savedSQLCancelEdit.Clicked(gtx) { s.cancelEditSavedSQL() }; return d }),
+					)
+				}),
+			)
+		} else {
+			children = append(children,
+				layout.Rigid(func(gtx context) dimensions { return material.Editor(s.theme, &s.savedSQLNameEditor, "收藏名称（可选）").Layout(gtx) }),
+				layout.Rigid(func(gtx context) dimensions {
+					d := material.Button(s.theme, &s.savedSQLSaveCurrent, "收藏当前 SQL").Layout(gtx)
+					if s.savedSQLSaveCurrent.Clicked(gtx) { s.saveCurrentSQL() }
+					return d
+				}),
+			)
+		}
+		items := s.filteredSavedSQL()
+		if len(items) == 0 {
+			message := "暂无收藏 SQL。可先在编辑器中编写 SQL，再点击「收藏当前 SQL」。"
+			if len(s.savedSQLEntries) > 0 { message = "没有符合搜索条件的收藏 SQL。" }
+			children = append(children, layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, message).Layout(gtx) }))
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		}
+		children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+			s.savedSQLList.Axis = layout.Vertical
+			return material.List(s.theme, &s.savedSQLList).Layout(gtx, len(items), func(gtx context, index int) dimensions {
+				item := items[index]
+				entry, original := item.entry, item.index
+				meta := s.historyConnectionName(entry.ConnectionID) + " · 更新于 " + entry.UpdatedAt.Local().Format("01-02 15:04")
+				return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx context) dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx context) dimensions { return material.Body1(s.theme, entry.Name).Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, historySQLPreview(entry.SQL)).Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions {
+							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+								layout.Rigid(func(gtx context) dimensions { d := material.Button(s.theme, &s.savedSQLUseClicks[original], "回填").Layout(gtx); if s.savedSQLUseClicks[original].Clicked(gtx) { s.useSavedSQL(entry) }; return d }),
+								layout.Rigid(func(gtx context) dimensions { d := material.Button(s.theme, &s.savedSQLEditClicks[original], "编辑").Layout(gtx); if s.savedSQLEditClicks[original].Clicked(gtx) { s.beginEditSavedSQL(entry) }; return d }),
+								layout.Rigid(func(gtx context) dimensions { d := material.Button(s.theme, &s.savedSQLDeleteClicks[original], "删除").Layout(gtx); if s.savedSQLDeleteClicks[original].Clicked(gtx) { s.deleteSavedSQL(entry.ID) }; return d }),
 							)
 						}),
 					)
