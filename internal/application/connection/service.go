@@ -45,8 +45,6 @@ func (s *Service) Save(ctx context.Context, item connection.Connection) (connect
 	}
 	if err := item.Validate(); err != nil { return connection.Connection{}, err }
 
-	_, err := s.repository.List(ctx)
-	if err != nil { return connection.Connection{}, fmt.Errorf("读取连接列表: %w", err) }
 	if err := s.repository.Save(ctx, item); err != nil {
 		return connection.Connection{}, fmt.Errorf("保存连接: %w", err)
 	}
@@ -69,7 +67,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 func (s *Service) Test(ctx context.Context, item connection.Connection) error {
 	item.Name = strings.TrimSpace(item.Name)
 	item.Host = strings.TrimSpace(item.Host)
-	if err := item.Validate(); err != nil { return err }
+	if err := item.ValidateForTest(); err != nil { return err }
 	if err := s.tester.Test(ctx, item); err != nil {
 		return fmt.Errorf("连接测试失败（%s）: %w", item.Endpoint(), err)
 	}
