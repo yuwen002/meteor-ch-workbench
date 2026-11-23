@@ -100,3 +100,40 @@ func TestSettingsManagerLoadCorruptedFile(t *testing.T) {
 		t.Fatalf("corrupt file should fall back to default %d, got %d", DefaultRowLimit, got)
 	}
 }
+
+func TestNormalizeSettingsLayout(t *testing.T) {
+	cases := []struct {
+		name string
+		input SettingsFile
+		want float64
+	}{
+		{name: "旧配置缺少比例", input: SettingsFile{QueryRowLimit: 8000}, want: DefaultEditorRatio},
+		{name: "低于最小比例", input: SettingsFile{QueryRowLimit: 8000, EditorRatio: 0.1}, want: DefaultEditorRatio},
+		{name: "高于最大比例", input: SettingsFile{QueryRowLimit: 8000, EditorRatio: 0.9}, want: DefaultEditorRatio},
+		{name: "合法比例保留", input: SettingsFile{QueryRowLimit: 8000, EditorRatio: 0.7}, want: 0.7},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := NormalizeSettings(tc.input)
+			if got.EditorRatio != tc.want {
+				t.Fatalf("EditorRatio = %v, want %v", got.EditorRatio, tc.want)
+			}
+		})
+	}
+}
+
+func TestSettingsManagerPersistsWorkspaceLayout(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSettingsManager(dir)
+	want := SettingsFile{QueryRowLimit: 12000, SidebarCollapsed: true, EditorRatio: 0.73}
+	if err := manager.Save(want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	reloaded, err := NewSettingsManager(dir).Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if reloaded != want {
+		t.Fatalf("reloaded settings = %+v, want %+v", reloaded, want)
+	}
+}
