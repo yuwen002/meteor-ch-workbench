@@ -625,6 +625,3 @@ func cellText(v interface{}) string {
 		return fmt.Sprintf("%v", v)
 	}
 }
-		return fmt.Sprintf("%v", v)
-	}
-}
