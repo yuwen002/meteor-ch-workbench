@@ -5,6 +5,7 @@
 package gioapp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -202,7 +203,7 @@ func (s *screen) startExport(format string) {
 		} else if closeErr != nil {
 			err = closeErr
 		}
-		result := exportResult{format: format, err: err, rows: rows}
+		result := exportResult{format: format, err: err, rows: rows, canceled: errors.Is(writeErr, context.Canceled) || errors.Is(writeErr, context.DeadlineExceeded)}
 		if err != nil {
 			if localFile, ok := file.(*os.File); ok {
 				if removeErr := os.Remove(localFile.Name()); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
@@ -223,7 +224,7 @@ func (s *screen) drainExportResults() {
 		select {
 		case count := <-s.exportProgress:
 			if s.exportRunning {
-				s.status = fmt.Sprintf("正在流式导出… 已写入 %d 行（每 1000 行更新）", count)
+				s.status = fmt.Sprintf("正在流式导出… 已处理 %d 行（每 1000 行更新）", count)
 			}
 		default:
 			goto drainResults
