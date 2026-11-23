@@ -121,9 +121,9 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 
 ### 当前仍未完成项
 
-- Gio 入口仍调用 internal/app.NewDefaultService。
-- gioapp 仍直接引用旧 internal/app、internal/config、internal/clickhouse 类型。
-- window.go 仍为大型单体原型。
-- Vue frontend/ 尚未删除。
-- 新 domain / application / infrastructure 目录尚未建立。
-- 当前没有 GitHub Actions workflow；此前新增测试没有在本执行环境运行。
+- Gio 入口仍调用 `internal/app.NewDefaultService`，新连接用例和新连接仓库尚未接入运行时。
+- `gioapp` 仍直接引用旧 `internal/app`、`internal/config`、`internal/clickhouse` 类型。
+- `window.go` 仍为大型单体原型，GUI 需要按新设计整体重写。
+- Vue `frontend/` 尚未删除，当前只作为行为参考。
+- 尚未实现新的 ClickHouse infrastructure / Tester、凭据存储、历史与工作区等本地存储。
+- 新连接存储的测试尚未实际执行；当前 Actions 查询无运行记录，最新提交状态为 pending。
