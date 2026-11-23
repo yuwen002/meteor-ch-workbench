@@ -1835,6 +1835,7 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultFilter.SetText("")
 	s.resultFilterLast = ""
 	s.resultColumnFilterEditors, s.resultColumnFilterLast = nil, nil
+	s.resultColumnFilterClearClicks = nil
 	s.resultColumnWidths, s.resultColumnDrags = nil, nil
 	s.resultColumnDragLastX, s.resultColumnDragActive = nil, nil
 	s.selectedCellLabel, s.selectedCellValue, s.cellDetailLines = "", "", nil
