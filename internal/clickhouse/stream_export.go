@@ -45,9 +45,15 @@ func (s *Service) ExportQueryTo(conn config.Connection, sqlText, queryID, format
 		}
 		return 0, err
 	}
-	defer rows.Close()
-
-	return streamSQLRowsTo(ctx, rows, dst, format)
+	count, streamErr := streamSQLRowsTo(ctx, rows, dst, format)
+	closeErr := rows.Close()
+	if streamErr != nil {
+		return count, streamErr
+	}
+	if closeErr != nil {
+		return count, closeErr
+	}
+	return count, nil
 }
 
 // streamSQLRowsTo 从数据库游标读取一行、写出一行，不累积完整结果集。
