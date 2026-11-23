@@ -2,7 +2,7 @@
 
 > 按文件列出职责、关键入口与依赖关系，便于人和 AI 快速定位。
 > 与 `.trae/PROJECT.md`（AI 检索地图）互补：本文更偏「文件清单」，PROJECT.md 更偏「怎么改」。
-> 更新时间：2026-11-23
+> 更新时间：2026-11-24
 
 ---
 
@@ -10,10 +10,9 @@
 
 ```
 meteor-ch-workbench/
-├── main.go              Wails 应用入口（兼容基线）
-├── cmd/meteor-ch-gio/   Gio 原生 GUI 独立入口
+├── cmd/meteor-ch-gio/   Gio 原生 GUI 唯一启动入口
 │   └── main.go          Gio 窗口启动与事件循环入口
-├── app.go               所有前端可调用方法的门面（43 个，含 2 个生命周期回调）
+
 ├── wails.json           Wails 打包配置
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
@@ -952,3 +951,10 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 
 - `internal/gui/gioapp/result_view_benchmark_test.go`：查询结果筛选性能基准，覆盖 1 万 / 10 万行、全局关键字、多列条件和组合排序；运行方式见迁移文档。
+
+
+## 2026-11-24 架构变更
+
+- 已删除 Wails 根入口 `main.go`、绑定门面 `app.go`、Wails 平台适配器、对应测试和 `wails.json`；`go.mod` 已移除 Wails v3 直接依赖。
+- 当前唯一桌面入口：`cmd/meteor-ch-gio/main.go`。
+- `internal/app.Service` 仍是 Gio 的临时依赖，后续需按新架构重写；旧 Vue `frontend/` 仅供功能盘点，不能作为运行或发布入口。
