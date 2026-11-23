@@ -111,6 +111,20 @@ type screen struct {
 	databaseNodes map[string]*databaseNode
 	treeConnected bool
 	service *appsvc.Service
+	historyOpen bool
+	historyEntries []config.HistoryEntry
+	historyList widget.List
+	historySelectClicks []widget.Clickable
+	historyRunClicks []widget.Clickable
+	historyDeleteClicks []widget.Clickable
+	historyClear widget.Clickable
+	historyConfirmClear widget.Clickable
+	historyCancelClear widget.Clickable
+	historyClose widget.Clickable
+	historyRefresh widget.Clickable
+	historyClearConfirm bool
+	pendingHistorySQL string
+	pendingHistoryConnectionID string
 	connections        []config.Connection
 	connectionClicks   []widget.Clickable
 	tabs               []config.TabState
