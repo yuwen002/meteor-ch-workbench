@@ -944,3 +944,8 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/gui/gioapp/result_view.go`：`resultValueMatchesColumnCondition` 新增 `between:下界..上界` 闭区间条件，数值使用精确比较，时间使用统一时间解析。
 - `internal/gui/gioapp/result_view_test.go`：覆盖数值 / Decimal / 日期 / RFC3339 区间、边界包含、NULL、反向区间和无效表达式。
 - 普通文本不支持字典序区间；混合类型边界、不可解析时间和 NULL 均不匹配。
+
+
+- `internal/gui/gioapp/window.go`：每列筛选输入框提供独立「清除」按钮，另保留清空全部列条件；展示当前生效的列条件摘要。
+- `internal/gui/gioapp/result_view.go`：`resultColumnFilterSummary` 将非空筛选条件映射为「列名: 表达式」摘要。
+- `internal/gui/gioapp/result_view_test.go`：覆盖摘要列映射、空条件忽略和超出列数的条件忽略。
