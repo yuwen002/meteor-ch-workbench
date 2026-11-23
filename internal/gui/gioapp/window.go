@@ -10,6 +10,7 @@ import (
 	"image/color"
 
 	"gioui.org/app"
+	"sync"
 	"gioui.org/gesture"
 	"gioui.org/io/pointer"
 	"gioui.org/op/clip"
@@ -28,7 +29,7 @@ type dimensions = layout.Dimensions
 
 // Run 运行 Gio 窗口事件循环。
 func Run(window *app.Window, service *appsvc.Service) error {
-	state := newScreen(service)
+	state := newScreen(window, service)
 	var ops op.Ops
 	for {
 		switch event := window.Event().(type) {
@@ -43,7 +44,9 @@ func Run(window *app.Window, service *appsvc.Service) error {
 }
 
 type screen struct {
-	service            *appsvc.Service
+	window *app.Window
+	mu sync.Mutex
+	service *appsvc.Service
 	connections        []config.Connection
 	connectionClicks   []widget.Clickable
 	selectedConnectionID string
@@ -66,8 +69,9 @@ type screen struct {
 	sidebarOpen bool
 }
 
-func newScreen(service *appsvc.Service) *screen {
+func newScreen(window *app.Window, service *appsvc.Service) *screen {
 	s := &screen{
+		window: window,
 		service:     service,
 		theme:       material.NewTheme(),
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
@@ -94,6 +98,42 @@ func newScreen(service *appsvc.Service) *screen {
 	s.sqlEditor.SetText("SELECT\n    database,\n    table,\n    engine\nFROM system.tables\nORDER BY database, table\nLIMIT 100;")
 	s.applyTheme()
 	return s
+}
+
+func (s *screen) connectSelected() {
+	for _, connection := range s.connections {
+		if connection.ID == s.selectedConnectionID {
+			s.connectConnection(connection)
+			return
+		}
+	}
+	s.status = "请先在左侧选择一个连接配置"
+}
+
+func (s *screen) connectConnection(connection config.Connection) {
+	if s.service == nil {
+		s.status = "应用服务尚未初始化"
+		return
+	}
+	s.selectedConnectionID = connection.ID
+	s.status = "正在连接 " + connection.Name + "…"
+	go func() {
+		err := s.service.TestConnection(connection)
+		var databases []string
+		if err == nil {
+			databases, err = s.service.GetDatabases(connection.ID)
+		}
+		s.mu.Lock()
+		if s.selectedConnectionID == connection.ID {
+			if err != nil {
+				s.status = "连接或加载数据库失败：" + err.Error()
+			} else {
+				s.status = fmt.Sprintf("连接成功，已加载 %d 个数据库", len(databases))
+			}
+		}
+		s.mu.Unlock()
+		s.window.Invalidate()
+	}()
 }
 
 func (s *screen) saveWorkspaceLayout() {
@@ -131,7 +171,7 @@ func (s *screen) layout(gtx context) dimensions {
 		s.status = "SQL 编辑器已就绪；查询执行将在服务装配阶段接入"
 	}
 	for s.connect.Clicked(gtx) {
-		s.status = "连接管理界面正在建设，当前尚未连接数据库"
+		s.connectSelected()
 	}
 	for s.stop.Clicked(gtx) {
 		s.status = "当前没有正在执行的查询"
@@ -230,8 +270,7 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 		for i := range s.connections {
 			connection := s.connections[i]
 			if s.connectionClicks[i].Clicked(gtx) {
-				s.selectedConnectionID = connection.ID
-				s.status = fmt.Sprintf("已选择连接：%s（%s:%d）· 尚未建立数据库连接", connection.Name, connection.Host, connection.Port)
+				s.connectConnection(connection)
 			}
 			label := fmt.Sprintf("%s  ·  %s:%d", connection.Name, connection.Host, connection.Port)
 			children = append(children, layout.Rigid(func(gtx context) dimensions {
