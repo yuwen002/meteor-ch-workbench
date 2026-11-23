@@ -26,10 +26,10 @@ func TestBuildTablePreviewPageSQL(t *testing.T) {
 		limit, page int
 		want string
 	}{
-		{name: "第一页", limit: 100, page: 0, want: "SELECT * FROM `default`.`events` LIMIT 100 OFFSET 0;"},
+		{name: "第一页", limit: 100, page: 0, want: "SELECT * FROM `default`.`events` LIMIT 100;"},
 		{name: "第二页", limit: 100, page: 1, want: "SELECT * FROM `default`.`events` LIMIT 100 OFFSET 100;"},
 		{name: "更换每页行数", limit: 50, page: 3, want: "SELECT * FROM `default`.`events` LIMIT 50 OFFSET 150;"},
-		{name: "负页码回退第一页", limit: 25, page: -1, want: "SELECT * FROM `default`.`events` LIMIT 25 OFFSET 0;"},
+		{name: "负页码回退第一页", limit: 25, page: -1, want: "SELECT * FROM `default`.`events` LIMIT 25;"},
 		{name: "无效行数回退默认", limit: 0, page: 2, want: "SELECT * FROM `default`.`events` LIMIT 100 OFFSET 200;"},
 	}
 	for _, tt := range tests {
