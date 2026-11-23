@@ -2004,6 +2004,9 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			)
 		}))
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
+			return material.Caption(s.theme, "列条件：默认包含；!不包含；= 等于；!= 不等于；>、<、>=、<= 数值比较；is:null / is:not-null 判断空值").Layout(gtx)
+		}))
+		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			s.resultColumnHeader.Axis = layout.Horizontal
 			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns)+1, func(gtx context, index int) dimensions {
 				if index == 0 {
