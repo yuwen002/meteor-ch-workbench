@@ -931,3 +931,9 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 时间比较支持日期、ClickHouse DateTime / DateTime64（含小数秒）和 RFC3339；RFC3339 保留显式时区偏移，无时区文本按 UTC 解释。
 - `internal/gui/gioapp/result_view_test.go`：覆盖文本操作符、数值比较、NULL 判断、多列操作符组合、DateTime64 小数秒和 RFC3339 时区比较。
 - `internal/gui/gioapp/window.go`：结果表格显示操作符说明；列筛选仍与对应列对齐，并与全局关键字按 AND 组合。
+
+
+### Gio 查询结果精确数值比较
+
+- `internal/gui/gioapp/result_view.go`：`compareResultNumbers` 使用 `math/big.Rat` 比较数值文本，排序和列筛选共用精确比较，避免 UInt64 / Decimal 被 float64 舍入。
+- `internal/gui/gioapp/result_view_test.go`：覆盖相邻 UInt64、大整数精度边界、高精度 Decimal 和科学计数法比较。
