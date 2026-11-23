@@ -68,6 +68,26 @@ func resultValueMatchesColumnCondition(value interface{}, expression string) boo
 	if expression == "" { return true }
 	if strings.EqualFold(expression, "is:null") { return value == nil }
 	if strings.EqualFold(expression, "is:not-null") { return value != nil }
+	if strings.HasPrefix(strings.ToLower(expression), "between:") {
+		if value == nil { return false }
+		bounds := strings.SplitN(strings.TrimSpace(expression[len("between:"):]), "..", 2)
+		if len(bounds) != 2 || strings.TrimSpace(bounds[0]) == "" || strings.TrimSpace(bounds[1]) == "" {
+			return false
+		}
+		lower, upper := strings.TrimSpace(bounds[0]), strings.TrimSpace(bounds[1])
+		actual := fmt.Sprint(value)
+		if lowerCmp, lowerOK := compareResultNumbers(actual, lower); lowerOK {
+			upperCmp, upperOK := compareResultNumbers(actual, upper)
+			if !upperOK { return false }
+			boundOrder, orderOK := compareResultNumbers(lower, upper)
+			return orderOK && boundOrder <= 0 && lowerCmp >= 0 && upperCmp <= 0
+		}
+		actualTime, actualErr := parseResultTime(actual)
+		lowerTime, lowerErr := parseResultTime(lower)
+		upperTime, upperErr := parseResultTime(upper)
+		return actualErr == nil && lowerErr == nil && upperErr == nil &&
+			!actualTime.Before(lowerTime) && !actualTime.After(upperTime) && !lowerTime.After(upperTime)
+	}
 
 	operator, expected := "", expression
 	for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<", "!"} {
