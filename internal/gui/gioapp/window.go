@@ -747,6 +747,9 @@ func (s *screen) connectSelected() {
 }
 
 func (s *screen) connectConnection(connection config.Connection) {
+	if s.pendingHistoryConnectionID != "" && s.pendingHistoryConnectionID != connection.ID {
+		s.pendingHistorySQL, s.pendingHistoryConnectionID = "", ""
+	}
 	if s.service == nil {
 		s.status = "应用服务尚未初始化"
 		return
