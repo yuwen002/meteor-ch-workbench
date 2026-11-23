@@ -777,7 +777,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用纵向 Gio 列表滚动，表头和各结果行使用共享滚动位置的横向列表，保持列对齐。
 - 结果表格首列提供「复制行」操作；点击单元格复制当前值，点击行首操作复制整行，使用带引号转义的制表符分隔文本。
 - 表头各数据列末尾提供拖动手柄，列宽在 80–480dp 范围内调整；调整后的宽度同步应用于表头和所有结果行，拖动距离按设备像素换算为 dp。
-- 查询结果摘要行提供「导出 CSV」和「导出 TSV」按钮；使用 `gioui.org/x/explorer` 系统保存对话框，重新执行最近一次成功查询的 SQL，并通过 `internal/app.Service.ExportQueryTo` 调用 ClickHouse 游标级流式导出，按行编码后写入文件。取消保存不报错，写入 / 关闭失败会显示错误。
+- 查询结果摘要行提供「导出 CSV」和「导出 TSV」按钮；使用 `gioui.org/x/explorer` 系统保存对话框，重新执行最近一次成功查询的 SQL，并通过 `internal/app.Service.ExportQueryToWithProgress` 调用 ClickHouse 游标级流式导出，按行编码后写入文件；每 1000 行及结束时回报进度。停止操作可取消导出，结束后关闭文件；本地 `*os.File` 发生中断时尝试删除不完整文件，其他平台类型提示手动检查。
 - CSV / TSV 导出使用最近一次执行时保存的 SQL 与连接 ID，重新查询完整结果，不受界面行数上限约束；因此数据可能因再次执行而变化，导出内容不保证与此前展示结果完全一致。其他导出格式仍可使用 `ExportQueryResult` 导出已加载行。
 - `resultColumnWidth` 将列宽权重转换为固定 dp 宽度；列宽权重仍由列名和前 30 行样本估算。
 - 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；字段与 DDL 分别使用独立 Gio 列表纵向滚动，DDL 复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
@@ -794,11 +794,11 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 ### [internal/clickhouse/stream_export.go](../internal/clickhouse/stream_export.go)
 
-职责：使用 `database/sql.Rows` 逐行读取查询结果并写入 CSV / TSV；不累积完整结果集，支持 queryID 取消和写入错误传播。
+职责：使用 `database/sql.Rows` 逐行读取查询结果并写入 CSV / TSV；不累积完整结果集，支持 queryID 取消、每 1000 行进度回调、写入错误和游标关闭错误传播。
 
 ### [internal/clickhouse/stream_export_test.go](../internal/clickhouse/stream_export_test.go)
 
-职责：通过可替换的行游标接口验证 CSV / TSV 流式编码、特殊字符、写入失败、未知格式与取消上下文。
+职责：通过可替换的行游标接口验证 CSV / TSV 流式编码、特殊字符、写入失败、未知格式、取消上下文与 1000 行进度回调。
 
 ### [internal/app/service.go](../internal/app/service.go)
 
