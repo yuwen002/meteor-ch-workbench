@@ -45,3 +45,51 @@ func TestRemoveIncompleteExportSkipsNonLocalHandle(t *testing.T) {
 		t.Fatal("non-local file handle must not be treated as removable")
 	}
 }
+
+
+type shortFailWriter struct {
+	written int
+}
+
+func (w *shortFailWriter) Write(p []byte) (int, error) {
+	if w.written > 0 {
+		return 0, errors.New("write failed")
+	}
+	n := len(p) / 2
+	w.written += n
+	return n, nil
+}
+
+func TestCountingWriterCountsWrittenBytes(t *testing.T) {
+	var output bytes.Buffer
+	writer := &countingWriter{writer: &output}
+	payload := []byte("ClickHouse 导出")
+	n, err := writer.Write(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(payload) {
+		t.Fatalf("written = %d, want %d", n, len(payload))
+	}
+	if writer.bytes != int64(len(payload)) {
+		t.Fatalf("bytes = %d, want %d", writer.bytes, len(payload))
+	}
+}
+
+func TestCountingWriterCountsPartialWriteOnError(t *testing.T) {
+	underlying := &partialErrorWriter{}
+	writer := &countingWriter{writer: underlying}
+	_, err := writer.Write([]byte("123456"))
+	if err == nil {
+		t.Fatal("expected underlying write error")
+	}
+	if writer.bytes != 3 {
+		t.Fatalf("bytes = %d, want 3", writer.bytes)
+	}
+}
+
+type partialErrorWriter struct{}
+
+func (*partialErrorWriter) Write(p []byte) (int, error) {
+	return len(p) / 2, errors.New("partial write")
+}
