@@ -13,6 +13,9 @@ import (
 // Adapter 提供基于 Wails 系统对话框和操作系统命令的平台实现。
 type Adapter struct{}
 
+// 确保 Wails 适配器完整实现平台能力端口。
+var _ platform.Platform = (*Adapter)(nil)
+
 // New 创建 Wails 平台适配器。
 func New() *Adapter { return &Adapter{} }
 
