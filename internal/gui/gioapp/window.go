@@ -125,6 +125,7 @@ type screen struct {
 	resultSortColumn int
 	resultSortDescending bool
 	resultFilter widget.Editor
+	resultFilterLast string
 	resultFilterClear widget.Clickable
 	resultRowCopyClicks []widget.Clickable
 	connectionSequence uint64
@@ -1828,6 +1829,7 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultSortClicks = nil
 	s.resultSortColumn, s.resultSortDescending = -1, false
 	s.resultFilter.SetText("")
+	s.resultFilterLast = ""
 	s.resultColumnWidths, s.resultColumnDrags = nil, nil
 	s.resultColumnDragLastX, s.resultColumnDragActive = nil, nil
 	s.selectedCellLabel, s.selectedCellValue, s.cellDetailLines = "", "", nil
@@ -1963,6 +1965,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		}
 		columnWeights := resultColumnWeights(result.Columns, result.Rows)
 		filterText := s.resultFilter.Text()
+		if filterText != s.resultFilterLast { s.resultFilterLast = filterText; s.resultList.Position = layout.Position{} }
 		displayRows := buildResultRowView(result.Rows, filterText, s.resultSortColumn, s.resultSortDescending)
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -1995,6 +1998,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 						})
 						for s.resultSortClicks[columnIndex].Clicked(gtx) {
 							if s.resultSortColumn == columnIndex { s.resultSortDescending = !s.resultSortDescending } else { s.resultSortColumn, s.resultSortDescending = columnIndex, false }
+							s.resultList.Position = layout.Position{}
 						}
 						return d
 					}),
@@ -2034,7 +2038,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 				})
 				for s.resultRowCopyClicks[rowIndex].Clicked(gtx) {
 					gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatResultRow(row)))})
-					s.status = fmt.Sprintf("已复制第 %d 行（制表符分隔）", index+1)
+					s.status = fmt.Sprintf("已复制第 %d 行（制表符分隔）", rowIndex+1)
 				}
 				for cellIndex := range row {
 					if cellIndex < len(s.resultCellClicks[rowIndex]) && s.resultCellClicks[rowIndex][cellIndex].Clicked(gtx) {
