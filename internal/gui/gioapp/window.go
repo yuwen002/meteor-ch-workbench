@@ -391,14 +391,13 @@ func formatResultRow(row []interface{}) string {
 	cells := make([]string, len(row))
 	for i, value := range row {
 		cell := formatResultCell(value)
-		if strings.ContainsAny(cell, "\\t\\r\\n\\\"") {
+		if strings.ContainsAny(cell, "\t\r\n\"") {
 			cell = "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
 		}
 		cells[i] = cell
 	}
-	return strings.Join(cells, "\\t")
+	return strings.Join(cells, "\t")
 }
-
 func formatResultCell(value interface{}) string {
 	if value == nil {
 		return "NULL"
