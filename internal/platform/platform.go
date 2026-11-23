@@ -1,7 +1,10 @@
 // Package platform 定义桌面应用需要的操作系统能力端口。
 package platform
 
-import "io/fs"
+import (
+	"io"
+	"io/fs"
+)
 
 // FileFilter 描述文件对话框中的文件类型筛选条件。
 type FileFilter struct {
