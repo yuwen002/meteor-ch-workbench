@@ -79,7 +79,7 @@ type screen struct {
 	queryResult *clickhouse.QueryResult
 	resultList widget.List
 	resultColumnHeader widget.List
-	resultColumnRows map[int]*widget.List
+	resultColumnRow widget.List
 	connectionSequence uint64
 	databaseSequence uint64
 	databaseNames []string
@@ -116,7 +116,6 @@ func newScreen(window *app.Window, service *appsvc.Service) *screen {
 		schemaResults: make(chan schemaResult, 8),
 		queryResults: make(chan queryResult, 4),
 		databaseNodes: make(map[string]*databaseNode),
-		resultColumnRows: make(map[int]*widget.List),
 		service:     service,
 		theme:       material.NewTheme(),
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
@@ -297,7 +296,7 @@ func (s *screen) executeSQL() {
 	sequence, connectionID := s.querySequence, s.selectedConnectionID
 	s.runningQueryID, s.queryRunning, s.queryResult = queryID, true, nil
 	s.resultColumnHeader.Position = layout.Position{}
-	s.resultColumnRows = make(map[int]*widget.List)
+	s.resultColumnRow.Position = layout.Position{}
 	s.status = "正在执行 SQL…"
 	go func() {
 		result, err := s.service.Query(connectionID, sqlText, queryID)
@@ -858,16 +857,6 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		}
 		columnWeights := resultColumnWeights(result.Columns, result.Rows)
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
-			cells := make([]layout.FlexChild, 0, len(result.Columns))
-			for columnIndex, column := range result.Columns {
-				name, weight := column.Name, columnWeights[columnIndex]
-				cells = append(cells, layout.Flexed(weight, func(gtx context) dimensions {
-					return material.Body2(s.theme, name).Layout(gtx)
-				}))
-			}
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, cells...)
-		}))
-		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			s.resultColumnHeader.Axis = layout.Horizontal
 			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns), func(gtx context, index int) dimensions {
 				column := result.Columns[index]
@@ -880,14 +869,9 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			s.resultList.Axis = layout.Vertical
 			return material.List(s.theme, &s.resultList).Layout(gtx, len(result.Rows), func(gtx context, index int) dimensions {
 				row := result.Rows[index]
-				rowList := s.resultColumnRows[index]
-				if rowList == nil {
-					rowList = &widget.List{}
-					s.resultColumnRows[index] = rowList
-				}
-				rowList.Axis = layout.Horizontal
-				rowList.Position = s.resultColumnHeader.Position
-				dims := rowList.List.Layout(gtx, len(result.Columns), func(gtx context, columnIndex int) dimensions {
+				s.resultColumnRow.Axis = layout.Horizontal
+				s.resultColumnRow.Position = s.resultColumnHeader.Position
+				dims := s.resultColumnRow.List.Layout(gtx, len(result.Columns), func(gtx context, columnIndex int) dimensions {
 					cellText := "NULL"
 					if columnIndex < len(row) { cellText = formatResultCell(row[columnIndex]) }
 					width := resultColumnWidth(columnWeights[columnIndex])
@@ -896,7 +880,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 						return material.Caption(s.theme, cellText).Layout(gtx)
 					})
 				})
-				s.resultColumnHeader.Position = rowList.Position
+				s.resultColumnHeader.Position = s.resultColumnRow.Position
 				return dims
 			})
 		}))
