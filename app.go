@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 )
@@ -17,7 +18,8 @@ import (
 // 它组合了配置管理器（负责连接与文件夹的读写）和 ClickHouse 服务（负责真正的查询交互），
 // 前端通过绑定生成的 JS 方法调用这里导出的每一个公开方法。
 type App struct {
-	ctx   context.Context         // Wails 注入的应用上下文，随应用生命周期结束而关闭
+	ctx     context.Context
+	service *appsvc.Service         // Wails 注入的应用上下文，随应用生命周期结束而关闭
 	conf  *config.Manager         // 配置管理器，负责 connections.json 的读写
 	hist  *config.HistoryManager  // 查询历史管理器，负责 history.json 的读写
 	tabs  *config.TabsManager     // 标签页管理器，负责 tabs.json 的读写
@@ -30,13 +32,19 @@ type App struct {
 // 此时尚未连接数据库，连接是在首次调用查询类方法时惰性建立的。
 func NewApp() *App {
 	conf := config.NewManager()
+	hist := config.NewHistoryManager(conf.ConfigDir())
+	tabs := config.NewTabsManager(conf.ConfigDir())
+	saved := config.NewSavedSQLManager(conf.ConfigDir())
+	prefs := config.NewSettingsManager(conf.ConfigDir())
+	chSvc := clickhouse.NewService()
 	return &App{
-		conf:  conf,
-		hist:  config.NewHistoryManager(conf.ConfigDir()),
-		tabs:  config.NewTabsManager(conf.ConfigDir()),
-		saved: config.NewSavedSQLManager(conf.ConfigDir()),
-		prefs: config.NewSettingsManager(conf.ConfigDir()),
-		chSvc: clickhouse.NewService(),
+		conf:    conf,
+		hist:    hist,
+		tabs:    tabs,
+		saved:   saved,
+		prefs:   prefs,
+		chSvc:   chSvc,
+		service: appsvc.NewService(conf, hist, chSvc, prefs),
 	}
 }
 
@@ -65,20 +73,12 @@ func (a *App) GetConnections() ([]config.Connection, error) {
 // SaveConnection 保存（新增或更新）一条连接配置。
 // 保存成功后会使该连接对应的旧连接池失效，确保下次使用新参数重新建连。
 func (a *App) SaveConnection(conn config.Connection) error {
-	if err := a.conf.SaveConnection(conn); err != nil {
-		return err
-	}
-	a.chSvc.Invalidate(conn.ID)
-	return nil
+	return a.service.SaveConnection(conn)
 }
 
 // DeleteConnection 删除指定 ID 的连接配置，并同步释放其连接池。
 func (a *App) DeleteConnection(id string) error {
-	if err := a.conf.DeleteConnection(id); err != nil {
-		return err
-	}
-	a.chSvc.Invalidate(id)
-	return nil
+	return a.service.DeleteConnection(id)
 }
 
 // GetConnection 按 ID 读取单条连接配置，不存在时返回错误。
@@ -89,13 +89,13 @@ func (a *App) GetConnection(id string) (*config.Connection, error) {
 // TestConnection 使用传入的（可能是尚未保存的）连接参数尝试建立连接并 Ping 一次。
 // 用于弹窗中的「测试连接」按钮，失败时错误信息会直接返回给前端展示。
 func (a *App) TestConnection(conn config.Connection) error {
-	return a.chSvc.TestConnection(conn)
+	return a.service.TestConnection(conn)
 }
 
 // Disconnect 断开指定连接的连接池，释放所有底层 TCP 连接。
 // 下次再查询时会自动重新建连。
 func (a *App) Disconnect(connectionID string) {
-	a.chSvc.Invalidate(connectionID)
+	a.service.Disconnect(connectionID)
 }
 
 // GetFolders 返回所有连接文件夹（侧边栏分组）。
@@ -219,16 +219,7 @@ func (a *App) ImportConfigWithOptions(raw string, opts config.ImportOptions) (co
 // queryID 由前端生成并用于取消：调用 CancelQuery(queryID) 可立即中止本次查询，
 // 此时返回 QueryResult.Error = "查询已取消"，已读到的部分行被丢弃。
 func (a *App) Query(connectionID string, sql string, queryID string) (*clickhouse.QueryResult, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	res, err := a.chSvc.QueryWithLimit(*conn, sql, queryID, a.prefs.RowLimit())
-	if err != nil {
-		return nil, err
-	}
-	a.recordHistory(connectionID, sql, res.ElapsedMs, res.Error == "")
-	return res, nil
+	return a.service.Query(connectionID, sql, queryID)
 }
 
 // GetSettings 返回当前用户偏好设置，供前端设置面板回显。
@@ -248,7 +239,7 @@ func (a *App) SaveSettings(settings config.SettingsFile) (config.SettingsFile, e
 // CancelQuery 取消指定 queryID 正在执行的查询。
 // 返回 true 表示查询确实在运行并已被取消；查询已结束时返回 false。
 func (a *App) CancelQuery(queryID string) bool {
-	return a.chSvc.CancelQuery(queryID)
+	return a.service.CancelQuery(queryID)
 }
 
 // recordHistory 把一次执行记录追加到查询历史。
@@ -327,11 +318,7 @@ func (a *App) SaveTabs(snapshot config.TabsFile) error {
 // Execute 在指定连接上执行一条 DDL/DML 语句（CREATE/ALTER/DROP/INSERT 等）。
 // SQL 执行失败不会返回 error，而是把错误信息放在 ExecResult.Error 中。
 func (a *App) Execute(connectionID string, sql string) (*clickhouse.ExecResult, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	return a.chSvc.Exec(*conn, sql)
+	return a.service.Execute(connectionID, sql)
 }
 
 // ExecuteBatch 在指定连接上顺序执行一批 DDL/DML 语句，只做一次跨进程调用。
@@ -339,11 +326,7 @@ func (a *App) Execute(connectionID string, sql string) (*clickhouse.ExecResult, 
 // 采用 continueOnError=true：单条失败不中断，一次收集全部失败点，
 // 调用方可据回执精确回填未成功的语句。SQL 错误放在回执中，不返回 error。
 func (a *App) ExecuteBatch(connectionID string, statements []string) (*clickhouse.ExecBatchResult, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	return a.chSvc.ExecBatch(*conn, statements, true)
+	return a.service.ExecuteBatch(connectionID, statements)
 }
 
 // GetResultExportFormats 返回支持的结果集导出格式元信息，供前端渲染格式选择。
@@ -390,47 +373,27 @@ func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interf
 
 // GetDatabases 查询指定连接上的数据库列表（SHOW DATABASES），用于侧边栏自动展开。
 func (a *App) GetDatabases(connectionID string) ([]string, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	return a.chSvc.GetDatabases(*conn)
+	return a.service.GetDatabases(connectionID)
 }
 
 // GetTables 查询指定数据库下的所有表（名称、引擎、注释）。
 func (a *App) GetTables(connectionID string, database string) ([]clickhouse.TableInfo, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	return a.chSvc.GetTables(*conn, database)
+	return a.service.GetTables(connectionID, database)
 }
 
 // GetViews 查询指定数据库下的所有视图信息（名称、引擎、注释）。
 func (a *App) GetViews(connectionID string, database string) ([]clickhouse.TableInfo, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	return a.chSvc.GetViews(*conn, database)
+	return a.service.GetViews(connectionID, database)
 }
 
 // GetTableSchema 查询指定表的列结构（列名、类型、注释）。
 func (a *App) GetTableSchema(connectionID string, database string, table string) ([]clickhouse.ColumnInfo, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	return a.chSvc.GetTableSchema(*conn, database, table)
+	return a.service.GetTableSchema(connectionID, database, table)
 }
 
 // GetClusters 查询 system.clusters 中的集群拓扑信息（分片、副本、主机地址等）。
 func (a *App) GetClusters(connectionID string) ([]clickhouse.ClusterInfo, error) {
-	conn, err := a.conf.GetConnection(connectionID)
-	if err != nil {
-		return nil, err
-	}
-	return a.chSvc.GetClusters(*conn)
+	return a.service.GetClusters(connectionID)
 }
 
 // OpenConfigFolder 用系统文件管理器打开配置文件所在目录。
