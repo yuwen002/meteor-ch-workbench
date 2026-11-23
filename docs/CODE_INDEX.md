@@ -775,6 +775,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 异步连接测试、数据库列表和表 / 视图加载；使用请求序号过滤过期响应。
 - SQL 编辑器内容通过 `internal/app.Service.Query` 执行，生成独立 queryID；停止操作调用 `CancelQuery`。
 - 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用纵向 Gio 列表滚动，表头和各结果行使用共享滚动位置的横向列表，保持列对齐。
+- 结果表格首列提供「复制行」操作；点击单元格复制当前值，点击行首操作复制整行，使用带引号转义的制表符分隔文本。
 - `resultColumnWidth` 将列宽权重转换为固定 dp 宽度；列宽权重仍由列名和前 30 行样本估算。
 - 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；字段与 DDL 分别使用独立 Gio 列表纵向滚动，DDL 复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
 - `splitDDLLines` 统一 LF / CRLF 换行并保留空行；`schema_test.go` 覆盖空 DDL、LF、CRLF 和空行场景。
