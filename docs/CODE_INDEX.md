@@ -10,11 +10,14 @@
 
 ```
 meteor-ch-workbench/
-├── main.go              Wails 应用入口
+├── main.go              Wails 应用入口（兼容基线）
+├── cmd/meteor-ch-gio/   Gio 原生 GUI 独立入口
+│   └── main.go          Gio 窗口启动与事件循环入口
 ├── app.go               所有前端可调用方法的门面（43 个，含 2 个生命周期回调）
 ├── wails.json           Wails 打包配置
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
+│   ├── gui/gioapp/      Gio SQL 工作台主窗口原型
 │   ├── app_platform_test.go 应用入口平台文件交互行为测试（仓库根目录）
 │   ├── app/             GUI 无关的应用服务编排（连接 / 查询 / 配置 / 历史 / 收藏 / 标签 / 设置）
 │   ├── platform/        文件对话框与本地文件系统能力端口
@@ -43,6 +46,10 @@ meteor-ch-workbench/
 依赖方向是单向的：
 
 ```
+cmd/meteor-ch-gio（Gio 原生 GUI 原型）
+  └─► internal/gui/gioapp（窗口布局与交互状态）
+        └─►（下一阶段接入）internal/app.Service
+
 app.go（Wails 兼容适配层）
   ├─► internal/platform/wailsadapter（系统对话框 / 打开目录）
   ├─► internal/platform/osfs（本地文件读写）
