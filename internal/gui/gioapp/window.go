@@ -1092,7 +1092,7 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 						label := tab.Title
 						if tab.ID == s.activeTabID { label = "● " + label }
 						area := clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops)
-						pointer.CursorPointer.Add(gtx.Ops)
+						pointer.CursorGrab.Add(gtx.Ops)
 						s.tabDrags[index].Add(gtx.Ops)
 						area.Pop()
 						d := material.Button(s.theme, &s.tabClicks[index], label).Layout(gtx)
