@@ -44,7 +44,7 @@ func NewApp() *App {
 		saved:   saved,
 		prefs:   prefs,
 		chSvc:   chSvc,
-		service: appsvc.NewService(conf, hist, chSvc, prefs),
+		service: appsvc.NewService(conf, hist, tabs, saved, chSvc, prefs),
 	}
 }
 
@@ -62,12 +62,12 @@ func (a *App) OnShutdown(ctx context.Context) {
 
 // GetAll 一次性读取全部配置数据（文件夹 + 连接列表），供前端启动时初始化侧边栏。
 func (a *App) GetAll() (*config.DataFile, error) {
-	return a.conf.LoadAll()
+	return a.service.GetAll()
 }
 
 // GetConnections 返回所有已保存的连接配置。
 func (a *App) GetConnections() ([]config.Connection, error) {
-	return a.conf.ListConnections()
+	return a.service.GetConnections()
 }
 
 // SaveConnection 保存（新增或更新）一条连接配置。
@@ -83,7 +83,7 @@ func (a *App) DeleteConnection(id string) error {
 
 // GetConnection 按 ID 读取单条连接配置，不存在时返回错误。
 func (a *App) GetConnection(id string) (*config.Connection, error) {
-	return a.conf.GetConnection(id)
+	return a.service.GetConnection(id)
 }
 
 // TestConnection 使用传入的（可能是尚未保存的）连接参数尝试建立连接并 Ping 一次。
@@ -100,43 +100,43 @@ func (a *App) Disconnect(connectionID string) {
 
 // GetFolders 返回所有连接文件夹（侧边栏分组）。
 func (a *App) GetFolders() ([]config.Folder, error) {
-	return a.conf.ListFolders()
+	return a.service.GetFolders()
 }
 
 // SaveFolder 保存（新增或更新）一个文件夹分组。
 func (a *App) SaveFolder(f config.Folder) error {
-	return a.conf.SaveFolder(f)
+	return a.service.SaveFolder(f)
 }
 
 // DeleteFolder 删除文件夹分组，其下的连接会被移动到根级（不会删除连接本身）。
 func (a *App) DeleteFolder(id string) error {
-	return a.conf.DeleteFolder(id)
+	return a.service.DeleteFolder(id)
 }
 
 // ReorderFolders 按指定 ID 顺序重排文件夹分组，用于侧边栏拖拽排序。
 func (a *App) ReorderFolders(ids []string) error {
-	return a.conf.ReorderFolders(ids)
+	return a.service.ReorderFolders(ids)
 }
 
 // ReorderConnections 按指定 ID 顺序重排连接列表，用于侧边栏拖拽排序。
 func (a *App) ReorderConnections(ids []string) error {
-	return a.conf.ReorderConnections(ids)
+	return a.service.ReorderConnections(ids)
 }
 
 // ExportConfig 导出当前全部配置为 JSON 文本，供前端下载为配置文件。
 func (a *App) ExportConfig() (string, error) {
-	return a.conf.ExportData()
+	return a.service.ExportConfig()
 }
 
 // GetExportFormats 返回支持的全部导出格式元信息，供前端渲染格式选择。
 func (a *App) GetExportFormats() []config.ExportFormat {
-	return config.ExportFormats()
+	return a.service.GetExportFormats()
 }
 
 // ExportConfigByFormat 按指定格式导出配置文本，返回内容、建议扩展名。
 // includePassword 为 false 时会清空密码，便于安全分享。
 func (a *App) ExportConfigByFormat(format string, includePassword bool) (string, string, error) {
-	return a.conf.ExportByFormat(format, includePassword)
+	return a.service.ExportConfigByFormat(format, includePassword)
 }
 
 // SaveExportAs 弹出系统「另存为」对话框，让用户选择保存位置后写入导出内容。
@@ -171,12 +171,12 @@ func (a *App) SaveExportAs(format string, includePassword bool) (string, error) 
 
 // ImportConfig 导入 JSON 配置文本，覆盖现有全部连接与文件夹。
 func (a *App) ImportConfig(raw string) error {
-	return a.conf.ImportData(raw)
+	return a.service.ImportConfig(raw)
 }
 
 // GetImportFormats 返回支持的全部导入格式元信息。
 func (a *App) GetImportFormats() []config.ImportFormat {
-	return config.ImportFormats()
+	return a.service.GetImportFormats()
 }
 
 // PickImportFile 弹出系统文件选择对话框，读取所选文件内容并返回文本与文件名。
@@ -209,7 +209,7 @@ func (a *App) PickImportFile() (string, string, error) {
 
 // ImportConfigWithOptions 按指定格式与模式（覆盖/合并）导入配置文本，返回导入结果概要。
 func (a *App) ImportConfigWithOptions(raw string, opts config.ImportOptions) (config.ImportResult, error) {
-	return a.conf.ImportDataWithOptions(raw, opts)
+	return a.service.ImportConfigWithOptions(raw, opts)
 }
 
 // Query 在指定连接上执行一段 SQL，返回列名与全部结果行。
@@ -224,16 +224,13 @@ func (a *App) Query(connectionID string, sql string, queryID string) (*clickhous
 
 // GetSettings 返回当前用户偏好设置，供前端设置面板回显。
 func (a *App) GetSettings() (config.SettingsFile, error) {
-	return a.prefs.Load()
+	return a.service.GetSettings()
 }
 
 // SaveSettings 校验并保存用户偏好设置，返回保存后实际生效的值（可能被收敛到合法区间）。
 // SQL 写入失败等基础错误走 Go error；越界输入则被 NormalizeRowLimit 静默修正。
 func (a *App) SaveSettings(settings config.SettingsFile) (config.SettingsFile, error) {
-	if err := a.prefs.Save(settings); err != nil {
-		return config.SettingsFile{}, err
-	}
-	return a.prefs.Load()
+	return a.service.SaveSettings(settings)
 }
 
 // CancelQuery 取消指定 queryID 正在执行的查询。
@@ -259,60 +256,48 @@ func (a *App) recordHistory(connectionID, sql string, durationMs float64, succes
 
 // GetQueryHistory 返回全部查询历史，最新的排在最前。
 func (a *App) GetQueryHistory() ([]config.HistoryEntry, error) {
-	return a.hist.List()
+	return a.service.GetQueryHistory()
 }
 
 // ClearQueryHistory 清空全部查询历史。
 func (a *App) ClearQueryHistory() error {
-	return a.hist.Clear()
+	return a.service.ClearQueryHistory()
 }
 
 // DeleteQueryHistory 删除指定 ID 的一条查询历史记录。
 func (a *App) DeleteQueryHistory(id string) error {
-	return a.hist.Delete(id)
+	return a.service.DeleteQueryHistory(id)
 }
 
 // GetSavedSQL 返回全部收藏的 SQL，最近更新的排在最前。
 func (a *App) GetSavedSQL() ([]config.SavedSQL, error) {
-	return a.saved.List()
+	return a.service.GetSavedSQL()
 }
 
 // SaveSQL 收藏一条 SQL 并返回新建的记录。
 // SQL 为空或重复收藏时返回 error，由前端提示用户。
 func (a *App) SaveSQL(name string, sql string, connectionID string) (*config.SavedSQL, error) {
-	item, err := a.saved.Add(config.SavedSQL{
-		Name:         name,
-		SQL:          sql,
-		ConnectionID: connectionID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &item, nil
+	return a.service.SaveSQL(name, sql, connectionID)
 }
 
 // UpdateSavedSQL 修改一条收藏记录的标题与 SQL 文本。
 func (a *App) UpdateSavedSQL(id string, name string, sql string) (*config.SavedSQL, error) {
-	item, err := a.saved.Update(id, name, sql)
-	if err != nil {
-		return nil, err
-	}
-	return &item, nil
+	return a.service.UpdateSavedSQL(id, name, sql)
 }
 
 // DeleteSavedSQL 删除指定 ID 的一条收藏记录。
 func (a *App) DeleteSavedSQL(id string) error {
-	return a.saved.Delete(id)
+	return a.service.DeleteSavedSQL(id)
 }
 
 // GetTabs 返回上次保存的标签页快照，供前端启动时恢复编辑器工作现场。
 func (a *App) GetTabs() (config.TabsFile, error) {
-	return a.tabs.Load()
+	return a.service.GetTabs()
 }
 
 // SaveTabs 保存当前全部标签页与活动标签，供下次启动恢复。
 func (a *App) SaveTabs(snapshot config.TabsFile) error {
-	return a.tabs.Save(snapshot)
+	return a.service.SaveTabs(snapshot)
 }
 
 // Execute 在指定连接上执行一条 DDL/DML 语句（CREATE/ALTER/DROP/INSERT 等）。
@@ -399,7 +384,7 @@ func (a *App) GetClusters(connectionID string) ([]clickhouse.ClusterInfo, error)
 // OpenConfigFolder 用系统文件管理器打开配置文件所在目录。
 // 按操作系统选择不同的打开命令：Windows 用 explorer，macOS 用 open，其余用 xdg-open。
 func (a *App) OpenConfigFolder() error {
-	dir := a.conf.ConfigDir()
+	dir := a.service.ConfigDir()
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
