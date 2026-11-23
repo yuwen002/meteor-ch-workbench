@@ -35,16 +35,10 @@ func NewAppWithPlatform(platform platformport.Platform) *App {
 
 // NewAppWithDependencies 注入平台交互与文件系统实现，供测试及不同 GUI 入口复用。
 func NewAppWithDependencies(platform platformport.Platform, files platformport.FileSystem) *App {
-	conf := config.NewManager()
-	hist := config.NewHistoryManager(conf.ConfigDir())
-	tabs := config.NewTabsManager(conf.ConfigDir())
-	saved := config.NewSavedSQLManager(conf.ConfigDir())
-	prefs := config.NewSettingsManager(conf.ConfigDir())
-	chSvc := clickhouse.NewService()
 	return &App{
 		platform: platform,
 		files:    files,
-		service:  appsvc.NewService(conf, hist, tabs, saved, chSvc, prefs),
+		service:  appsvc.NewDefaultService(),
 	}
 }
 
