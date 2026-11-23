@@ -1,6 +1,10 @@
 package gioapp
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
+)
 
 func TestClampEditorRatio(t *testing.T) {
 	tests := []struct {
@@ -39,5 +43,40 @@ func TestAdjustEditorRatio(t *testing.T) {
 				t.Fatalf("adjustEditorRatio(%v, %v, %d) = %v, want %v", tt.current, tt.delta, tt.height, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResultColumnWeights(t *testing.T) {
+	columns := []clickhouse.ColumnInfo{
+		{Name: "id"},
+		{Name: "description"},
+		{Name: "created_at"},
+	}
+	rows := [][]interface{}{
+		{int64(1), "a short value", "2026-11-23 10:00:00"},
+		{int64(2), "a much longer description used to allocate more room", "2026-11-23 10:01:00"},
+	}
+	weights := resultColumnWeights(columns, rows)
+	if len(weights) != len(columns) {
+		t.Fatalf("got %d weights, want %d", len(weights), len(columns))
+	}
+	if weights[1] <= weights[0] {
+		t.Fatalf("description column should receive more width: %#v", weights)
+	}
+	for i, weight := range weights {
+		if weight < 10 || weight > 32 {
+			t.Fatalf("weight[%d]=%v is outside [10, 32]", i, weight)
+		}
+	}
+}
+
+func TestResultColumnWeightsHandlesMissingCellsAndEmptyRows(t *testing.T) {
+	columns := []clickhouse.ColumnInfo{{Name: "a"}, {Name: "a_very_long_column_name_that_needs_clamping"}}
+	weights := resultColumnWeights(columns, [][]interface{}{{"x"}})
+	if weights[0] != 10 {
+		t.Fatalf("short column weight = %v, want 10", weights[0])
+	}
+	if weights[1] != 32 {
+		t.Fatalf("long column weight = %v, want 32", weights[1])
 	}
 }
