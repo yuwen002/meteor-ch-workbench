@@ -313,6 +313,7 @@ func (s *screen) drainConnectResults() {
 		case result := <-s.connectResults:
 			if result.connectionID != s.selectedConnectionID || result.sequence != s.connectionSequence { continue }
 			if result.err != nil {
+				if s.pendingHistoryConnectionID == result.connectionID { s.pendingHistorySQL, s.pendingHistoryConnectionID = "", "" }
 				s.treeConnected = false
 				s.databaseNames = nil
 				s.status = "连接或加载数据库失败：" + result.err.Error()
@@ -322,6 +323,12 @@ func (s *screen) drainConnectResults() {
 				s.databaseNodes = make(map[string]*databaseNode)
 				for _, name := range result.databases { s.databaseNodes[name] = &databaseNode{} }
 				s.status = fmt.Sprintf("连接成功，已加载 %d 个数据库", len(result.databases))
+				if s.pendingHistoryConnectionID == result.connectionID && s.pendingHistorySQL != "" {
+					s.sqlEditor.SetText(s.pendingHistorySQL)
+					s.pendingHistorySQL, s.pendingHistoryConnectionID = "", ""
+					s.saveActiveTabText()
+					s.executeSQL()
+				}
 			}
 		default:
 			return
@@ -481,6 +488,7 @@ func (s *screen) drainQueryResults() {
 		case result := <-s.queryResults:
 			if result.queryID != s.runningQueryID || result.sequence != s.querySequence { continue }
 			s.queryRunning, s.runningQueryID, s.runningTabID = false, "", ""
+			s.refreshHistory(false)
 			state := s.tabRuntime[result.tabID]
 			if result.err != nil {
 				state.result = nil
@@ -634,6 +642,99 @@ func formatResultCell(value interface{}) string {
 	}
 	return valueText
 }
+func (s *screen) refreshHistory(showError bool) {
+	if s.service == nil { return }
+	entries, err := s.service.GetQueryHistory()
+	if err != nil {
+		if showError { s.status = "读取查询历史失败：" + err.Error() }
+		return
+	}
+	s.historyEntries = entries
+	s.historySelectClicks = make([]widget.Clickable, len(entries))
+	s.historyRunClicks = make([]widget.Clickable, len(entries))
+	s.historyDeleteClicks = make([]widget.Clickable, len(entries))
+}
+
+func (s *screen) openHistory() {
+	s.historyOpen = true
+	s.historyClearConfirm = false
+	s.refreshHistory(true)
+}
+
+func (s *screen) selectHistoryEntry(entry config.HistoryEntry) {
+	s.sqlEditor.SetText(entry.SQL)
+	s.saveActiveTabText()
+	s.status = "已将查询历史回填到当前 SQL 标签"
+}
+
+func (s *screen) runHistoryEntry(entry config.HistoryEntry) {
+	if s.queryRunning || s.exportRunning {
+		s.status = "当前有查询或导出任务，请完成后再执行历史 SQL"
+		return
+	}
+	var target *config.Connection
+	for i := range s.connections {
+		if s.connections[i].ID == entry.ConnectionID {
+			target = &s.connections[i]
+			break
+		}
+	}
+	if target == nil {
+		s.status = "历史记录对应的连接已不存在，请重新选择连接"
+		return
+	}
+	s.sqlEditor.SetText(entry.SQL)
+	s.saveActiveTabText()
+	if s.treeConnected && s.selectedConnectionID == entry.ConnectionID {
+		s.executeSQL()
+		return
+	}
+	s.pendingHistorySQL = entry.SQL
+	s.pendingHistoryConnectionID = entry.ConnectionID
+	s.connectConnection(*target)
+	s.status = "正在切换到历史记录对应的连接…"
+}
+
+func (s *screen) deleteHistoryEntry(id string) {
+	if s.service == nil { return }
+	if err := s.service.DeleteQueryHistory(id); err != nil {
+		s.status = "删除查询历史失败：" + err.Error()
+		return
+	}
+	s.refreshHistory(false)
+	s.status = "已删除一条查询历史"
+}
+
+func (s *screen) clearHistory() {
+	if s.service == nil { return }
+	if err := s.service.ClearQueryHistory(); err != nil {
+		s.status = "清空查询历史失败：" + err.Error()
+		return
+	}
+	s.historyClearConfirm = false
+	s.refreshHistory(false)
+	s.status = "查询历史已清空"
+}
+
+func historySQLPreview(sql string) string {
+	for _, line := range strings.Split(sql, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" { continue }
+		runes := []rune(line)
+		if len(runes) > 96 { return string(runes[:96]) + "…" }
+		return line
+	}
+	return "（空 SQL）"
+}
+
+func (s *screen) historyConnectionName(id string) string {
+	for _, connection := range s.connections {
+		if connection.ID == id { return connection.Name }
+	}
+	if id == "" { return "未知连接" }
+	return "连接已删除"
+}
+
 func (s *screen) connectSelected() {
 	for _, connection := range s.connections {
 		if connection.ID == s.selectedConnectionID {
