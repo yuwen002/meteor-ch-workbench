@@ -128,6 +128,20 @@ func TestSavedSQLUpdate(t *testing.T) {
 	}
 }
 
+func TestSavedSQLUpdateRejectsDuplicateSQL(t *testing.T) {
+	s := newTestSavedSQLManager(t)
+	first, err := s.Add(SavedSQL{Name: "第一条", SQL: "SELECT 1"})
+	if err != nil { t.Fatal(err) }
+	second, err := s.Add(SavedSQL{Name: "第二条", SQL: "SELECT 2"})
+	if err != nil { t.Fatal(err) }
+	if _, err := s.Update(second.ID, "重复", "  SELECT 1  "); !errors.Is(err, ErrSavedSQLDuplicate) {
+		t.Fatalf("want duplicate error, got %v", err)
+	}
+	if _, err := s.Update(first.ID, "自身更新", " SELECT 1 "); err != nil {
+		t.Fatalf("updating an entry without changing its SQL should work: %v", err)
+	}
+}
+
 func TestSavedSQLUpdateEmptyNameFallsBackToFirstLine(t *testing.T) {
 	s := newTestSavedSQLManager(t)
 	item, _ := s.Add(SavedSQL{Name: "原名", SQL: "SELECT 1"})
