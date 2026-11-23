@@ -48,25 +48,25 @@ internal/app          GUI 无关的应用用例
 
 新建连接时应用服务先生成 ID，再持久化并失效对应连接池，避免配置管理器内部生成 ID 后调用方仍持有空 ID 的问题。
 
-根目录 `App` 仍保留 Wails 公开方法签名，作为旧前端兼容适配层。文件对话框和打开目录通过平台端口调用；文件内容读写仍由兼容适配层执行，后续可进一步抽取文件系统端口。应用服务新增 `Close`，由 GUI 生命周期回调统一释放 ClickHouse 连接池。
+根目录 `App` 仍保留 Wails 公开方法签名，作为旧前端兼容适配层。文件对话框和打开目录通过平台端口调用；文件内容读写通过 `internal/platform.FileSystem` 端口执行，默认由 `internal/platform/osfs` 使用 Go 标准库实现。应用服务新增 `Close`，由 GUI 生命周期回调统一释放 ClickHouse 连接池。
 
 ### 第三批：平台能力端口
 
-新增 `internal/platform.Platform`，定义保存文件、打开文件和打开配置目录三个能力；`internal/platform/wailsadapter` 提供 Wails v3 实现。根目录 `App` 通过 `NewAppWithPlatform` 注入平台实现，原有文件对话框和打开目录行为改为调用接口。取消文件对话框仍按原有约定返回空路径，不视为错误。
+新增 `internal/platform.Platform`，定义保存文件、打开文件和打开配置目录三个能力；同时定义独立的 `FileSystem` 端口，封装文件读取、覆盖写入和创建写入句柄。`internal/platform/wailsadapter` 提供 Wails v3 对话框实现，`internal/platform/osfs` 提供基于 Go 标准库的文件系统实现。根目录 `App` 通过 `NewAppWithPlatform` 注入平台实现，并由 `NewAppWithDependencies` 同时注入文件系统实现。配置导入、配置导出和查询结果导出均通过文件系统端口完成，不再直接调用 `os.ReadFile`、`os.WriteFile` 或 `os.Create`。取消文件对话框仍按原有约定返回空路径，不视为错误。
 
 该接口让未来 Gio 入口可以注入 Gio 平台实现，而不需要让应用服务依赖 Wails 或 Gio。
 
 ## 尚未迁移
 
 - Gio 对话框、剪贴板、系统通知等原生平台实现。
-- 配置文件与结果文件的文件读取、写入仍由兼容适配层执行，后续可进一步抽取文件系统端口。
+- Gio 平台对话框与其他系统集成尚未实现；当前文件系统端口已有标准库实现，但应用入口的注入与行为测试仍需继续完善。
 - 剪贴板、系统通知及其他操作系统集成。
 - Community / Pro 功能接口与独立构建入口。
 
 ## 下一步顺序
 
 1. 为应用服务引入可替换依赖接口，补充单元测试。
-2. 为平台接口补充行为测试，并将文件读写进一步隔离。
+2. 为平台对话框与文件系统注入补充行为测试，覆盖取消、读写失败和文件关闭错误。
 3. 让旧 Wails 入口只承担绑定、生命周期和平台适配职责。
 4. 执行 `gofmt`、`go test ./...`、`go vet ./...`、`go build ./...`，修复所有回归。
 5. 再开始 Gio 主窗口、连接树和 SQL 编辑器技术原型。
