@@ -1073,7 +1073,7 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 			return layout.Inset{Right: unit.Dp(5)}.Layout(gtx, func(gtx context) dimensions {
 				if s.renameTabID == tab.ID {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Flexed(1, func(gtx context) dimensions { return material.Editor(s.theme, &s.tabTitleEditor, "标签名称").Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions { gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(140), gtx.Dp(140); return material.Editor(s.theme, &s.tabTitleEditor, "标签名称").Layout(gtx) }),
 						layout.Rigid(func(gtx context) dimensions {
 							d := material.Button(s.theme, &s.tabRenameSave, "保存").Layout(gtx)
 							for s.tabRenameSave.Clicked(gtx) { s.commitTabRename() }
@@ -1100,12 +1100,12 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 						return d
 					}),
 					layout.Rigid(func(gtx context) dimensions {
-						d := material.Button(s.theme, &s.tabRenameClicks[index], "✎").Layout(gtx)
+						d := material.Button(s.theme, &s.tabRenameClicks[index], "改名").Layout(gtx)
 						for s.tabRenameClicks[index].Clicked(gtx) { s.beginTabRename(tab.ID) }
 						return d
 					}),
 					layout.Rigid(func(gtx context) dimensions {
-						d := material.Button(s.theme, &s.tabCloseClicks[index], "×").Layout(gtx)
+						d := material.Button(s.theme, &s.tabCloseClicks[index], "关闭").Layout(gtx)
 						for s.tabCloseClicks[index].Clicked(gtx) { s.closeTab(tab.ID) }
 						return d
 					}),
