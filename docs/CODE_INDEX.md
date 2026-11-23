@@ -88,7 +88,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | 配置导入 | `ImportConfig` / `GetImportFormats` / `PickImportFile` / `ImportConfigWithOptions` | |
 | 查询 | `Query` / `CancelQuery` / `Execute` | SQL 错误放返回体 `.error`，非 Go error；`Query` 必须传 queryID 才能取消 |
 | 结果导出 | `GetResultExportFormats` / `SaveQueryResultAs` | |
-| 历史 | `GetQueryHistory` / `DeleteQueryHistory` / `ClearQueryHistory` / `recordHistory`（私有） | `recordHistory` 在 `Query` 后自动调用 |
+| 历史 | `GetQueryHistory` / `DeleteQueryHistory` / `ClearQueryHistory`（查询后由应用服务自动记录） | `recordHistory` 在 `Query` 后自动调用 |
 | 收藏 SQL | `GetSavedSQL` / `SaveSQL` / `UpdateSavedSQL` / `DeleteSavedSQL` | 无上限、无清空；重复 SQL 拒绝 |
 | 标签 | `GetTabs` / `SaveTabs` | |
 | 元数据 | `GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetClusters` | |
