@@ -81,3 +81,31 @@ func TestStreamRowsHonorsCanceledContext(t *testing.T) {
 	_, err := streamSQLRowsTo(ctx, rows, &bytes.Buffer{}, "csv")
 	if !errors.Is(err, context.Canceled) { t.Fatalf("got %v, want context.Canceled", err) }
 }
+
+
+func TestStreamSQLRowsToReportsProgress(t *testing.T) {
+	rows := &fakeSQLRows{columns: []string{"id"}, rows: make([][]interface{}, 2001)}
+	for i := range rows.rows {
+		rows.rows[i] = []interface{}{i}
+	}
+	var output bytes.Buffer
+	var updates []int64
+	count, err := streamSQLRowsToWithProgress(context.Background(), rows, &output, "csv", func(n int64) {
+		updates = append(updates, n)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2001 {
+		t.Fatalf("count = %d, want 2001", count)
+	}
+	want := []int64{1000, 2000, 2001}
+	if len(updates) != len(want) {
+		t.Fatalf("progress updates = %v, want %v", updates, want)
+	}
+	for i := range want {
+		if updates[i] != want[i] {
+			t.Fatalf("progress updates = %v, want %v", updates, want)
+		}
+	}
+}
