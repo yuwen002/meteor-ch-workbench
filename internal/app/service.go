@@ -5,6 +5,7 @@
 package app
 
 import (
+	"io"
 	"strings"
 	"time"
 
@@ -203,3 +204,14 @@ func (s *Service) DeleteSavedSQL(id string) error { return s.saved.Delete(id) }
 func (s *Service) GetTabs() (config.TabsFile, error) { return s.tabs.Load() }
 func (s *Service) SaveTabs(snapshot config.TabsFile) error { return s.tabs.Save(snapshot) }
 func (s *Service) ConfigDir() string { return s.conf.ConfigDir() }
+
+
+// GetResultExportFormats 返回可用的查询结果导出格式。
+func (s *Service) GetResultExportFormats() []clickhouse.ResultExportFormat {
+	return clickhouse.ResultExportFormats()
+}
+
+// ExportQueryResult 将查询结果写入调用方提供的目标流；文件路径与对话框由 GUI 适配层负责。
+func (s *Service) ExportQueryResult(w io.Writer, format string, columns []string, rows [][]interface{}, target string) (string, error) {
+	return clickhouse.ExportResultTo(w, format, columns, rows, target)
+}
