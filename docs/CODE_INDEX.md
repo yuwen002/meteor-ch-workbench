@@ -923,3 +923,10 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/gui/gioapp/result_view.go`：`buildResultRowViewWithColumnFilters` 在全局关键字筛选基础上支持多个列条件 AND 组合；列条件为大小写无关包含匹配，支持 NULL 文本和空条件忽略。
 - `internal/gui/gioapp/result_view_test.go`：覆盖多列组合、全局与列条件组合、NULL 匹配及空条件。
 - `internal/gui/gioapp/window.go`：结果表头下方按列宽显示独立筛选输入框，支持横向滚动和清空全部列条件；新查询重置筛选状态。
+
+
+### Gio 查询结果列筛选操作符
+
+- `internal/gui/gioapp/result_view.go`：列筛选支持默认包含、`!` 不包含、`=` / `!=` 等值比较、`>` / `<` / `>=` / `<=` 数值比较，以及 `is:null` / `is:not-null`。
+- `internal/gui/gioapp/result_view_test.go`：覆盖文本操作符、数值比较、NULL 判断和多列操作符组合。
+- `internal/gui/gioapp/window.go`：结果表格显示操作符说明；列筛选仍与对应列对齐，并与全局关键字按 AND 组合。
