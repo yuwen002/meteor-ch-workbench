@@ -80,6 +80,8 @@ type screen struct {
 	resultList widget.List
 	resultColumnHeader widget.List
 	resultColumnRow widget.List
+	resultCellClicks [][]widget.Clickable
+	resultRowCopyClicks []widget.Clickable
 	connectionSequence uint64
 	databaseSequence uint64
 	databaseNames []string
@@ -297,6 +299,8 @@ func (s *screen) executeSQL() {
 	s.runningQueryID, s.queryRunning, s.queryResult = queryID, true, nil
 	s.resultColumnHeader.Position = layout.Position{}
 	s.resultColumnRow.Position = layout.Position{}
+	s.resultCellClicks = nil
+	s.resultRowCopyClicks = nil
 	s.status = "正在执行 SQL…"
 	go func() {
 		result, err := s.service.Query(connectionID, sqlText, queryID)
@@ -318,6 +322,15 @@ func (s *screen) drainQueryResults() {
 			s.queryRunning, s.runningQueryID = false, ""
 			if result.err != nil { s.queryResult = nil; s.status = "查询失败：" + result.err.Error(); continue }
 			s.queryResult = result.result
+			s.resultCellClicks = nil
+			s.resultRowCopyClicks = nil
+			if result.result != nil {
+				s.resultCellClicks = make([][]widget.Clickable, len(result.result.Rows))
+				s.resultRowCopyClicks = make([]widget.Clickable, len(result.result.Rows))
+				for rowIndex := range result.result.Rows {
+					s.resultCellClicks[rowIndex] = make([]widget.Clickable, len(result.result.Columns))
+				}
+			}
 			if result.result == nil { s.status = "查询未返回结果" } else if result.result.Error != "" { s.status = "SQL 执行失败：" + result.result.Error } else { s.status = fmt.Sprintf("查询完成：%d 行 · %.2f ms", result.result.RowCount, result.result.ElapsedMs) }
 		default: return
 		}
@@ -372,6 +385,18 @@ func splitDDLLines(ddl string) []string {
 	ddl = strings.ReplaceAll(ddl, "\r\n", "\n")
 	ddl = strings.ReplaceAll(ddl, "\r", "\n")
 	return strings.Split(ddl, "\n")
+}
+
+func formatResultRow(row []interface{}) string {
+	cells := make([]string, len(row))
+	for i, value := range row {
+		cell := formatResultCell(value)
+		if strings.ContainsAny(cell, "\\t\\r\\n\\\"") {
+			cell = "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
+		}
+		cells[i] = cell
+	}
+	return strings.Join(cells, "\\t")
 }
 
 func formatResultCell(value interface{}) string {
@@ -858,9 +883,13 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		columnWeights := resultColumnWeights(result.Columns, result.Rows)
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			s.resultColumnHeader.Axis = layout.Horizontal
-			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns), func(gtx context, index int) dimensions {
-				column := result.Columns[index]
-				width := resultColumnWidth(columnWeights[index])
+			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns)+1, func(gtx context, index int) dimensions {
+				if index == 0 {
+					gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(80), gtx.Dp(80)
+					return material.Body2(s.theme, "操作").Layout(gtx)
+				}
+				column := result.Columns[index-1]
+				width := resultColumnWidth(columnWeights[index-1])
 				gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
 				return material.Body2(s.theme, column.Name).Layout(gtx)
 			})
@@ -871,15 +900,34 @@ func (s *screen) layoutResults(gtx context) dimensions {
 				row := result.Rows[index]
 				s.resultColumnRow.Axis = layout.Horizontal
 				s.resultColumnRow.Position = s.resultColumnHeader.Position
-				dims := s.resultColumnRow.List.Layout(gtx, len(result.Columns), func(gtx context, columnIndex int) dimensions {
+				dims := s.resultColumnRow.List.Layout(gtx, len(result.Columns)+1, func(gtx context, columnIndex int) dimensions {
+					if columnIndex == 0 {
+						gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(80), gtx.Dp(80)
+						return s.resultRowCopyClicks[index].Layout(gtx, func(gtx context) dimensions {
+							return material.Caption(s.theme, "复制行").Layout(gtx)
+						})
+					}
+					cellIndex := columnIndex - 1
 					cellText := "NULL"
-					if columnIndex < len(row) { cellText = formatResultCell(row[columnIndex]) }
-					width := resultColumnWidth(columnWeights[columnIndex])
+					if cellIndex < len(row) { cellText = formatResultCell(row[cellIndex]) }
+					width := resultColumnWidth(columnWeights[cellIndex])
 					gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
-					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions {
-						return material.Caption(s.theme, cellText).Layout(gtx)
+					return s.resultCellClicks[index][cellIndex].Layout(gtx, func(gtx context) dimensions {
+						return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions {
+							return material.Caption(s.theme, cellText).Layout(gtx)
+						})
 					})
 				})
+				for s.resultRowCopyClicks[index].Clicked(gtx) {
+					gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatResultRow(row)))})
+					s.status = fmt.Sprintf("已复制第 %d 行（制表符分隔）", index+1)
+				}
+				for cellIndex := range row {
+					if cellIndex < len(s.resultCellClicks[index]) && s.resultCellClicks[index][cellIndex].Clicked(gtx) {
+						gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatResultCell(row[cellIndex])))})
+						s.status = fmt.Sprintf("已复制第 %d 行第 %d 列", index+1, cellIndex+1)
+					}
+				}
 				s.resultColumnHeader.Position = s.resultColumnRow.Position
 				return dims
 			})
