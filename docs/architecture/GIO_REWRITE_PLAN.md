@@ -103,7 +103,15 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 只有新领域 / 用例 / 基础设施实现、GUI 接入、测试与验收完成后，才计为完成。
 - 旧代码删除与全平台验收独立统计，不能用功能数量代替。
 
-## 6. 当前明确未完成项
+## 6. 当前执行记录（2026-11-24）
+
+### 阶段 A 已落地的第一块
+- 新增 `internal/domain/connection`：独立连接领域模型、协议类型、必要字段校验与不泄露凭据的端点描述。
+- 新增 `internal/application/connection`：连接仓库 / 连通性测试 / ID 生成端口，以及列表、保存、删除、测试用例。
+- 新增领域与应用层单元测试：覆盖必填字段、端口和协议边界、ID 生成失败、保存归一化、删除不存在连接、测试不落盘及底层错误链。
+- 以上代码不依赖 Gio、旧 `internal/app`、旧 `internal/config`、旧 `internal/clickhouse`，属于新架构代码；但目前尚未接入 Gio，也没有新的 ClickHouse / storage 基础设施实现。
+
+### 当前仍未完成项
 
 - Gio 入口仍调用 internal/app.NewDefaultService。
 - gioapp 仍直接引用旧 internal/app、internal/config、internal/clickhouse 类型。
