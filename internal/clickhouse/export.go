@@ -613,6 +613,13 @@ func cellText(v interface{}) string {
 		return t
 	case []byte:
 		return string(t)
+	case map[string]interface{}, []interface{}:
+		// 复合值采用 JSON 表示，避免 fmt 的 map[k:v] / [a b] 形式
+		// 变成无法稳定解析的导出内容。
+		if encoded, err := json.Marshal(t); err == nil {
+			return string(encoded)
+		}
+		return fmt.Sprintf("%v", v)
 	default:
 		return fmt.Sprintf("%v", v)
 	}
