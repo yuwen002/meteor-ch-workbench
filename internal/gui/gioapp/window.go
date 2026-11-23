@@ -14,14 +14,17 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+
+	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
+	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 )
 
 type context = layout.Context
 type dimensions = layout.Dimensions
 
 // Run 运行 Gio 窗口事件循环。
-func Run(window *app.Window) error {
-	state := newScreen()
+func Run(window *app.Window, service *appsvc.Service) error {
+	state := newScreen(service)
 	var ops op.Ops
 	for {
 		switch event := window.Event().(type) {
@@ -36,6 +39,10 @@ func Run(window *app.Window) error {
 }
 
 type screen struct {
+	service            *appsvc.Service
+	connections        []config.Connection
+	connectionClicks   []widget.Clickable
+	selectedConnectionID string
 	theme       *material.Theme
 	sqlEditor   widget.Editor
 	execute     widget.Clickable
@@ -51,13 +58,24 @@ type screen struct {
 	sidebarOpen bool
 }
 
-func newScreen() *screen {
+func newScreen(service *appsvc.Service) *screen {
 	s := &screen{
+		service:     service,
 		theme:       material.NewTheme(),
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
 		lightTheme:  false,
 		sidebarOpen: true,
 		editorRatio: 0.62,
+	}
+	if service != nil {
+		connections, err := service.GetConnections()
+		if err != nil {
+			s.status = "读取连接配置失败：" + err.Error()
+		} else {
+			s.connections = connections
+			s.connectionClicks = make([]widget.Clickable, len(connections))
+			s.status = fmt.Sprintf("已加载 %d 个连接配置 · 请选择一个连接", len(connections))
+		}
 	}
 	s.sqlEditor.SetText("SELECT\n    database,\n    table,\n    engine\nFROM system.tables\nORDER BY database, table\nLIMIT 100;")
 	s.applyTheme()
@@ -165,29 +183,29 @@ func (s *screen) layoutWorkspace(gtx context) dimensions {
 
 func (s *screen) layoutSidebar(gtx context) dimensions {
 	return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		children := []layout.FlexChild{
 			layout.Rigid(func(gtx context) dimensions {
-				return material.H6(s.theme, "连接与数据库").Layout(gtx)
+				return material.H6(s.theme, "已保存连接").Layout(gtx)
 			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body1(s.theme, "▾ ClickHouse 连接").Layout(gtx)
-			}),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body2(s.theme, "　▾ default").Layout(gtx)
-			}),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body2(s.theme, "　　▤ system").Layout(gtx)
-			}),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body2(s.theme, "　　　▤ tables").Layout(gtx)
-			}),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body2(s.theme, "　　　▤ columns").Layout(gtx)
-			}),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body2(s.theme, "　　　▤ query_log").Layout(gtx)
-			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
+		}
+		if len(s.connections) == 0 {
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return material.Body2(s.theme, "暂无连接配置").Layout(gtx)
+			}))
+		}
+		for i := range s.connections {
+			connection := s.connections[i]
+			if s.connectionClicks[i].Clicked(gtx) {
+				s.selectedConnectionID = connection.ID
+				s.status = fmt.Sprintf("已选择连接：%s（%s:%d）· 尚未建立数据库连接", connection.Name, connection.Host, connection.Port)
+			}
+			label := fmt.Sprintf("%s  ·  %s:%d", connection.Name, connection.Host, connection.Port)
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return material.Button(s.theme, &s.connectionClicks[i], label).Layout(gtx)
+			}))
+		}
+		children = append(children,
 			layout.Rigid(layout.Spacer{Height: unit.Dp(20)}.Layout),
 			layout.Rigid(func(gtx context) dimensions {
 				return material.Body1(s.theme, "常用功能").Layout(gtx)
@@ -198,10 +216,8 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 			layout.Rigid(func(gtx context) dimensions {
 				return material.Body2(s.theme, "收藏 SQL").Layout(gtx)
 			}),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body2(s.theme, "最近连接").Layout(gtx)
-			}),
 		)
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
 }
 
