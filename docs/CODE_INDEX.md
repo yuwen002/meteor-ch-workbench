@@ -736,3 +736,17 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 | `vite.config.ts` | Monaco 已切 `editor.api.js` 精简入口并懒加载，单包 2,753 kB（gzip 716 kB），属编辑器核心固有体积；`chunkSizeWarningLimit` 已调至 3000，构建无警告 | P6-4（已完成） |
 | `connections.json` | 密码明文存储 | P5（已主动跳过） |
 | `README.md` / `docs/API.md` | 修改公开方法后需手动同步，无自动化校验 | 无 |
+
+## 原生 GUI 迁移新增目录
+
+### `internal/app/`
+
+| 文件 | 职责 |
+|---|---|
+| `service.go` | 与 GUI 框架无关的应用服务入口；编排连接管理、SQL 查询/取消/历史、DDL/DML 执行和数据库元数据读取。当前为第一批迁移，其他应用用例仍在根目录 Wails 适配层，后续继续搬迁。 |
+
+### `docs/architecture/`
+
+| 文件 | 职责 |
+|---|---|
+| `NATIVE_GUI_MIGRATION.md` | Gio 原生 GUI 迁移目标分层、当前迁移边界、阶段顺序与验收原则。 |
