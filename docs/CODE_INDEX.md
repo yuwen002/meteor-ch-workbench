@@ -783,7 +783,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 ### [internal/gui/gioapp/query_test.go](../internal/gui/gioapp/query_test.go)
 
-职责：验证查询结果单元格格式化，包括 NULL、数字、长文本和多字节 Unicode 截断。
+职责：验证查询结果单元格显示格式、复制完整值、整行制表符分隔与引号转义，以及列宽边界。
 
 ### [internal/app/service.go](../internal/app/service.go)
 
