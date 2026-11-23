@@ -1,6 +1,6 @@
 module github.com/yuwen002/meteor-ch-workbench
 
-go 1.26.0
+go 1.26.11
 
 require (
 	gioui.org v0.10.3
