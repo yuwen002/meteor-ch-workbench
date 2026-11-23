@@ -1,0 +1,64 @@
+frontend/src/utils/queryState.ts
+  h_a3f313f3d96276 1-48
+internal/clickhouse/cancel_test.go
+  h_a3f313f3d96276 31,50,70,90,107,110,125-233
+internal/clickhouse/exec.go
+  h_a3f313f3d96276 1-155
+frontend/src/utils/connectionError.ts
+  h_a3f313f3d96276 1-16
+internal/clickhouse/query.go
+  h_a3f313f3d96276 1-97
+docs/API.md
+  h_a3f313f3d96276 102,109-110
+frontend/src/utils/queryState.test.ts
+  h_a3f313f3d96276 1-150
+internal/clickhouse/service.go
+  h_a3f313f3d96276 103,111,117-118,128-132,137,143-161,164-167,180,280,282,331
+frontend/src/locales/zh.ts
+  h_a3f313f3d96276 171-172
+frontend/src/components/ResultHeaderMenu.test.ts
+  h_a3f313f3d96276 1-135
+frontend/src/views/QueryEditor.vue
+  h_a3f313f3d96276 17-23,194-197,200,204,214,217,308-312,314,316,453-462,466,484
+frontend/src/utils/tabs.test.ts
+  h_a3f313f3d96276 11
+frontend/src/components/ResultToolbarInfo.test.ts
+  h_a3f313f3d96276 1-113
+.trae/rules/roadmap.md
+  h_a3f313f3d96276 5,24,941,952-958,979-986,994,996-998,1001-1013,1027-1033,1045-1052,1065-1071
+frontend/src/components/ResultToolbarActions.test.ts
+  h_a3f313f3d96276 1-145
+.trae/rules/project_rules.md
+  h_a3f313f3d96276 52-53
+docs/CODE_INDEX.md
+  h_a3f313f3d96276 18,29,96,100,102-103,105-106,108-110,114-150,356-359,649-671,681-694
+frontend/src/components/ResultGrid.vue
+  h_a3f313f3d96276 65,220,826-827,829-838
+frontend/package.json
+  h_a3f313f3d96276 10-11,25,27
+frontend/src/locales/en.ts
+  h_a3f313f3d96276 263-265
+frontend/src/components/testUtils.ts
+  h_a3f313f3d96276 1-37
+frontend/vitest.config.ts
+  h_a3f313f3d96276 1-16
+frontend/src/utils/tabs.ts
+  h_a3f313f3d96276 12,29,61
+frontend/src/components/ResultCellMenu.test.ts
+  h_a3f313f3d96276 1-88
+internal/clickhouse/metadata.go
+  h_a3f313f3d96276 1-280
+frontend/src/utils/connectionError.test.ts
+  h_a3f313f3d96276 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "8d39ce39d2861925343ec06b25e2c00d226d4de6",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
