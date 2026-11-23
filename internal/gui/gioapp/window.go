@@ -1,7 +1,7 @@
 // Package gioapp 提供 Meteor CH Workbench 的 Gio 原生界面原型。
 //
 // 当前阶段已接入共享应用服务，支持真实连接测试、数据库列表以及表 / 视图导航；
-// SQL 执行与结果绑定仍在后续阶段实现。
+// SQL 执行、取消和结果展示已接入共享应用服务。
 package gioapp
 
 import (
@@ -350,7 +350,9 @@ func (s *screen) layoutToolbar(gtx context) dimensions {
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx context) dimensions {
-				return material.Button(s.theme, &s.execute, "执行 SQL").Layout(gtx)
+				label := "执行 SQL"
+				if s.queryRunning { label = "执行中…" }
+				return material.Button(s.theme, &s.execute, label).Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx context) dimensions {
