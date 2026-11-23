@@ -76,6 +76,12 @@ func newScreen(service *appsvc.Service) *screen {
 		editorRatio: 0.62,
 	}
 	if service != nil {
+		if settings, err := service.GetSettings(); err == nil {
+			s.sidebarOpen = !settings.SidebarCollapsed
+			s.editorRatio = float32(settings.EditorRatio)
+		} else {
+			s.status = "读取工作台设置失败：" + err.Error()
+		}
 		connections, err := service.GetConnections()
 		if err != nil {
 			s.status = "读取连接配置失败：" + err.Error()
@@ -88,6 +94,22 @@ func newScreen(service *appsvc.Service) *screen {
 	s.sqlEditor.SetText("SELECT\n    database,\n    table,\n    engine\nFROM system.tables\nORDER BY database, table\nLIMIT 100;")
 	s.applyTheme()
 	return s
+}
+
+func (s *screen) saveWorkspaceLayout() {
+	if s.service == nil {
+		return
+	}
+	settings, err := s.service.GetSettings()
+	if err != nil {
+		s.status = "读取工作台设置失败：" + err.Error()
+		return
+	}
+	settings.SidebarCollapsed = !s.sidebarOpen
+	settings.EditorRatio = float64(clampEditorRatio(s.editorRatio))
+	if _, err := s.service.SaveSettings(settings); err != nil {
+		s.status = "保存工作台布局失败：" + err.Error()
+	}
 }
 
 func (s *screen) applyTheme() {
@@ -116,12 +138,15 @@ func (s *screen) layout(gtx context) dimensions {
 	}
 	for s.sidebarToggle.Clicked(gtx) {
 		s.sidebarOpen = !s.sidebarOpen
+		s.saveWorkspaceLayout()
 	}
 	for s.editorSmaller.Clicked(gtx) {
 		s.editorRatio = clampEditorRatio(s.editorRatio - 0.05)
+		s.saveWorkspaceLayout()
 	}
 	for s.editorLarger.Clicked(gtx) {
 		s.editorRatio = clampEditorRatio(s.editorRatio + 0.05)
+		s.saveWorkspaceLayout()
 	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -281,7 +306,10 @@ func (s *screen) layoutSplitControls(gtx context) dimensions {
 		}
 	}
 	if !s.splitDrag.Pressed() {
-		s.dragActive = false
+		if s.dragActive {
+			s.dragActive = false
+			s.saveWorkspaceLayout()
+		}
 	}
 
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
