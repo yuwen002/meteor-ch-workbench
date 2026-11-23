@@ -884,3 +884,10 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/clickhouse/service.go`：`serializeValue` 将 `[]byte` 作为文本字符串处理，避免 JSON 默认将其编码为 Base64。
 - `internal/clickhouse/export.go`：`cellText` 对数组、切片和映射使用 JSON 表示，避免 Go 默认格式化输出不稳定。
 - `internal/clickhouse/stream_export_test.go`：模拟游标覆盖字节切片、数组、映射和 `time.Time` 的 CSV 输出；真实 ClickHouse 驱动类型仍需集成验证。
+
+
+### Gio 表数据预览
+
+- `internal/gui/gioapp/table_preview.go`：`buildTablePreviewSQL` 构造当前表的前 100 行预览 SQL；库名 / 表名使用反引号引用并转义标识符内部反引号。
+- `internal/gui/gioapp/table_preview_test.go`：覆盖普通库表、特殊标识符转义和 LIMIT 默认值。
+- `window.go` 的表详情面板提供「预览数据」按钮，将 SQL 回填到当前标签并复用已有查询链路；存在查询 / 导出任务时不重复发起。
