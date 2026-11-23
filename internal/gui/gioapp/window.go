@@ -130,6 +130,7 @@ type screen struct {
 	resultColumnFilterEditors []widget.Editor
 	resultColumnFilterLast []string
 	resultColumnFilterClear widget.Clickable
+	resultColumnFilterClearClicks []widget.Clickable
 	resultRowCopyClicks []widget.Clickable
 	connectionSequence uint64
 	databaseSequence uint64
@@ -1846,6 +1847,7 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultColumnDragActive = make([]bool, len(result.Columns))
 	s.resultSortClicks = make([]widget.Clickable, len(result.Columns))
 	s.resultColumnFilterEditors = make([]widget.Editor, len(result.Columns))
+	s.resultColumnFilterClearClicks = make([]widget.Clickable, len(result.Columns))
 	s.resultColumnFilterLast = make([]string, len(result.Columns))
 	for i := range s.resultColumnFilterEditors {
 		s.resultColumnFilterEditors[i].SingleLine = true
@@ -2006,6 +2008,11 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			return material.Caption(s.theme, "列条件：默认包含；!不包含；= 等于；!= 不等于；>、<、>=、<= 数值或时间比较；between:下界..上界 闭区间；时间可用 YYYY-MM-DD / DateTime / RFC3339；is:null / is:not-null 判断空值").Layout(gtx)
 		}))
+		if summaries := resultColumnFilterSummary(result.Columns, columnFilters); len(summaries) > 0 {
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return material.Caption(s.theme, "生效条件："+strings.Join(summaries, "；")).Layout(gtx)
+			}))
+		}
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			s.resultColumnHeader.Axis = layout.Horizontal
 			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns)+1, func(gtx context, index int) dimensions {
@@ -2035,8 +2042,19 @@ func (s *screen) layoutResults(gtx context) dimensions {
 							layout.Rigid(func(gtx context) dimensions { return s.layoutResultColumnResizeHandle(gtx, columnIndex) }),
 						)
 					}),
-					layout.Rigid(func(gtx context) dimensions {
-						return material.Editor(s.theme, &s.resultColumnFilterEditors[columnIndex], "筛选 "+result.Columns[columnIndex].Name).Layout(gtx)
+						layout.Rigid(func(gtx context) dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, func(gtx context) dimensions { return material.Editor(s.theme, &s.resultColumnFilterEditors[columnIndex], "筛选 "+result.Columns[columnIndex].Name).Layout(gtx) }),
+							layout.Rigid(func(gtx context) dimensions {
+								d := material.Button(s.theme, &s.resultColumnFilterClearClicks[columnIndex], "清除").Layout(gtx)
+								for s.resultColumnFilterClearClicks[columnIndex].Clicked(gtx) {
+									s.resultColumnFilterEditors[columnIndex].SetText("")
+									if columnIndex < len(s.resultColumnFilterLast) { s.resultColumnFilterLast[columnIndex] = "" }
+									s.resultList.Position = layout.Position{}
+								}
+								return d
+							}),
+						)
 					}),
 				)
 			})
