@@ -1255,6 +1255,7 @@ func (s *screen) deleteSavedSQL(id string) {
 		if entry.ID != id { filtered = append(filtered, entry) }
 	}
 	s.savedSQLEntries = filtered
+	s.savedSQLList.Position = layout.Position{}
 	s.status = "已删除一条收藏 SQL"
 }
 
