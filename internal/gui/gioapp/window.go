@@ -858,7 +858,7 @@ func (s *screen) layout(gtx context) dimensions {
 	for s.detailsToggle.Clicked(gtx) {
 		if s.selectedSchemaTable != "" {
 			s.detailsOpen = !s.detailsOpen
-			if s.detailsOpen { s.historyOpen = false }
+			if s.detailsOpen { s.historyOpen = false; s.savedSQLOpen = false }
 		}
 	}
 	for s.historyToggle.Clicked(gtx) {
