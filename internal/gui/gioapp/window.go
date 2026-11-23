@@ -129,6 +129,7 @@ type screen struct {
 	savedSQLRefresh widget.Clickable
 	savedSQLScopeToggle widget.Clickable
 	savedSQLOnlyCurrentConnection bool
+	savedSQLFilterState string
 	savedSQLEditingID string
 	historyToggle widget.Clickable
 	historyEntries []config.HistoryEntry
@@ -1183,6 +1184,8 @@ func savedSQLMatches(entry config.SavedSQL, keyword, connectionID, connectionNam
 
 func (s *screen) filteredSavedSQL() []savedSQLListItem {
 	keyword := s.savedSQLSearch.Text()
+	filterState := fmt.Sprintf("%s|%s|%t", strings.ToLower(strings.TrimSpace(keyword)), s.selectedConnectionID, s.savedSQLOnlyCurrentConnection)
+	if filterState != s.savedSQLFilterState { s.savedSQLList.Position = layout.Position{}; s.savedSQLFilterState = filterState }
 	filtered := make([]savedSQLListItem, 0, len(s.savedSQLEntries))
 	for i, entry := range s.savedSQLEntries {
 		if !savedSQLMatches(entry, keyword, s.selectedConnectionID, s.historyConnectionName(entry.ConnectionID), s.savedSQLOnlyCurrentConnection) { continue }
