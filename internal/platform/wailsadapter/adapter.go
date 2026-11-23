@@ -32,7 +32,7 @@ func (a *Adapter) SaveFile(request platform.SaveFileRequest) (string, error) {
 	}
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
-		if strings.Contains(err.Error(), "cancelled") {
+		if isDialogCancelled(err) {
 			return "", nil
 		}
 		return "", err
@@ -49,7 +49,7 @@ func (a *Adapter) OpenFile(request platform.OpenFileRequest) (string, error) {
 	}
 	path, err := dialog.PromptForSingleSelection()
 	if err != nil {
-		if strings.Contains(err.Error(), "cancelled") {
+		if isDialogCancelled(err) {
 			return "", nil
 		}
 		return "", err
@@ -69,4 +69,10 @@ func (a *Adapter) OpenDirectory(path string) error {
 		cmd = exec.Command("xdg-open", path)
 	}
 	return cmd.Start()
+}
+
+// isDialogCancelled normalizes Wails dialog cancellation errors.
+// Wails cancellation wording may differ in capitalization between platforms.
+func isDialogCancelled(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "cancelled")
 }
