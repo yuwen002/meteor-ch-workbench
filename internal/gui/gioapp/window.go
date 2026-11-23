@@ -1983,7 +1983,6 @@ func (s *screen) layoutResults(gtx context) dimensions {
 					return material.Body2(s.theme, "操作").Layout(gtx)
 				}
 				columnIndex := index - 1
-				column := result.Columns[columnIndex]
 				width := resultColumnWidth(columnWeights[columnIndex])
 				if columnIndex < len(s.resultColumnWidths) && s.resultColumnWidths[columnIndex] > 0 {
 					width = s.resultColumnWidths[columnIndex]
