@@ -69,9 +69,13 @@ func TestCompareResultValuesUsesTimeOrder(t *testing.T) {
 	if compareResultValues(older, newer) >= 0 {
 		t.Fatalf("expected older timestamp before newer")
 	}
-	parsed, err := parseResultTime(time.RFC3339)
-	if err == nil || !parsed.IsZero() {
-		t.Fatalf("invalid timestamp layout unexpectedly parsed: %v, %v", parsed, err)
+	parsed, err := parseResultTime("2026-01-02T09:00:00Z")
+	if err != nil {
+		t.Fatalf("parseResultTime() error = %v", err)
+	}
+	want := time.Date(2026, 1, 2, 9, 0, 0, 0, time.UTC)
+	if !parsed.Equal(want) {
+		t.Fatalf("parsed timestamp = %v, want %v", parsed, want)
 	}
 }
 
