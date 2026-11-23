@@ -2004,7 +2004,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			)
 		}))
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
-			return material.Caption(s.theme, "列条件：默认包含；!不包含；= 等于；!= 不等于；>、<、>=、<= 数值比较；is:null / is:not-null 判断空值").Layout(gtx)
+			return material.Caption(s.theme, "列条件：默认包含；!不包含；= 等于；!= 不等于；>、<、>=、<= 数值或时间比较；时间可用 YYYY-MM-DD / DateTime / RFC3339；is:null / is:not-null 判断空值").Layout(gtx)
 		}))
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			s.resultColumnHeader.Axis = layout.Horizontal
