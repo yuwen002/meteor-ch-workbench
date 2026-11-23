@@ -185,7 +185,7 @@ func (a *App) PickImportFile() (string, string, error) {
 		return "", "", err
 	}
 	name := path
-	if i := strings.LastIndexAny(path, `/\\`); i >= 0 {
+	if i := strings.LastIndexAny(path, "/\\"); i >= 0 {
 		name = path[i+1:]
 	}
 	return string(content), name, nil
