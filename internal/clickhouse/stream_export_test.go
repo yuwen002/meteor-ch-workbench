@@ -131,7 +131,7 @@ func TestStreamSQLRowsToSerializesCommonClickHouseTypes(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("count = %d, want 1", count)
 	}
-	want := "string_bytes,array,map,datetime64\n中文文本,\"[\\\"alpha\\\",\\\"beta\\\"]\",\"{\\\"region\\\":\\\"sg\\\"}\",2026-11-23T10:30:00Z\n"
+	want := "string_bytes,array,map,datetime64\n中文文本,\"[\"\"alpha\"\",\"\"beta\"\"]\",\"{\"\"region\"\":\"\"sg\"\"}\",2026-11-23T10:30:00Z\n"
 	if output.String() != want {
 		t.Fatalf("CSV mismatch:\n got: %q\nwant: %q", output.String(), want)
 	}
