@@ -46,9 +46,9 @@ meteor-ch-workbench/
 依赖方向是单向的：
 
 ```
-cmd/meteor-ch-gio（Gio 原生 GUI 原型）
-  └─► internal/gui/gioapp（窗口布局与交互状态）
-        └─►（下一阶段接入）internal/app.Service
+cmd/meteor-ch-gio（Gio 原生 GUI）
+  └─► internal/gui/gioapp（窗口布局、连接树与交互状态）
+        └─► internal/app.Service
 
 app.go（Wails 兼容适配层）
   ├─► internal/platform/wailsadapter（系统对话框 / 打开目录）
