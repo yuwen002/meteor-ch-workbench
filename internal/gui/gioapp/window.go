@@ -334,6 +334,9 @@ func (s *screen) drainQueryResults() {
 			s.resultRowCopyClicks = nil
 			if result.result != nil {
 				s.resultColumnWidths = make([]unit.Dp, len(result.result.Columns))
+				for columnIndex, weight := range resultColumnWeights(result.result.Columns, result.result.Rows) {
+					s.resultColumnWidths[columnIndex] = resultColumnWidth(weight)
+				}
 				s.resultColumnDrags = make([]gesture.Drag, len(result.result.Columns))
 				s.resultColumnDragLastX = make([]float32, len(result.result.Columns))
 				s.resultColumnDragActive = make([]bool, len(result.result.Columns))
@@ -418,7 +421,9 @@ func (s *screen) layoutResultColumnResizeHandle(gtx context, columnIndex int) di
 				if current <= 0 {
 					current = minResultColumnWidth
 				}
-				s.resultColumnWidths[columnIndex] = adjustResultColumnWidth(current, event.Position.X-s.resultColumnDragLastX[columnIndex])
+				deltaPx := int(event.Position.X - s.resultColumnDragLastX[columnIndex])
+				deltaDp := float32(gtx.Metric.PxToDp(deltaPx))
+				s.resultColumnWidths[columnIndex] = adjustResultColumnWidth(current, deltaDp)
 				s.resultColumnDragLastX[columnIndex] = event.Position.X
 			}
 		}
