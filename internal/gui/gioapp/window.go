@@ -112,6 +112,7 @@ type screen struct {
 	treeConnected bool
 	service *appsvc.Service
 	historyOpen bool
+	historyToggle widget.Clickable
 	historyEntries []config.HistoryEntry
 	historyList widget.List
 	historySelectClicks []widget.Clickable
@@ -834,7 +835,11 @@ func (s *screen) layout(gtx context) dimensions {
 	for s.detailsToggle.Clicked(gtx) {
 		if s.selectedSchemaTable != "" {
 			s.detailsOpen = !s.detailsOpen
+			if s.detailsOpen { s.historyOpen = false }
 		}
+	}
+	for s.historyToggle.Clicked(gtx) {
+		if s.historyOpen { s.historyOpen = false } else { s.detailsOpen = false; s.openHistory() }
 	}
 	for s.editorSmaller.Clicked(gtx) {
 		s.editorRatio = clampEditorRatio(s.editorRatio - 0.05)
@@ -884,6 +889,12 @@ func (s *screen) layoutToolbar(gtx context) dimensions {
 			layout.Rigid(func(gtx context) dimensions {
 				return material.Button(s.theme, &s.stop, "停止").Layout(gtx)
 			}),
+			layout.Rigid(func(gtx context) dimensions {
+				label := "查询历史"
+				if s.historyOpen { label = "隐藏历史" }
+				return material.Button(s.theme, &s.historyToggle, label).Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 			layout.Flexed(1, func(gtx context) dimensions {
 				return layout.Dimensions{}
 			}),
@@ -918,6 +929,9 @@ func (s *screen) layoutWorkspace(gtx context) dimensions {
 	}
 	if s.detailsOpen && s.selectedSchemaTable != "" {
 		children = append(children, layout.Rigid(s.layoutTableDetails))
+	}
+	if s.historyOpen {
+		children = append(children, layout.Rigid(s.layoutHistoryPanel))
 	}
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 }
@@ -1004,6 +1018,99 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 				return material.Body2(s.theme, "收藏 SQL").Layout(gtx)
 			}),
 		)
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	})
+}
+
+func (s *screen) layoutHistoryPanel(gtx context) dimensions {
+	width := gtx.Dp(360)
+	if width > gtx.Constraints.Max.X { width = gtx.Constraints.Max.X }
+	gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+	return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
+		children := []layout.FlexChild{
+			layout.Rigid(func(gtx context) dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx context) dimensions { return material.H6(s.theme, "查询历史").Layout(gtx) }),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.historyRefresh, "刷新").Layout(gtx)
+						if s.historyRefresh.Clicked(gtx) { s.refreshHistory(true) }
+						return d
+					}),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.historyClose, "关闭").Layout(gtx)
+						if s.historyClose.Clicked(gtx) { s.historyOpen = false }
+						return d
+					}),
+				)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		}
+		if s.historyClearConfirm {
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return material.Body2(s.theme, "确认清空全部查询历史？此操作不可撤销。").Layout(gtx)
+			}), layout.Rigid(func(gtx context) dimensions {
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.historyConfirmClear, "确认清空").Layout(gtx)
+						if s.historyConfirmClear.Clicked(gtx) { s.clearHistory() }
+						return d
+					}),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.historyCancelClear, "取消").Layout(gtx)
+						if s.historyCancelClear.Clicked(gtx) { s.historyClearConfirm = false }
+						return d
+					}),
+				)
+			}))
+		} else {
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				d := material.Button(s.theme, &s.historyClear, "清空历史").Layout(gtx)
+				if s.historyClear.Clicked(gtx) { s.historyClearConfirm = true }
+				return d
+			}))
+		}
+		if len(s.historyEntries) == 0 {
+			children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+				return material.Body2(s.theme, "暂无查询历史。执行 SQL 后，记录会自动保存在本地。").Layout(gtx)
+			}))
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		}
+		children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+			s.historyList.Axis = layout.Vertical
+			return material.List(s.theme, &s.historyList).Layout(gtx, len(s.historyEntries), func(gtx context, index int) dimensions {
+				entry := s.historyEntries[index]
+				connectionName := s.historyConnectionName(entry.ConnectionID)
+				timestamp := entry.Timestamp.Local().Format("2006-01-02 15:04:05")
+				outcome := "成功"
+				if !entry.Success { outcome = "失败" }
+				meta := fmt.Sprintf("%s · %s · %.1f ms · %s", timestamp, connectionName, entry.DurationMs, outcome)
+				return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx context) dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, historySQLPreview(entry.SQL)).Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions {
+							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+								layout.Rigid(func(gtx context) dimensions {
+									d := material.Button(s.theme, &s.historySelectClicks[index], "回填").Layout(gtx)
+									if s.historySelectClicks[index].Clicked(gtx) { s.selectHistoryEntry(entry) }
+									return d
+								}),
+								layout.Rigid(func(gtx context) dimensions {
+									d := material.Button(s.theme, &s.historyRunClicks[index], "重新执行").Layout(gtx)
+									if s.historyRunClicks[index].Clicked(gtx) { s.runHistoryEntry(entry) }
+									return d
+								}),
+								layout.Rigid(func(gtx context) dimensions {
+									d := material.Button(s.theme, &s.historyDeleteClicks[index], "删除").Layout(gtx)
+									if s.historyDeleteClicks[index].Clicked(gtx) { s.deleteHistoryEntry(entry.ID) }
+									return d
+								}),
+							)
+						}),
+					)
+				})
+			})
+		}))
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
 }
