@@ -125,6 +125,9 @@ type screen struct {
 	tabList            widget.List
 	tabTitleEditor     widget.Editor
 	renameTabID        string
+	pendingCloseTabID  string
+	confirmCloseTab    widget.Clickable
+	cancelCloseTab     widget.Clickable
 	tabRenameSave      widget.Clickable
 	tabRenameCancel    widget.Clickable
 	newTab             widget.Clickable
@@ -1115,6 +1118,25 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 		})
 		}),
 		layout.Rigid(func(gtx context) dimensions {
+			if s.pendingCloseTabID == "" { return dimensions{} }
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx context) dimensions {
+					d := material.Button(s.theme, &s.confirmCloseTab, "确认丢弃并关闭").Layout(gtx)
+					if s.confirmCloseTab.Clicked(gtx) {
+						id := s.pendingCloseTabID
+						s.pendingCloseTabID = ""
+						s.closeTabNow(id)
+					}
+					return d
+				}),
+				layout.Rigid(func(gtx context) dimensions {
+					d := material.Button(s.theme, &s.cancelCloseTab, "取消").Layout(gtx)
+					if s.cancelCloseTab.Clicked(gtx) { s.pendingCloseTabID = ""; s.status = "已取消关闭标签" }
+					return d
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx context) dimensions {
 			d := material.Button(s.theme, &s.newTab, "+ 新建").Layout(gtx)
 			for s.newTab.Clicked(gtx) { s.createTab() }
 			return d
@@ -1153,6 +1175,19 @@ func (s *screen) closeTab(id string) {
 		s.status = "该标签仍有查询或导出任务，完成或取消后才能关闭"
 		return
 	}
+	if index := activeTabIndex(s.tabs, id); index >= 0 && id == s.activeTabID && s.sqlEditor.Text() != s.tabs[index].SQL {
+		s.pendingCloseTabID = id
+		s.status = "当前 SQL 有未保存修改，请确认丢弃后关闭"
+		return
+	}
+	s.closeTabNow(id)
+}
+
+func (s *screen) closeTabNow(id string) {
+	if s.queryRunning && s.runningTabID == id {
+		s.status = "该标签仍有查询或导出任务，完成或取消后才能关闭"
+		return
+	}
 	s.saveActiveTabText()
 	s.saveActiveTabRuntime()
 	wasActive := s.activeTabID == id
@@ -1168,6 +1203,7 @@ func (s *screen) closeTab(id string) {
 		s.restoreActiveTabRuntime()
 	}
 	if s.renameTabID == id { s.renameTabID = "" }
+	if s.pendingCloseTabID == id { s.pendingCloseTabID = "" }
 	s.persistTabs()
 	s.status = "已关闭 SQL 标签"
 }
