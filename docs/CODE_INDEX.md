@@ -19,8 +19,8 @@ meteor-ch-workbench/
 ├── internal/
 │   ├── gui/gioapp/      Gio SQL 工作台主窗口原型
 │   ├── app_platform_test.go 应用入口平台文件交互行为测试（仓库根目录）
-│   ├── app/             GUI 无关的应用服务编排（连接 / 查询 / 配置 / 历史 / 收藏 / 标签 / 设置）
-│   ├── platform/        文件对话框与本地文件系统能力端口
+│   ├── app/             GUI 无关的应用服务编排（连接 / 查询 / 配置 / 历史 / 收藏 / 标签 / 设置 / 结果导出）
+│   ├── platform/        文件对话框与本地文件系统能力端口（Wails 入口使用）
 │   │   ├── wailsadapter/ Wails v3 对话框与系统操作实现
 │   │   └── osfs/       Go 标准库文件系统实现
 │   ├── clickhouse/      数据库交互层（service.go / export.go）
@@ -777,6 +777,8 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用纵向 Gio 列表滚动，表头和各结果行使用共享滚动位置的横向列表，保持列对齐。
 - 结果表格首列提供「复制行」操作；点击单元格复制当前值，点击行首操作复制整行，使用带引号转义的制表符分隔文本。
 - 表头各数据列末尾提供拖动手柄，列宽在 80–480dp 范围内调整；调整后的宽度同步应用于表头和所有结果行，拖动距离按设备像素换算为 dp。
+- 查询结果摘要行提供「导出 CSV」和「导出 TSV」按钮；使用 `gioui.org/x/explorer` 系统保存对话框，后台打开文件并通过 `internal/app.Service.ExportQueryResult` 将结果流式写入文件，结束后关闭文件并回到 Gio 事件循环更新状态。取消保存不报错，写入 / 关闭失败会显示错误。
+- 导出复用当前已加载的 `QueryResult.Rows`，不会重新执行 SQL；结果被行数上限截断时只导出已加载行，界面明确提示。序列化过程按 Writer 流式写出，但尚未实现数据库游标级全量流式查询。
 - `resultColumnWidth` 将列宽权重转换为固定 dp 宽度；列宽权重仍由列名和前 30 行样本估算。
 - 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；字段与 DDL 分别使用独立 Gio 列表纵向滚动，DDL 复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
 - `splitDDLLines` 统一 LF / CRLF 换行并保留空行；`schema_test.go` 覆盖空 DDL、LF、CRLF 和空行场景。
