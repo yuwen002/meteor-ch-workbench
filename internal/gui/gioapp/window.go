@@ -48,12 +48,20 @@ func Run(window *app.Window, service *appsvc.Service) error {
 type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
 type queryResult struct { queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
 type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
-type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
+type schemaResult struct { connectionID string; connectionSequence uint64; database string; table string; requestID uint64; columns []clickhouse.ColumnInfo; err error }
+type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; tableClicks map[string]*widget.Clickable; err error }
 
 type screen struct {
 	window *app.Window
 	connectResults chan connectResult
 	databaseResults chan databaseResult
+	schemaResults chan schemaResult
+	schemaSequence uint64
+	schemaLoading bool
+	schemaError string
+	selectedSchemaDatabase string
+	selectedSchemaTable string
+	selectedSchema []clickhouse.ColumnInfo
 	queryResults chan queryResult
 	querySequence uint64
 	runningQueryID string
@@ -93,6 +101,7 @@ func newScreen(window *app.Window, service *appsvc.Service) *screen {
 		window: window,
 		connectResults: make(chan connectResult, 4),
 		databaseResults: make(chan databaseResult, 16),
+		schemaResults: make(chan schemaResult, 8),
 		queryResults: make(chan queryResult, 4),
 		databaseNodes: make(map[string]*databaseNode),
 		service:     service,
@@ -171,10 +180,65 @@ func (s *screen) drainDatabaseResults() {
 			node.loading, node.err = false, result.err
 			if result.err == nil {
 				node.tables, node.views, node.loaded = result.tables, result.views, true
+				node.tableClicks = make(map[string]*widget.Clickable)
+				for _, table := range result.tables { node.tableClicks[table.Name] = &widget.Clickable{} }
 				s.status = fmt.Sprintf("数据库 %s：已加载 %d 张表、%d 个视图", result.database, len(node.tables), len(node.views))
 			} else {
 				s.status = "加载数据库对象失败：" + result.err.Error()
 			}
+		default:
+			return
+		}
+	}
+}
+
+func (s *screen) selectTable(database, table string) {
+	if s.service == nil || !s.treeConnected {
+		return
+	}
+	s.schemaSequence++
+	requestID := s.schemaSequence
+	connectionID, connectionSequence := s.selectedConnectionID, s.connectionSequence
+	s.selectedSchemaDatabase, s.selectedSchemaTable = database, table
+	s.selectedSchema = nil
+	s.schemaError = ""
+	s.schemaLoading = true
+	s.status = fmt.Sprintf("正在加载表结构：%s.%s", database, table)
+	go func() {
+		columns, err := s.service.GetTableSchema(connectionID, database, table)
+		s.schemaResults <- schemaResult{
+			connectionID: connectionID,
+			connectionSequence: connectionSequence,
+			database: database,
+			table: table,
+			requestID: requestID,
+			columns: columns,
+			err: err,
+		}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *screen) drainSchemaResults() {
+	for {
+		select {
+		case result := <-s.schemaResults:
+			if result.connectionID != s.selectedConnectionID ||
+				result.connectionSequence != s.connectionSequence ||
+				result.requestID != s.schemaSequence ||
+				result.database != s.selectedSchemaDatabase ||
+				result.table != s.selectedSchemaTable {
+				continue
+			}
+			s.schemaLoading = false
+			s.schemaError = ""
+			if result.err != nil {
+				s.schemaError = result.err.Error()
+				s.status = "读取表结构失败：" + result.err.Error()
+				continue
+			}
+			s.selectedSchema = result.columns
+			s.status = fmt.Sprintf("已加载 %s.%s 的 %d 个字段", result.database, result.table, len(result.columns))
 		default:
 			return
 		}
@@ -286,6 +350,10 @@ func (s *screen) connectConnection(connection config.Connection) {
 	s.treeConnected = false
 	s.databaseNames = nil
 	s.databaseNodes = make(map[string]*databaseNode)
+	s.schemaSequence++
+	s.schemaLoading = false
+	s.selectedSchema = nil
+	s.selectedSchemaDatabase, s.selectedSchemaTable, s.schemaError = "", "", ""
 	s.status = "正在连接 " + connection.Name + "…"
 	go func() {
 		err := s.service.TestConnection(connection)
@@ -331,6 +399,7 @@ func (s *screen) applyTheme() {
 func (s *screen) layout(gtx context) dimensions {
 	s.drainConnectResults()
 	s.drainDatabaseResults()
+	s.drainSchemaResults()
 	s.drainQueryResults()
 	for s.execute.Clicked(gtx) {
 		s.executeSQL()
@@ -465,7 +534,16 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 				}
 				if node.expanded && node.loaded {
 					children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, fmt.Sprintf("表（%d）", len(node.tables))).Layout(gtx) }))
-					for _, table := range node.tables { label := "    "+table.Name+" · "+table.Engine; children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, label).Layout(gtx) })) }
+					for _, table := range node.tables {
+						tableName := table.Name
+						tableClick := node.tableClicks[tableName]
+						label := tableName + " · " + table.Engine
+						children = append(children, layout.Rigid(func(gtx context) dimensions {
+							dims := material.Button(s.theme, tableClick, label).Layout(gtx)
+							for tableClick.Clicked(gtx) { s.selectTable(name, tableName) }
+							return dims
+						}))
+					}
 					children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, fmt.Sprintf("视图（%d）", len(node.views))).Layout(gtx) }))
 					for _, view := range node.views { label := "    "+view.Name; children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, label).Layout(gtx) })) }
 					if len(node.tables)+len(node.views)==0 { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "    此数据库暂无表或视图").Layout(gtx) })) }
@@ -475,6 +553,46 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 				children = append(children, layout.Rigid(func(gtx context) dimensions {
 					return material.Caption(s.theme, "当前账号没有可见数据库").Layout(gtx)
 				}))
+			}
+		}
+		if s.selectedSchemaTable != "" {
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return material.H6(s.theme, "表结构").Layout(gtx)
+			}))
+			title := s.selectedSchemaDatabase + "." + s.selectedSchemaTable
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return material.Caption(s.theme, title).Layout(gtx)
+			}))
+			if s.schemaLoading {
+				children = append(children, layout.Rigid(func(gtx context) dimensions {
+					return material.Caption(s.theme, "正在加载字段…").Layout(gtx)
+				}))
+			} else if s.schemaError != "" {
+				message := s.schemaError
+				children = append(children, layout.Rigid(func(gtx context) dimensions {
+					return material.Caption(s.theme, "加载失败："+message).Layout(gtx)
+				}))
+			} else {
+				for _, column := range s.selectedSchema {
+					column := column
+					label := column.Name + "  " + column.Type
+					if column.IsPrimary { label += "  [主键]" }
+					if column.HasDefault { label += "  [默认值]" }
+					children = append(children, layout.Rigid(func(gtx context) dimensions {
+						return material.Caption(s.theme, label).Layout(gtx)
+					}))
+					if column.Comment != "" {
+						comment := column.Comment
+						children = append(children, layout.Rigid(func(gtx context) dimensions {
+							return material.Caption(s.theme, "    "+comment).Layout(gtx)
+						}))
+					}
+				}
+				if len(s.selectedSchema) == 0 {
+					children = append(children, layout.Rigid(func(gtx context) dimensions {
+						return material.Caption(s.theme, "该表没有可见字段").Layout(gtx)
+					}))
+				}
 			}
 		}
 		children = append(children,
