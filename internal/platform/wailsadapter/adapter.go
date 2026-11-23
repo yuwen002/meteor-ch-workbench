@@ -74,5 +74,9 @@ func (a *Adapter) OpenDirectory(path string) error {
 // isDialogCancelled normalizes Wails dialog cancellation errors.
 // Wails cancellation wording may differ in capitalization between platforms.
 func isDialogCancelled(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "cancelled")
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "cancelled") || strings.Contains(message, "canceled")
 }
