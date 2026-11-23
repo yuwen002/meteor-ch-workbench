@@ -219,15 +219,26 @@ func (s *screen) selectTable(database, table string) {
 	}()
 }
 
+func isCurrentSchemaResult(result schemaResult, connectionID string, connectionSequence, schemaSequence uint64, database, table string) bool {
+	return result.connectionID == connectionID &&
+		result.connectionSequence == connectionSequence &&
+		result.requestID == schemaSequence &&
+		result.database == database &&
+		result.table == table
+}
+
 func (s *screen) drainSchemaResults() {
 	for {
 		select {
 		case result := <-s.schemaResults:
-			if result.connectionID != s.selectedConnectionID ||
-				result.connectionSequence != s.connectionSequence ||
-				result.requestID != s.schemaSequence ||
-				result.database != s.selectedSchemaDatabase ||
-				result.table != s.selectedSchemaTable {
+			if !isCurrentSchemaResult(
+				result,
+				s.selectedConnectionID,
+				s.connectionSequence,
+				s.schemaSequence,
+				s.selectedSchemaDatabase,
+				s.selectedSchemaTable,
+			) {
 				continue
 			}
 			s.schemaLoading = false
