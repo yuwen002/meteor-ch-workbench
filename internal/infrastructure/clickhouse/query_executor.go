@@ -2,7 +2,6 @@ package clickhouse
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -116,4 +115,3 @@ func (e *QueryExecutor) Execute(ctx context.Context, item connection.Connection,
 }
 
 var _ query.Executor = (*QueryExecutor)(nil)
-var _ = (*sql.DB)(nil)
