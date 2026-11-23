@@ -775,7 +775,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 异步连接测试、数据库列表和表 / 视图加载；使用请求序号过滤过期响应。
 - SQL 编辑器内容通过 `internal/app.Service.Query` 执行，生成独立 queryID；停止操作调用 `CancelQuery`。
 - 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用 Gio 列表滚动。
-- 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；DDL 使用独立 Gio 列表纵向滚动，复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
+- 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；字段与 DDL 分别使用独立 Gio 列表纵向滚动，DDL 复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
 - `splitDDLLines` 统一 LF / CRLF 换行并保留空行；`schema_test.go` 覆盖空 DDL、LF、CRLF 和空行场景。
 - `widget.Editor` 目前仍是基础编辑器，语法高亮、补全和大 SQL 性能尚未验收。
 
