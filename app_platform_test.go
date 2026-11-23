@@ -62,7 +62,7 @@ func (f *fakeFileSystem) ReadFile(string) ([]byte, error) {
 	return f.readContent, f.readErr
 }
 
-func (f *fakeFileSystem) WriteFile(string, []byte, io/fs.FileMode) error {
+func (f *fakeFileSystem) WriteFile(string, []byte, fs.FileMode) error {
 	f.writeCalls++
 	return f.writeErr
 }
