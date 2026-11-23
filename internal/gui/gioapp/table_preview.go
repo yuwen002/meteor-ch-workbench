@@ -14,9 +14,10 @@ func buildTablePreviewSQL(database, table string, limit int) string {
 func buildTablePreviewPageSQL(database, table string, limit, page int) string {
 	if limit < 1 { limit = 100 }
 	if page < 0 { page = 0 }
-	offset := page * limit
-	return fmt.Sprintf("SELECT * FROM %s.%s LIMIT %d OFFSET %d;",
-		quoteCHIdentifier(database), quoteCHIdentifier(table), limit, offset)
+	base := fmt.Sprintf("SELECT * FROM %s.%s LIMIT %d",
+		quoteCHIdentifier(database), quoteCHIdentifier(table), limit)
+	if page > 0 { base += fmt.Sprintf(" OFFSET %d", page*limit) }
+	return base + ";"
 }
 
 func quoteCHIdentifier(identifier string) string {
