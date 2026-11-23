@@ -986,3 +986,13 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 当前 Gio 单体原型：internal/gui/gioapp/window.go（约 82 KB），只作为功能行为参考，后续拆分重写。
 - 当前临时后端：internal/app、internal/clickhouse、internal/config；均不属于最终架构。
 - 旧 Vue 前端：frontend/，仅供功能盘点，完成替代后删除。
+
+
+### 新架构 SQL 查询执行
+
+- `internal/application/query/ports.go`：查询请求、执行模式、列元数据、执行摘要、分批回调、连接读取与 SQL 执行端口。
+- `internal/application/query/service.go`：按连接 ID 读取连接配置、校验 SQL 请求并编排执行。
+- `internal/application/query/service_test.go`：覆盖请求归一化、参数校验与连接读取错误。
+- `internal/infrastructure/clickhouse/query_executor.go`：基于新连接池实现 QueryContext / ExecContext、超时、取消、列元数据、分批流式结果和最大行数截断。
+- `internal/infrastructure/clickhouse/query_executor_test.go`：使用 fake database/sql driver 覆盖批次交付、截断、Exec 影响行数、取消和 Rows 释放。
+- `internal/infrastructure/storage/connectionfile/repository.go`：新增 `Get(ctx, id)`，为查询用例按 ID 读取连接配置。
