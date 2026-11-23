@@ -11,6 +11,7 @@ func TestIsDialogCancelled(t *testing.T) {
 		{name: "空错误", err: nil, want: false},
 		{name: "用户取消", err: errString("dialog cancelled"), want: true},
 		{name: "大小写不敏感", err: errString("Dialog CANCELLED by user"), want: true},
+		{name: "美式拼写", err: errString("dialog canceled"), want: true},
 		{name: "其他错误", err: errString("permission denied"), want: false},
 	}
 
