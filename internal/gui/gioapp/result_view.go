@@ -217,7 +217,7 @@ func resultColumnLabel(columns []clickhouse.ColumnInfo, column, sortColumn int, 
 }
 
 // resultColumnFilterSummary 返回非空列条件的可读摘要，忽略超出列定义的条件。
-func resultColumnFilterSummary(columns []clickhouse.Column, filters []string) []string {
+func resultColumnFilterSummary(columns []clickhouse.ColumnInfo, filters []string) []string {
 	limit := len(columns)
 	if len(filters) < limit {
 		limit = len(filters)
