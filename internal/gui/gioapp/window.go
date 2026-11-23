@@ -1019,28 +1019,32 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		meta := fmt.Sprintf("%d 行 · %.2f ms · 上限 %d 行", result.RowCount, result.ElapsedMs, result.RowLimit)
 		if result.Truncated { meta += " · 结果已截断 · 导出仅包含当前已加载行" }
 		if result.Error != "" { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "执行错误："+result.Error).Layout(gtx) })) }
-		if s.exportCSV.Clicked(gtx) {
-			s.startExport("csv")
+		if len(result.Columns) > 0 && result.Error == "" {
+			if s.exportCSV.Clicked(gtx) {
+				s.startExport("csv")
+			}
+			if s.exportTSV.Clicked(gtx) {
+				s.startExport("tsv")
+			}
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }),
+					layout.Rigid(func(gtx context) dimensions {
+						label := "导出 CSV"
+						if s.exportRunning { label = "导出中…" }
+						return material.Button(s.theme, &s.exportCSV, label).Layout(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+					layout.Rigid(func(gtx context) dimensions {
+						label := "导出 TSV"
+						if s.exportRunning { label = "导出中…" }
+						return material.Button(s.theme, &s.exportTSV, label).Layout(gtx)
+					}),
+				)
+			}))
+		} else {
+			children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }))
 		}
-		if s.exportTSV.Clicked(gtx) {
-			s.startExport("tsv")
-		}
-		children = append(children, layout.Rigid(func(gtx context) dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }),
-				layout.Rigid(func(gtx context) dimensions {
-					label := "导出 CSV"
-					if s.exportRunning { label = "导出中…" }
-					return material.Button(s.theme, &s.exportCSV, label).Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-				layout.Rigid(func(gtx context) dimensions {
-					label := "导出 TSV"
-					if s.exportRunning { label = "导出中…" }
-					return material.Button(s.theme, &s.exportTSV, label).Layout(gtx)
-				}),
-			)
-		}))
 		if len(result.Columns) == 0 {
 			children = append(children, layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, "没有可展示的结果列").Layout(gtx) }))
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
