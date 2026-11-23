@@ -538,21 +538,49 @@ func (s *screen) layoutEditor(gtx context) dimensions {
 
 func (s *screen) layoutResults(gtx context) dimensions {
 	return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx context) dimensions {
-				return material.H6(s.theme, "查询结果").Layout(gtx)
-			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-			layout.Rigid(func(gtx context) dimensions {
-				return material.Body2(s.theme, "数据表格　·　统计信息　·　执行详情").Layout(gtx)
-			}),
-			layout.Flexed(1, func(gtx context) dimensions {
-				return material.Body1(s.theme, "执行查询后，结果将在这里展示").Layout(gtx)
-			}),
-		)
+		children := []layout.FlexChild{
+			layout.Rigid(func(gtx context) dimensions { return material.H6(s.theme, "查询结果").Layout(gtx) }),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+		}
+		if s.queryRunning { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "查询正在执行，可点击停止取消。").Layout(gtx) })) }
+		if s.queryResult == nil {
+			children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+				message := "执行查询后，结果将在这里展示"
+				if !s.treeConnected { message = "请先连接 ClickHouse，再执行 SQL" }
+				return material.Body1(s.theme, message).Layout(gtx)
+			}))
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		}
+		result := s.queryResult
+		meta := fmt.Sprintf("%d 行 · %.2f ms · 上限 %d 行", result.RowCount, result.ElapsedMs, result.RowLimit)
+		if result.Truncated { meta += " · 结果已截断" }
+		if result.Error != "" { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "执行错误："+result.Error).Layout(gtx) })) }
+		children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }))
+		if len(result.Columns) == 0 {
+			children = append(children, layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, "没有可展示的结果列").Layout(gtx) }))
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		}
+		children = append(children, layout.Rigid(func(gtx context) dimensions {
+			cells := make([]layout.FlexChild, 0, len(result.Columns))
+			for _, column := range result.Columns { name := column.Name; cells = append(cells, layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, name).Layout(gtx) })) }
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, cells...)
+		}))
+		children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+			return material.List(s.theme, &s.resultList).Layout(gtx, len(result.Rows), func(gtx context, index int) dimensions {
+				row := result.Rows[index]
+				cells := make([]layout.FlexChild, 0, len(result.Columns))
+				for columnIndex := range result.Columns {
+					cellText := "NULL"
+					if columnIndex < len(row) { cellText = formatResultCell(row[columnIndex]) }
+					cells = append(cells, layout.Flexed(1, func(gtx context) dimensions { return material.Caption(s.theme, cellText).Layout(gtx) }))
+				}
+				return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions { return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, cells...) })
+			})
+		}))
+		if len(result.Rows) == 0 && result.Error == "" { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "查询成功，但没有返回数据行").Layout(gtx) })) }
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
 }
-
 func (s *screen) layoutStatus(gtx context) dimensions {
 	return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
 		return material.Caption(s.theme, s.status).Layout(gtx)
