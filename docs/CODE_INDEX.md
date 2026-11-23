@@ -872,3 +872,10 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 ### [internal/gui/gioapp/export_file_test.go](../internal/gui/gioapp/export_file_test.go)
 
 职责：验证中断文件清理、非本地句柄安全跳过，以及导出字节统计（包含底层部分写入错误）。
+
+
+### ClickHouse 流式导出类型归一化补充
+
+- `internal/clickhouse/service.go`：`serializeValue` 将 `[]byte` 作为文本字符串处理，避免 JSON 默认将其编码为 Base64。
+- `internal/clickhouse/export.go`：`cellText` 对数组、切片和映射使用 JSON 表示，避免 Go 默认格式化输出不稳定。
+- `internal/clickhouse/stream_export_test.go`：模拟游标覆盖字节切片、数组、映射和 `time.Time` 的 CSV 输出；真实 ClickHouse 驱动类型仍需集成验证。
