@@ -758,7 +758,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 | 文件 | 职责 |
 |---|---|
-| `service.go` | 与 GUI 框架无关的应用服务入口；编排连接管理、SQL 查询/取消/历史、DDL/DML 执行和数据库元数据读取。当前为第一批迁移，其他应用用例仍在根目录 Wails 适配层，后续继续搬迁。 |
+| `service.go` | 与 GUI 框架无关的应用服务入口；编排连接管理、SQL 查询/取消/历史、DDL/DML 执行和数据库元数据读取，并由 Gio 与 Wails 共享。 |
 
 ### `docs/architecture/`
 
@@ -766,6 +766,19 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 |---|---|
 | `NATIVE_GUI_MIGRATION.md` | Gio 原生 GUI 迁移目标分层、当前迁移边界、阶段顺序与验收原则。 |
 
+
+### [internal/gui/gioapp/window.go](../internal/gui/gioapp/window.go)
+
+职责：Gio 原生工作台窗口与交互状态。
+
+- 异步连接测试、数据库列表和表 / 视图加载；使用请求序号过滤过期响应。
+- SQL 编辑器内容通过 `internal/app.Service.Query` 执行，生成独立 queryID；停止操作调用 `CancelQuery`。
+- 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用 Gio 列表滚动。
+- `widget.Editor` 目前仍是基础编辑器，语法高亮、补全和大 SQL 性能尚未验收。
+
+### [internal/gui/gioapp/query_test.go](../internal/gui/gioapp/query_test.go)
+
+职责：验证查询结果单元格格式化，包括 NULL、数字、长文本和多字节 Unicode 截断。
 
 ### [internal/app/service.go](../internal/app/service.go)
 
