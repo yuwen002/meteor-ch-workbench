@@ -3,6 +3,7 @@ package gioapp
 import (
 	"testing"
 
+	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 )
 
@@ -48,5 +49,34 @@ func TestNextTabState(t *testing.T) {
 	got := nextTabState([]config.TabState{{ID: "first"}, {ID: "second"}}, "third")
 	if got.ID != "third" || got.Title != "查询 3" || got.SQL != "" {
 		t.Fatalf("unexpected new tab: %#v", got)
+	}
+}
+
+func TestTabRuntimeStateIsRestoredIndependently(t *testing.T) {
+	firstResult := &clickhouse.QueryResult{RowCount: 3}
+	secondResult := &clickhouse.QueryResult{RowCount: 8}
+	s := &screen{
+		activeTabID: "first",
+		tabRuntime: map[string]tabRuntimeState{
+			"second": {result: secondResult, lastSQL: "SELECT 2", connectionID: "conn-2"},
+		},
+		queryResult: firstResult,
+		lastExecutedSQL: "SELECT 1",
+		lastExecutedConnectionID: "conn-1",
+	}
+	s.saveActiveTabRuntime()
+	s.activeTabID = "second"
+	s.queryResult = nil
+	s.lastExecutedSQL = ""
+	s.lastExecutedConnectionID = ""
+	s.restoreActiveTabRuntime()
+	if s.queryResult != secondResult {
+		t.Fatal("切换标签后没有恢复该标签自己的查询结果")
+	}
+	if s.lastExecutedSQL != "SELECT 2" || s.lastExecutedConnectionID != "conn-2" {
+		t.Fatalf("恢复了错误的 SQL 上下文：SQL=%q connection=%q", s.lastExecutedSQL, s.lastExecutedConnectionID)
+	}
+	if got := s.tabRuntime["first"]; got.result != firstResult || got.lastSQL != "SELECT 1" || got.connectionID != "conn-1" {
+		t.Fatalf("原标签状态未独立保存：%#v", got)
 	}
 }
