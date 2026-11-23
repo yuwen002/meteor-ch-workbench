@@ -120,6 +120,7 @@ type screen struct {
 	tabCloseClicks     []widget.Clickable
 	tabDrags           []gesture.Drag
 	tabDragLastX       []float32
+	tabDragAccum       []float32
 	tabDragActive      []bool
 	tabList            widget.List
 	tabTitleEditor     widget.Editor
@@ -1127,6 +1128,7 @@ func (s *screen) resetTabWidgets() {
 	s.tabCloseClicks = make([]widget.Clickable, len(s.tabs))
 	s.tabDrags = make([]gesture.Drag, len(s.tabs))
 	s.tabDragLastX = make([]float32, len(s.tabs))
+	s.tabDragAccum = make([]float32, len(s.tabs))
 	s.tabDragActive = make([]bool, len(s.tabs))
 }
 
@@ -1187,17 +1189,20 @@ func (s *screen) updateTabDrag(gtx context, index int) bool {
 		if event.Kind != pointer.Drag { continue }
 		if !s.tabDragActive[index] {
 			s.tabDragLastX[index] = event.Position.X
+			s.tabDragAccum[index] = 0
 			s.tabDragActive[index] = true
 			continue
 		}
 		delta := event.Position.X - s.tabDragLastX[index]
+		s.tabDragAccum[index] += delta
+		s.tabDragLastX[index] = event.Position.X
 		threshold := float32(gtx.Dp(72))
-		if delta >= threshold && index+1 < len(s.tabs) {
+		if s.tabDragAccum[index] >= threshold && index+1 < len(s.tabs) {
 			s.moveTab(index, index+1)
 			moved = true
 			break
 		}
-		if delta <= -threshold && index > 0 {
+		if s.tabDragAccum[index] <= -threshold && index > 0 {
 			s.moveTab(index, index-1)
 			moved = true
 			break
