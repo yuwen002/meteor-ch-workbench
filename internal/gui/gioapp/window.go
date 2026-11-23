@@ -10,7 +10,6 @@ import (
 	"image/color"
 
 	"gioui.org/app"
-	"sync"
 	"gioui.org/gesture"
 	"gioui.org/io/pointer"
 	"gioui.org/op/clip"
@@ -43,9 +42,13 @@ func Run(window *app.Window, service *appsvc.Service) error {
 	}
 }
 
+type connectResult struct { connectionID string; databases []string; err error }
+
 type screen struct {
 	window *app.Window
-	mu sync.Mutex
+	connectResults chan connectResult
+	databaseNames []string
+	treeConnected bool
 	service *appsvc.Service
 	connections        []config.Connection
 	connectionClicks   []widget.Clickable
@@ -72,6 +75,7 @@ type screen struct {
 func newScreen(window *app.Window, service *appsvc.Service) *screen {
 	s := &screen{
 		window: window,
+		connectResults: make(chan connectResult, 4),
 		service:     service,
 		theme:       material.NewTheme(),
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
@@ -100,6 +104,26 @@ func newScreen(window *app.Window, service *appsvc.Service) *screen {
 	return s
 }
 
+func (s *screen) drainConnectResults() {
+	for {
+		select {
+		case result := <-s.connectResults:
+			if result.connectionID != s.selectedConnectionID { continue }
+			if result.err != nil {
+				s.treeConnected = false
+				s.databaseNames = nil
+				s.status = "连接或加载数据库失败：" + result.err.Error()
+			} else {
+				s.treeConnected = true
+				s.databaseNames = result.databases
+				s.status = fmt.Sprintf("连接成功，已加载 %d 个数据库", len(result.databases))
+			}
+		default:
+			return
+		}
+	}
+}
+
 func (s *screen) connectSelected() {
 	for _, connection := range s.connections {
 		if connection.ID == s.selectedConnectionID {
@@ -123,15 +147,7 @@ func (s *screen) connectConnection(connection config.Connection) {
 		if err == nil {
 			databases, err = s.service.GetDatabases(connection.ID)
 		}
-		s.mu.Lock()
-		if s.selectedConnectionID == connection.ID {
-			if err != nil {
-				s.status = "连接或加载数据库失败：" + err.Error()
-			} else {
-				s.status = fmt.Sprintf("连接成功，已加载 %d 个数据库", len(databases))
-			}
-		}
-		s.mu.Unlock()
+		s.connectResults <- connectResult{connectionID: connection.ID, databases: databases, err: err}
 		s.window.Invalidate()
 	}()
 }
@@ -167,6 +183,7 @@ func (s *screen) applyTheme() {
 }
 
 func (s *screen) layout(gtx context) dimensions {
+	s.drainConnectResults()
 	for s.execute.Clicked(gtx) {
 		s.status = "SQL 编辑器已就绪；查询执行将在服务装配阶段接入"
 	}
@@ -276,6 +293,22 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 			children = append(children, layout.Rigid(func(gtx context) dimensions {
 				return material.Button(s.theme, &s.connectionClicks[i], label).Layout(gtx)
 			}))
+		}
+		if s.treeConnected {
+			children = append(children, layout.Rigid(func(gtx context) dimensions {
+				return material.H6(s.theme, "数据库").Layout(gtx)
+			}))
+			for _, database := range s.databaseNames {
+				name := database
+				children = append(children, layout.Rigid(func(gtx context) dimensions {
+					return material.Body2(s.theme, "  ▸ "+name).Layout(gtx)
+				}))
+			}
+			if len(s.databaseNames) == 0 {
+				children = append(children, layout.Rigid(func(gtx context) dimensions {
+					return material.Caption(s.theme, "当前账号没有可见数据库").Layout(gtx)
+				}))
+			}
 		}
 		children = append(children,
 			layout.Rigid(layout.Spacer{Height: unit.Dp(20)}.Layout),
