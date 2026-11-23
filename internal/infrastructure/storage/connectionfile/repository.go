@@ -136,13 +136,15 @@ func (r *Repository) read() (fileData,error) {
 	if decoded.Version!=schemaVersion { return fileData{},fmt.Errorf("%w: 不支持版本 %d",ErrInvalidFile,decoded.Version) }
 	if decoded.Connections==nil { decoded.Connections=[]connectionRecord{} }
 	seen:=make(map[string]struct{},len(decoded.Connections))
-	for _,item:=range decoded.Connections {
+	for i:=range decoded.Connections {
+		item:=&decoded.Connections[i]
 		if strings.TrimSpace(item.ID)=="" { return fileData{},fmt.Errorf("%w: ID 不能为空",ErrInvalidFile) }
 		if _,ok:=seen[item.ID];ok { return fileData{},fmt.Errorf("%w: %s",ErrDuplicateID,item.ID) }
 		seen[item.ID]=struct{}{}
 		if item.Protocol=="" {
 			switch item.Port { case 9000,9440: item.Protocol=string(connection.ProtocolNative); default: item.Protocol=string(connection.ProtocolHTTP) }
 		}
+		if err:=item.toDomain().Validate(); err!=nil { return fileData{},fmt.Errorf("%w: %v",ErrInvalidFile,err) }
 	}
 	return decoded,nil
 }
