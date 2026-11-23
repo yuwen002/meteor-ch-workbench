@@ -17,10 +17,18 @@ type resultRowView struct {
 
 // buildResultRowView 仅构造 UI 展示顺序，不修改 ClickHouse 返回的原始结果。
 func buildResultRowView(rows [][]interface{}, filter string, sortColumn int, descending bool) []resultRowView {
+	return buildResultRowViewWithColumnFilters(rows, filter, nil, sortColumn, descending)
+}
+
+// buildResultRowViewWithColumnFilters 将全局关键字和各列条件按 AND 组合。
+func buildResultRowViewWithColumnFilters(rows [][]interface{}, filter string, columnFilters []string, sortColumn int, descending bool) []resultRowView {
 	filter = strings.TrimSpace(filter)
 	view := make([]resultRowView, 0, len(rows))
 	for i, row := range rows {
 		if filter != "" && !resultRowMatchesFilter(row, filter) {
+			continue
+		}
+		if !resultRowMatchesColumnFilters(row, columnFilters) {
 			continue
 		}
 		view = append(view, resultRowView{Index: i, Values: row})
@@ -41,12 +49,31 @@ func buildResultRowView(rows [][]interface{}, filter string, sortColumn int, des
 	return view
 }
 
+func resultRowMatchesColumnFilters(row []interface{}, filters []string) bool {
+	for column, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+		if column >= len(row) || !resultValueMatchesFilter(row[column], filter) {
+			return false
+		}
+	}
+	return true
+}
+
+func resultValueMatchesFilter(value interface{}, filter string) bool {
+	text := "NULL"
+	if value != nil {
+		text = fmt.Sprint(value)
+	}
+	return strings.Contains(strings.ToLower(text), strings.ToLower(filter))
+}
+
 func resultRowMatchesFilter(row []interface{}, filter string) bool {
 	needle := strings.ToLower(filter)
 	for _, value := range row {
-		text := "NULL"
-		if value != nil { text = fmt.Sprint(value) }
-		if strings.Contains(strings.ToLower(text), needle) {
+		if resultValueMatchesFilter(value, needle) {
 			return true
 		}
 	}
