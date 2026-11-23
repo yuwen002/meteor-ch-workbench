@@ -1107,7 +1107,7 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 					}),
 					layout.Rigid(func(gtx context) dimensions {
 						d := material.Button(s.theme, &s.tabCloseClicks[index], "关闭").Layout(gtx)
-						for s.tabCloseClicks[index].Clicked(gtx) { s.closeTab(tab.ID) }
+						if s.tabCloseClicks[index].Clicked(gtx) { s.closeTab(tab.ID) }
 						return d
 					}),
 				)
