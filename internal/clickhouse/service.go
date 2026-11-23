@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,17 @@ type TableInfo struct {
 	Name    string `json:"name"`    // 表名
 	Engine  string `json:"engine"`  // 表引擎（如 MergeTree、Memory）
 	Comment string `json:"comment"` // 表注释
+}
+
+// TableDetails 描述 ClickHouse 表的引擎、建表语句和关键存储表达式。
+type TableDetails struct {
+	Engine          string `json:"engine"`
+	Comment         string `json:"comment"`
+	CreateTableQuery string `json:"create_table_query"`
+	PartitionKey    string `json:"partition_key"`
+	SortingKey      string `json:"sorting_key"`
+	PrimaryKey      string `json:"primary_key"`
+	TTLExpression   string `json:"ttl_expression"`
 }
 
 // ClusterInfo 描述 system.clusters 中的一条集群节点记录。
@@ -622,6 +634,46 @@ func (s *Service) GetViews(conn config.Connection, database string) ([]TableInfo
 		return nil, err
 	}
 	return views, nil
+}
+
+// GetTableDetails 返回 ClickHouse 表的建表语句与存储关键表达式。
+//
+// 这些信息来自 system.tables，避免 GUI 层拼接 SQL 或依赖 SHOW CREATE 的输出格式。
+// TTL 当前从 create_table_query 中提取，完整 DDL 始终保留，便于用户核对复杂 TTL 子句。
+func (s *Service) GetTableDetails(conn config.Connection, database, table string) (*TableDetails, error) {
+	db, err := s.getDB(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	query := "SELECT engine, comment, create_table_query, partition_key, sorting_key, primary_key " +
+		"FROM system.tables WHERE database = " + quoteLiteral(database) +
+		" AND name = " + quoteLiteral(table) + " LIMIT 1"
+	var details TableDetails
+	if err := db.QueryRowContext(context.Background(), query).Scan(
+		&details.Engine,
+		&details.Comment,
+		&details.CreateTableQuery,
+		&details.PartitionKey,
+		&details.SortingKey,
+		&details.PrimaryKey,
+	); err != nil {
+		return nil, fmt.Errorf("读取表 %s.%s 的详情失败: %w", database, table, err)
+	}
+	details.TTLExpression = extractTTLExpression(details.CreateTableQuery)
+	return &details, nil
+}
+
+var ttlClausePattern = regexp.MustCompile("(?is)\\bTTL\\s+(.*?)(?:\\s+\\bSETTINGS\\b|$)")
+
+// extractTTLExpression 从 CREATE TABLE 语句中提取 TTL 子句用于摘要展示。
+// 完整 DDL 仍会同时返回，避免摘要解析影响用户查看原始定义。
+func extractTTLExpression(createSQL string) string {
+	match := ttlClausePattern.FindStringSubmatch(createSQL)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimRight(match[1], ";"))
 }
 
 // GetTableSchema 返回指定表的列结构。
