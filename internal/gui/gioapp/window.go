@@ -165,7 +165,7 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 	return s
 }
 
-// startExport 在后台打开系统保存对话框，并把当前结果直接写入文件流。
+// startExport 重新执行最近一次成功查询，并将 ClickHouse 游标结果直接流式写入文件。
 func (s *screen) startExport(format string) {
 	if s.exportRunning || s.queryResult == nil || s.service == nil || s.explorer == nil {
 		return
