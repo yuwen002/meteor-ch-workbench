@@ -1017,7 +1017,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		}
 		result := s.queryResult
 		meta := fmt.Sprintf("%d 行 · %.2f ms · 上限 %d 行", result.RowCount, result.ElapsedMs, result.RowLimit)
-		if result.Truncated { meta += " · 结果已截断" }
+		if result.Truncated { meta += " · 结果已截断 · 导出仅包含当前已加载行" }
 		if result.Error != "" { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "执行错误："+result.Error).Layout(gtx) })) }
 		if s.exportCSV.Clicked(gtx) {
 			s.startExport("csv")
