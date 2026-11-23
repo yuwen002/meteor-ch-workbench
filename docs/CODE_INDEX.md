@@ -2,7 +2,7 @@
 
 > 按文件列出职责、关键入口与依赖关系，便于人和 AI 快速定位。
 > 与 `.trae/PROJECT.md`（AI 检索地图）互补：本文更偏「文件清单」，PROJECT.md 更偏「怎么改」。
-> 更新时间：2026-11-21
+> 更新时间：2026-11-23
 
 ---
 
@@ -772,7 +772,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 | 工作区 | 查询历史、收藏 SQL、标签页快照 |
 | 用户设置 | 设置读取/保存，查询行数上限仍通过设置管理器生效 |
 
-**边界**：本包不得依赖 Wails、Gio、WebView 或前端运行时。文件选择、保存对话框、剪贴板和系统打开目录等平台交互继续留在适配层，下一批再抽取为 `internal/platform` 端口。
+**边界**：本包不得依赖 Wails、Gio、WebView 或前端运行时。文件选择、保存对话框和系统打开目录已通过 `internal/platform` 端口抽离；剪贴板等尚未迁移的平台能力仍留在旧适配层，后续按实际 GUI 需求逐项抽取。
 
 
 ### [internal/platform](../internal/platform/platform.go)
@@ -806,3 +806,8 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 ### [internal/platform/wailsadapter/adapter.go](../internal/platform/wailsadapter/adapter.go)
 
 职责：将系统对话框与目录打开能力适配到 Wails v3。未来 Gio 入口可实现相同接口，应用服务无需改动。
+
+
+### [internal/platform/wailsadapter/adapter_test.go](../internal/platform/wailsadapter/adapter_test.go)
+
+职责：验证 Wails 文件对话框取消错误的归一化判断，覆盖空错误、正常取消、大小写差异和非取消错误。该测试不启动 Wails 应用；系统对话框交互仍需在真实桌面环境中补充集成验证。
