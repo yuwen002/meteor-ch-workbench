@@ -1,4 +1,4 @@
-// 本文件负责用户偏好设置的持久化：目前只有「查询结果行数上限」一项。
+// 本文件负责用户偏好设置的持久化，包括查询结果限制和工作台布局。
 // 读写模式与 HistoryManager / TabsManager 保持一致：内存缓存 + 读写锁 + 全量写回。
 package config
 
@@ -17,11 +17,30 @@ const (
 	RowLimitMax       = 1000000
 	// DefaultRowLimit 是未配置时生效的行数上限，与 clickhouse.DefaultQueryRowLimit 保持一致。
 	DefaultRowLimit = 50000
+	DefaultEditorRatio = 0.62
+	MinEditorRatio = 0.35
+	MaxEditorRatio = 0.80
 )
 
 // SettingsFile 是 settings.json 的完整结构。
 type SettingsFile struct {
-	QueryRowLimit int `json:"query_row_limit"` // 查询结果行数上限，0 表示不限制
+	QueryRowLimit   int     `json:"query_row_limit"` // 查询结果行数上限，0 表示不限制
+	SidebarCollapsed bool    `json:"sidebar_collapsed"` // 是否收起左侧导航
+	EditorRatio     float64 `json:"editor_ratio"` // 编辑器在工作区中的高度占比
+}
+
+// DefaultSettings 返回兼容旧配置的默认设置。
+func DefaultSettings() SettingsFile {
+	return SettingsFile{QueryRowLimit: DefaultRowLimit, EditorRatio: DefaultEditorRatio}
+}
+
+// NormalizeSettings 统一校验设置，缺失或越界的布局比例恢复默认值。
+func NormalizeSettings(settings SettingsFile) SettingsFile {
+	settings.QueryRowLimit = NormalizeRowLimit(settings.QueryRowLimit)
+	if settings.EditorRatio < MinEditorRatio || settings.EditorRatio > MaxEditorRatio {
+		settings.EditorRatio = DefaultEditorRatio
+	}
+	return settings
 }
 
 // SettingsManager 负责 settings.json 的读写与内存缓存。
@@ -36,7 +55,7 @@ type SettingsManager struct {
 func NewSettingsManager(configDir string) *SettingsManager {
 	return &SettingsManager{
 		path: filepath.Join(configDir, "settings.json"),
-		data: SettingsFile{QueryRowLimit: DefaultRowLimit},
+		data: DefaultSettings(),
 	}
 }
 
@@ -58,7 +77,7 @@ func (s *SettingsManager) load() error {
 		if err := json.Unmarshal(data, &sf); err != nil {
 			return err
 		}
-		s.data = SettingsFile{QueryRowLimit: NormalizeRowLimit(sf.QueryRowLimit)}
+		s.data = NormalizeSettings(sf)
 	}
 	s.loaded = true
 	return nil
@@ -69,7 +88,7 @@ func (s *SettingsManager) Load() (SettingsFile, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.load(); err != nil {
-		return SettingsFile{QueryRowLimit: DefaultRowLimit}, err
+		return DefaultSettings(), err
 	}
 	return s.data, nil
 }
@@ -89,7 +108,7 @@ func (s *SettingsManager) RowLimit() int {
 func (s *SettingsManager) Save(settings SettingsFile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data = SettingsFile{QueryRowLimit: NormalizeRowLimit(settings.QueryRowLimit)}
+	s.data = NormalizeSettings(settings)
 	s.loaded = true
 	return s.flush()
 }
