@@ -5,6 +5,7 @@
 package gioapp
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -22,6 +23,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	gioexplorer "gioui.org/x/explorer"
 
 	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
@@ -33,14 +35,17 @@ type dimensions = layout.Dimensions
 
 // Run 运行 Gio 窗口事件循环。
 func Run(window *app.Window, service *appsvc.Service) error {
-	state := newScreen(window, service)
+	state := newScreen(window, service, gioexplorer.NewExplorer(window))
 	var ops op.Ops
 	for {
-		switch event := window.Event().(type) {
+		evt := window.Event()
+		state.explorer.ListenEvents(evt)
+		switch event := evt.(type) {
 		case app.DestroyEvent:
 			return event.Err
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, event)
+			state.drainExportResults()
 			state.layout(gtx)
 			event.Frame(gtx.Ops)
 		}
@@ -49,6 +54,7 @@ func Run(window *app.Window, service *appsvc.Service) error {
 
 type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
 type queryResult struct { queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
+type exportResult struct { format string; err error; canceled bool }
 type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
 type schemaResult struct { connectionID string; connectionSequence uint64; database string; table string; requestID uint64; columns []clickhouse.ColumnInfo; details *clickhouse.TableDetails; detailsErr error; err error }
 type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; tableClicks map[string]*widget.Clickable; err error }
@@ -73,6 +79,11 @@ type screen struct {
 	detailsList widget.List
 	ddlLines []string
 	queryResults chan queryResult
+	exportResults chan exportResult
+	explorer *gioexplorer.Explorer
+	exportCSV widget.Clickable
+	exportTSV widget.Clickable
+	exportRunning bool
 	querySequence uint64
 	runningQueryID string
 	queryRunning bool
@@ -114,13 +125,15 @@ type screen struct {
 	sidebarOpen bool
 }
 
-func newScreen(window *app.Window, service *appsvc.Service) *screen {
+func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexplorer.Explorer) *screen {
 	s := &screen{
 		window: window,
+		explorer: fileExplorer,
 		connectResults: make(chan connectResult, 4),
 		databaseResults: make(chan databaseResult, 16),
 		schemaResults: make(chan schemaResult, 8),
 		queryResults: make(chan queryResult, 4),
+		exportResults: make(chan exportResult, 2),
 		databaseNodes: make(map[string]*databaseNode),
 		service:     service,
 		theme:       material.NewTheme(),
@@ -148,6 +161,61 @@ func newScreen(window *app.Window, service *appsvc.Service) *screen {
 	s.sqlEditor.SetText("SELECT\n    database,\n    table,\n    engine\nFROM system.tables\nORDER BY database, table\nLIMIT 100;")
 	s.applyTheme()
 	return s
+}
+
+// startExport 在后台打开系统保存对话框，并把当前结果直接写入文件流。
+func (s *screen) startExport(format string) {
+	if s.exportRunning || s.queryResult == nil || s.service == nil || s.explorer == nil {
+		return
+	}
+	result := s.queryResult
+	if result.Error != "" || len(result.Columns) == 0 {
+		return
+	}
+	columns := make([]string, len(result.Columns))
+	for i, column := range result.Columns {
+		columns[i] = column.Name
+	}
+	rows := result.Rows
+	s.exportRunning = true
+	s.status = "正在准备导出 " + strings.ToUpper(format) + "…"
+	go func() {
+		file, err := s.explorer.CreateFile("query-result." + format)
+		if err != nil {
+			s.exportResults <- exportResult{format: format, err: err, canceled: errors.Is(err, gioexplorer.ErrUserDecline)}
+			s.window.Invalidate()
+			return
+		}
+		_, writeErr := s.service.ExportQueryResult(file, format, columns, rows, "")
+		closeErr := file.Close()
+		if writeErr != nil {
+			err = writeErr
+		} else if closeErr != nil {
+			err = closeErr
+		}
+		s.exportResults <- exportResult{format: format, err: err}
+		s.window.Invalidate()
+	}()
+}
+
+// drainExportResults 在 Gio 事件循环中更新导出状态，避免后台 goroutine 直接修改界面状态。
+func (s *screen) drainExportResults() {
+	for {
+		select {
+		case result := <-s.exportResults:
+			s.exportRunning = false
+			switch {
+			case result.canceled:
+				s.status = "已取消导出"
+			case result.err != nil:
+				s.status = "导出失败：" + result.err.Error()
+			default:
+				s.status = "已成功导出 " + strings.ToUpper(result.format) + " 查询结果"
+			}
+		default:
+			return
+		}
+	}
 }
 
 func (s *screen) drainConnectResults() {
@@ -951,7 +1019,28 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		meta := fmt.Sprintf("%d 行 · %.2f ms · 上限 %d 行", result.RowCount, result.ElapsedMs, result.RowLimit)
 		if result.Truncated { meta += " · 结果已截断" }
 		if result.Error != "" { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "执行错误："+result.Error).Layout(gtx) })) }
-		children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }))
+		if s.exportCSV.Clicked(gtx) {
+			s.startExport("csv")
+		}
+		if s.exportTSV.Clicked(gtx) {
+			s.startExport("tsv")
+		}
+		children = append(children, layout.Rigid(func(gtx context) dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx context) dimensions { return material.Caption(s.theme, meta).Layout(gtx) }),
+				layout.Rigid(func(gtx context) dimensions {
+					label := "导出 CSV"
+					if s.exportRunning { label = "导出中…" }
+					return material.Button(s.theme, &s.exportCSV, label).Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx context) dimensions {
+					label := "导出 TSV"
+					if s.exportRunning { label = "导出中…" }
+					return material.Button(s.theme, &s.exportTSV, label).Layout(gtx)
+				}),
+			)
+		}))
 		if len(result.Columns) == 0 {
 			children = append(children, layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, "没有可展示的结果列").Layout(gtx) }))
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
