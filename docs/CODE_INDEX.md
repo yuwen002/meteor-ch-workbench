@@ -2,6 +2,9 @@
 
 ## 新架构（重写中）
 
+### [internal/infrastructure/storage/connectionfile](../internal/infrastructure/storage/connectionfile/)
+新连接配置文件仓库：版本化 JSON、原子写入、受限文件权限、连接列表/保存/删除，以及显式旧配置一次性导入。当前密码仍保存在本地文件中，后续需接入凭据存储；尚未连接 Gio 运行时。
+
 ### [internal/domain/connection/connection.go](../internal/domain/connection/connection.go)
 独立连接领域模型：连接协议、字段校验和安全端点描述。不依赖 GUI、配置文件或 ClickHouse 驱动。
 
