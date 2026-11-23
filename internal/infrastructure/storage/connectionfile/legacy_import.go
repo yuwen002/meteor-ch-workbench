@@ -51,8 +51,21 @@ func (r *Repository) ImportLegacyJSON(ctx context.Context, raw []byte) (int,erro
 		if _,ok:=seen[item.ID];ok { return 0,fmt.Errorf("%w: %s",ErrDuplicateID,item.ID) }
 		seen[item.ID]=struct{}{}
 	}
+	if err:=ctx.Err(); err!=nil { return 0,err }
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data,err:=r.read()
+	if err!=nil { return 0,err }
+	byID:=make(map[string]int,len(data.Connections))
+	for index,item:=range data.Connections { byID[item.ID]=index }
 	for _,item:=range converted {
-		if err:=r.Save(ctx,item); err!=nil { return 0,err }
+		record:=toRecord(item)
+		if index,ok:=byID[item.ID];ok { data.Connections[index]=record } else {
+			byID[item.ID]=len(data.Connections)
+			data.Connections=append(data.Connections,record)
+		}
 	}
+	if err:=ctx.Err(); err!=nil { return 0,err }
+	if err:=r.write(data); err!=nil { return 0,err }
 	return len(converted),nil
 }
