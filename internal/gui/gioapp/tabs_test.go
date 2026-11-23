@@ -119,3 +119,11 @@ func TestReorderTabState(t *testing.T) {
 	if !ok || got[0].ID != "b" || got[1].ID != "d" || got[2].ID != "c" || got[3].ID != "a" { t.Fatalf("unexpected reverse reorder: %#v", got) }
 	if _, ok := reorderTabState(tabs, -1, 0); ok { t.Fatal("越界索引不应成功") }
 }
+
+func TestTabHasUnsavedChanges(t *testing.T) {
+	tabs := []config.TabState{{ID:"active", SQL:"SELECT 1"},{ID:"other", SQL:"SELECT 2"}}
+	if !tabHasUnsavedChanges(tabs, "active", "active", "SELECT 3") { t.Fatal("活动标签编辑器内容变化时应提示未保存") }
+	if tabHasUnsavedChanges(tabs, "active", "active", "SELECT 1") { t.Fatal("内容未变化时不应提示未保存") }
+	if tabHasUnsavedChanges(tabs, "active", "other", "SELECT 3") { t.Fatal("非活动标签不应使用当前编辑器内容判断未保存") }
+	if tabHasUnsavedChanges(tabs, "active", "missing", "SELECT 3") { t.Fatal("不存在的标签不应提示未保存") }
+}
