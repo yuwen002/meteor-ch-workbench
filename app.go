@@ -14,12 +14,12 @@ import (
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
 )
 
-// App 是暴露给前端的 Wails 服务对象。
-// 它组合了配置管理器（负责连接与文件夹的读写）和 ClickHouse 服务（负责真正的查询交互），
-// 前端通过绑定生成的 JS 方法调用这里导出的每一个公开方法。
+// App 是旧版 Wails 前端的适配对象。
+// 业务用例逐步委托给 internal/app.Service；本结构暂时保留历史 API 签名，
+// 以便原有 Vue 前端在原生 GUI 迁移期间继续工作。
 type App struct {
-	ctx     context.Context
-	service *appsvc.Service         // Wails 注入的应用上下文，随应用生命周期结束而关闭
+	ctx     context.Context         // Wails 注入的应用上下文，随应用生命周期结束而关闭
+	service *appsvc.Service         // 与 GUI 无关的应用服务
 	conf  *config.Manager         // 配置管理器，负责 connections.json 的读写
 	hist  *config.HistoryManager  // 查询历史管理器，负责 history.json 的读写
 	tabs  *config.TabsManager     // 标签页管理器，负责 tabs.json 的读写
