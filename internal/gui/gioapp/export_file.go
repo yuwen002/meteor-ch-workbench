@@ -2,8 +2,10 @@ package gioapp
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 // removeIncompleteExport 仅在保存句柄是本地 *os.File 时删除中断导出文件。
