@@ -56,7 +56,7 @@ type screen struct {
 	sidebarToggle widget.Clickable
 	editorSmaller widget.Clickable
 	editorLarger widget.Clickable
-	 editorRatio float32
+	editorRatio float32
 	splitDrag gesture.Drag
 	lastDragY float32
 	dragActive bool
@@ -240,6 +240,13 @@ func (s *screen) layoutEditorAndResults(gtx context) dimensions {
 	})
 }
 
+func adjustEditorRatio(current, delta float32, workspaceHeight int) float32 {
+	if workspaceHeight <= 0 {
+		return clampEditorRatio(current)
+	}
+	return clampEditorRatio(current + delta/float32(workspaceHeight))
+}
+
 func clampEditorRatio(value float32) float32 {
 	if value < 0.35 { return 0.35 }
 	if value > 0.80 { return 0.80 }
@@ -252,6 +259,7 @@ func (s *screen) layoutSplitControls(gtx context) dimensions {
 	gtx.Constraints.Min.Y = height
 	gtx.Constraints.Max.Y = height
 	area := clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops)
+	pointer.CursorRowResize.Add(gtx.Ops)
 	s.splitDrag.Add(gtx.Ops)
 	area.Pop()
 
@@ -260,19 +268,20 @@ func (s *screen) layoutSplitControls(gtx context) dimensions {
 		if !ok {
 			break
 		}
-		switch event.Kind {
-		case pointer.Press:
-			s.lastDragY = event.Position.Y
-			s.dragActive = true
-		case pointer.Drag:
-			if s.dragActive && s.workspaceHeight > 0 {
+		if event.Kind == pointer.Drag {
+			if !s.dragActive {
+				// Drag 手势首次达到阈值时建立基准点，后续帧累计位移。
+				s.lastDragY = event.Position.Y
+				s.dragActive = true
+			} else if s.workspaceHeight > 0 {
 				delta := event.Position.Y - s.lastDragY
-				s.editorRatio = clampEditorRatio(s.editorRatio + delta/float32(s.workspaceHeight))
+				s.editorRatio = adjustEditorRatio(s.editorRatio, delta, s.workspaceHeight)
+				s.lastDragY = event.Position.Y
 			}
-			s.lastDragY = event.Position.Y
-		case pointer.Release, pointer.Cancel:
-			s.dragActive = false
 		}
+	}
+	if !s.splitDrag.Pressed() {
+		s.dragActive = false
 	}
 
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
