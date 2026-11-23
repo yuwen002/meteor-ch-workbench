@@ -613,14 +613,18 @@ func cellText(v interface{}) string {
 		return t
 	case []byte:
 		return string(t)
-	case map[string]interface{}, []interface{}:
-		// 复合值采用 JSON 表示，避免 fmt 的 map[k:v] / [a b] 形式
-		// 变成无法稳定解析的导出内容。
-		if encoded, err := json.Marshal(t); err == nil {
-			return string(encoded)
+	default:
+		// Array / Map 可能由驱动返回为不同具体切片或映射类型，
+		// 统一按 JSON 编码，避免 fmt 的 [a b] / map[k:v] 表示不稳定。
+		kind := reflect.TypeOf(v).Kind()
+		if kind == reflect.Array || kind == reflect.Slice || kind == reflect.Map {
+			if encoded, err := json.Marshal(v); err == nil {
+				return string(encoded)
+			}
 		}
 		return fmt.Sprintf("%v", v)
-	default:
+	}
+}
 		return fmt.Sprintf("%v", v)
 	}
 }
