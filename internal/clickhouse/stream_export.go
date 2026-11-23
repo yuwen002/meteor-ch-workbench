@@ -25,6 +25,11 @@ type sqlRowScanner interface {
 // 该方法不受界面查询行数上限影响，内存占用只与单行数据及格式化缓冲区有关。
 // 当前支持 CSV / TSV；queryID 非空时可通过 CancelQuery 中止导出。
 func (s *Service) ExportQueryTo(conn config.Connection, sqlText, queryID, format string, dst io.Writer) (int64, error) {
+	return s.ExportQueryToWithProgress(conn, sqlText, queryID, format, dst, nil)
+}
+
+// ExportQueryToWithProgress 每累计 1000 行及结束时回报一次导出进度。
+func (s *Service) ExportQueryToWithProgress(conn config.Connection, sqlText, queryID, format string, dst io.Writer, progress func(int64)) (int64, error) {
 	if dst == nil {
 		return 0, errors.New("export destination is nil")
 	}
@@ -45,7 +50,7 @@ func (s *Service) ExportQueryTo(conn config.Connection, sqlText, queryID, format
 		}
 		return 0, err
 	}
-	count, streamErr := streamSQLRowsTo(ctx, rows, dst, format)
+	count, streamErr := streamSQLRowsToWithProgress(ctx, rows, dst, format, progress)
 	closeErr := rows.Close()
 	if streamErr != nil {
 		return count, streamErr
@@ -58,32 +63,40 @@ func (s *Service) ExportQueryTo(conn config.Connection, sqlText, queryID, format
 
 // streamSQLRowsTo 从数据库游标读取一行、写出一行，不累积完整结果集。
 func streamSQLRowsTo(ctx context.Context, rows sqlRowScanner, dst io.Writer, format string) (int64, error) {
+	return streamSQLRowsToWithProgress(ctx, rows, dst, format, nil)
+}
+
+func streamSQLRowsToWithProgress(ctx context.Context, rows sqlRowScanner, dst io.Writer, format string, progress func(int64)) (int64, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return 0, err
 	}
 	switch format {
 	case "csv":
-		return streamCSVRows(ctx, rows, dst, columns)
+		return streamCSVRowsWithProgress(ctx, rows, dst, columns, progress)
 	case "tsv":
-		return streamTSVRows(ctx, rows, dst, columns)
+		return streamTSVRowsWithProgress(ctx, rows, dst, columns, progress)
 	default:
 		return 0, fmt.Errorf("unsupported streaming export format: %s", format)
 	}
 }
 
 func streamCSVRows(ctx context.Context, rows sqlRowScanner, dst io.Writer, columns []string) (int64, error) {
+	return streamCSVRowsWithProgress(ctx, rows, dst, columns, nil)
+}
+
+func streamCSVRowsWithProgress(ctx context.Context, rows sqlRowScanner, dst io.Writer, columns []string, progress func(int64)) (int64, error) {
 	writer := csv.NewWriter(dst)
 	if err := writer.Write(columns); err != nil {
 		return 0, err
 	}
-	count, err := streamRows(ctx, rows, len(columns), func(values []interface{}) error {
+	count, err := streamRowsWithProgress(ctx, rows, len(columns), func(values []interface{}) error {
 		record := make([]string, len(values))
 		for i, value := range values {
 			record[i] = cellText(value)
 		}
 		return writer.Write(record)
-	})
+	}, progress)
 	writer.Flush()
 	if err != nil {
 		return count, err
@@ -95,6 +108,10 @@ func streamCSVRows(ctx context.Context, rows sqlRowScanner, dst io.Writer, colum
 }
 
 func streamTSVRows(ctx context.Context, rows sqlRowScanner, dst io.Writer, columns []string) (int64, error) {
+	return streamTSVRowsWithProgress(ctx, rows, dst, columns, nil)
+}
+
+func streamTSVRowsWithProgress(ctx context.Context, rows sqlRowScanner, dst io.Writer, columns []string, progress func(int64)) (int64, error) {
 	writer := bufio.NewWriter(dst)
 	writeRecord := func(values []string) error {
 		for i, value := range values {
@@ -112,13 +129,13 @@ func streamTSVRows(ctx context.Context, rows sqlRowScanner, dst io.Writer, colum
 	if err := writeRecord(columns); err != nil {
 		return 0, err
 	}
-	count, err := streamRows(ctx, rows, len(columns), func(values []interface{}) error {
+	count, err := streamRowsWithProgress(ctx, rows, len(columns), func(values []interface{}) error {
 		record := make([]string, len(values))
 		for i, value := range values {
 			record[i] = cellText(value)
 		}
 		return writeRecord(record)
-	})
+	}, progress)
 	if flushErr := writer.Flush(); err == nil {
 		err = flushErr
 	}
@@ -126,6 +143,10 @@ func streamTSVRows(ctx context.Context, rows sqlRowScanner, dst io.Writer, colum
 }
 
 func streamRows(ctx context.Context, rows sqlRowScanner, columnCount int, writeRow func([]interface{}) error) (int64, error) {
+	return streamRowsWithProgress(ctx, rows, columnCount, writeRow, nil)
+}
+
+func streamRowsWithProgress(ctx context.Context, rows sqlRowScanner, columnCount int, writeRow func([]interface{}) error, progress func(int64)) (int64, error) {
 	var count int64
 	for rows.Next() {
 		if err := ctx.Err(); err != nil {
@@ -146,9 +167,15 @@ func streamRows(ctx context.Context, rows sqlRowScanner, columnCount int, writeR
 			return count, err
 		}
 		count++
+		if progress != nil && count%1000 == 0 {
+			progress(count)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return count, err
+	}
+	if progress != nil {
+		progress(count)
 	}
 	return count, nil
 }
