@@ -937,3 +937,10 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 - `internal/gui/gioapp/result_view.go`：`compareResultNumbers` 使用 `math/big.Rat` 比较数值文本，排序和列筛选共用精确比较，避免 UInt64 / Decimal 被 float64 舍入。
 - `internal/gui/gioapp/result_view_test.go`：覆盖相邻 UInt64、大整数精度边界、高精度 Decimal 和科学计数法比较。
+
+
+### Gio 查询结果区间筛选
+
+- `internal/gui/gioapp/result_view.go`：`resultValueMatchesColumnCondition` 新增 `between:下界..上界` 闭区间条件，数值使用精确比较，时间使用统一时间解析。
+- `internal/gui/gioapp/result_view_test.go`：覆盖数值 / Decimal / 日期 / RFC3339 区间、边界包含、NULL、反向区间和无效表达式。
+- 普通文本不支持字典序区间；混合类型边界、不可解析时间和 NULL 均不匹配。
