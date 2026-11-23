@@ -218,6 +218,35 @@ func (s *screen) drainQueryResults() {
 	}
 }
 
+// resultColumnWeights 根据列名和前 30 行样本估算列宽权重，避免所有列等宽导致短列浪费空间。
+func resultColumnWeights(columns []clickhouse.ColumnInfo, rows [][]interface{}) []float32 {
+	weights := make([]float32, len(columns))
+	for i, column := range columns {
+		width := len([]rune(column.Name))
+		sampleCount := len(rows)
+		if sampleCount > 30 {
+			sampleCount = 30
+		}
+		for rowIndex := 0; rowIndex < sampleCount; rowIndex++ {
+			if i >= len(rows[rowIndex]) {
+				continue
+			}
+			cellWidth := len([]rune(formatResultCell(rows[rowIndex][i])))
+			if cellWidth > width {
+				width = cellWidth
+			}
+		}
+		if width < 10 {
+			width = 10
+		}
+		if width > 32 {
+			width = 32
+		}
+		weights[i] = float32(width)
+	}
+	return weights
+}
+
 func formatResultCell(value interface{}) string {
 	if value == nil {
 		return "NULL"
@@ -574,9 +603,15 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			children = append(children, layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, "没有可展示的结果列").Layout(gtx) }))
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 		}
+		columnWeights := resultColumnWeights(result.Columns, result.Rows)
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			cells := make([]layout.FlexChild, 0, len(result.Columns))
-			for _, column := range result.Columns { name := column.Name; cells = append(cells, layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, name).Layout(gtx) })) }
+			for columnIndex, column := range result.Columns {
+				name, weight := column.Name, columnWeights[columnIndex]
+				cells = append(cells, layout.Flexed(weight, func(gtx context) dimensions {
+					return material.Body2(s.theme, name).Layout(gtx)
+				}))
+			}
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, cells...)
 		}))
 		children = append(children, layout.Flexed(1, func(gtx context) dimensions {
@@ -586,7 +621,10 @@ func (s *screen) layoutResults(gtx context) dimensions {
 				for columnIndex := range result.Columns {
 					cellText := "NULL"
 					if columnIndex < len(row) { cellText = formatResultCell(row[columnIndex]) }
-					cells = append(cells, layout.Flexed(1, func(gtx context) dimensions { return material.Caption(s.theme, cellText).Layout(gtx) }))
+					weight := columnWeights[columnIndex]
+					cells = append(cells, layout.Flexed(weight, func(gtx context) dimensions {
+						return material.Caption(s.theme, cellText).Layout(gtx)
+					}))
 				}
 				return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions { return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, cells...) })
 			})
