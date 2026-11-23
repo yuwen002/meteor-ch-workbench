@@ -2,6 +2,7 @@
 package osfs
 
 import (
+	"io"
 	"io/fs"
 	"os"
 
