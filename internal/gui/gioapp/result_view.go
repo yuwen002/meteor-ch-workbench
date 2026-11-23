@@ -41,7 +41,9 @@ func buildResultRowView(rows [][]interface{}, filter string, sortColumn int, des
 func resultRowMatchesFilter(row []interface{}, filter string) bool {
 	needle := strings.ToLower(filter)
 	for _, value := range row {
-		if strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+		text := "NULL"
+		if value != nil { text = fmt.Sprint(value) }
+		if strings.Contains(strings.ToLower(text), needle) {
 			return true
 		}
 	}
