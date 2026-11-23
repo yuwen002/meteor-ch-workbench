@@ -1,0 +1,36 @@
+package gioapp
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestFormatResultCell(t *testing.T) {
+	tests := []struct {
+		name string
+		value interface{}
+		want string
+	}{
+		{name: "空值显示 NULL", value: nil, want: "NULL"},
+		{name: "普通字符串原样显示", value: "hello", want: "hello"},
+		{name: "数字转换为文本", value: int64(42), want: "42"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatResultCell(tt.value); got != tt.want {
+				t.Fatalf("formatResultCell(%v) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatResultCellTruncatesByRune(t *testing.T) {
+	input := strings.Repeat("界", 130)
+	got := formatResultCell(input)
+	if wantRunes := 120; len([]rune(got)) != wantRunes {
+		t.Fatalf("formatResultCell rune count = %d, want %d", len([]rune(got)), wantRunes)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("truncated value should end with ellipsis, got %q", got)
+	}
+}
