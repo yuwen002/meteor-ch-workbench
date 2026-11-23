@@ -1,3 +1,15 @@
+## 新架构（重写中）
+
+### [internal/domain/connection/connection.go](../internal/domain/connection/connection.go)
+独立连接领域模型：连接协议、字段校验和安全端点描述。不依赖 GUI、配置文件或 ClickHouse 驱动。
+
+### [internal/application/connection](../internal/application/connection/)
+连接管理用例：通过 Repository、Tester、IDGenerator 端口实现列表、保存、删除和连通性测试；测试使用内存仓库与 fake tester，不访问真实网络。
+
+> 当前仅完成连接领域 / 应用用例的第一块，尚未接入 Gio。现有 Gio 窗口和旧服务仍是原型，不能计入迁移完成度。
+
+---
+
 # 代码索引
 
 > 按文件列出职责、关键入口与依赖关系，便于人和 AI 快速定位。
