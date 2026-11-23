@@ -95,3 +95,40 @@ func TestBuildResultRowViewCanFilterNullValues(t *testing.T) {
 		t.Fatalf("NULL filter result = %#v", got)
 	}
 }
+
+func TestBuildResultRowViewCombinesMultipleColumnFilters(t *testing.T) {
+	rows := [][]interface{}{
+		{"alpha", "ClickHouse", 10},
+		{"alpha", "PostgreSQL", 20},
+		{"beta", "ClickHouse", 30},
+		{"alpha", "ClickHouse", 40},
+	}
+	got := buildResultRowViewWithColumnFilters(rows, "", []string{"alpha", "clickhouse", "3"}, -1, false)
+	if len(got) != 1 || got[0].Index != 2 {
+		t.Fatalf("multiple column filters = %#v, want source row 2", got)
+	}
+}
+
+func TestBuildResultRowViewCombinesGlobalAndColumnFilters(t *testing.T) {
+	rows := [][]interface{}{
+		{"alpha", "ClickHouse"},
+		{"beta", "ClickHouse"},
+		{"alpha", "PostgreSQL"},
+	}
+	got := buildResultRowViewWithColumnFilters(rows, "click", []string{"alpha"}, -1, false)
+	if len(got) != 1 || got[0].Index != 0 {
+		t.Fatalf("global and column filters = %#v", got)
+	}
+}
+
+func TestResultColumnFilterSupportsNullAndIgnoresEmptyColumns(t *testing.T) {
+	rows := [][]interface{}{{nil, "ready"}, {"value", "ready"}}
+	got := buildResultRowViewWithColumnFilters(rows, "", []string{"NULL", ""}, -1, false)
+	if len(got) != 1 || got[0].Index != 0 {
+		t.Fatalf("NULL column filter = %#v", got)
+	}
+	got = buildResultRowViewWithColumnFilters(rows, "", []string{"", "ready"}, -1, false)
+	if len(got) != 2 {
+		t.Fatalf("empty first-column filter should be ignored: %#v", got)
+	}
+}
