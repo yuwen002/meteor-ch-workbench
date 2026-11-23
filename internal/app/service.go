@@ -38,6 +38,11 @@ func NewService(
 
 // SaveConnection 保存连接配置，并使旧连接池失效。
 func (s *Service) SaveConnection(conn config.Connection) error {
+	// Manager.SaveConnection 接收值参数并在内部生成 ID；提前生成可确保
+	// 保存后失效的是正确连接池，而不是空 ID 对应的条目。
+	if conn.ID == "" {
+		conn.GenID()
+	}
 	if err := s.conf.SaveConnection(conn); err != nil {
 		return err
 	}
