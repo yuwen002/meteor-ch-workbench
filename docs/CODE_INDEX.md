@@ -15,7 +15,7 @@ meteor-ch-workbench/
 ├── wails.json           Wails 打包配置
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
-│   ├── clickhouse/      数据库交互层（service.go / export.go）
+│   ├── clickhouse/      数据库交互层（service.go / query.go / exec.go / metadata.go / export.go / import.go）
 │   └── config/          持久化层（manager / export / import / history / tabs）
 ├── frontend/
 │   └── src/             Vue 3 前端
@@ -26,7 +26,7 @@ meteor-ch-workbench/
 │       ├── i18n.ts      中英切换 + localStorage 记忆
 │       ├── router/      仅一条路由 → QueryEditor
 │       ├── stores/      Pinia（app.ts 唯一）
-│       ├── utils/       纯函数（ddl.ts / tabs.ts / resultTable.ts / sqlProjection.ts / dragPanel.ts / sqlLiteral.ts / explain.ts / sqlError.ts / pagination.ts / completionContext.ts / completionItems.ts / resultView.ts / resultFilter.ts / autoRefresh.ts / cellEdit.ts，均配 *.test.ts）
+│       ├── utils/       纯函数（ddl.ts / tabs.ts / resultTable.ts / sqlProjection.ts / dragPanel.ts / sqlLiteral.ts / explain.ts / sqlError.ts / pagination.ts / completionContext.ts / completionItems.ts / resultView.ts / resultFilter.ts / autoRefresh.ts / cellEdit.ts / queryState.ts / connectionError.ts / menuPosition.ts / splitPane.ts，均配 *.test.ts）
 │       ├── views/       QueryEditor（唯一视图）
 │       ├── components/  业务组件（DatabaseTree / ResultGrid / ResultFilterPanel / HistoryPanel / SavedSQLPanel）+ 5 个 Modal + MenuBar
 │       ├── composables/ useMonaco.ts（编辑器初始化 / 懒加载 / 主题 / 事件桥接）、useSqlCompletion.ts（SQL 补全 provider + 缓存）
@@ -93,28 +93,60 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 
 ### [internal/clickhouse/service.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/service.go)
 
-职责：连接池管理 + SQL 执行 + 元数据查询。
+职责：连接池管理 + 查询取消注册 + 通用工具（P14-3 已按职责拆出 `query.go` / `exec.go` / `metadata.go`）。
 
 | 符号 | 类型 | 说明 |
 |---|---|---|
-| `Service` | struct | `mu` + `dbs map[string]*sql.DB` + `running map[string]context.CancelFunc` |
+| `Service` | struct | `mu` + `dbs map[string]*sql.DB` + `running map[string]context.CancelFunc` + `owners map[string]string`（查询归属连接） |
 | `Service.getDB(conn)` | 函数 | 懒建连，已存在则复用；`SetMaxOpenConns(5)` |
-| `Service.Invalidate(id)` | 函数 | 关闭并移除指定连接池 |
-| `Service.register(queryID)` | 函数 | 注册可取消 context；空 ID 退化为 `context.Background()`；返回注销函数 |
+| `Service.Invalidate(id)` | 函数 | 先 `cancelByConn(id)` 取消在途查询，再 `db.Close()` 并移除连接池 |
+| `Service.register(connID, queryID)` | 函数 | 注册可取消 context 并记录归属；空 ID 退化为 `context.Background()`；返回注销函数 |
 | `Service.CancelQuery(queryID)` | 函数 | 取消运行中查询，返回是否真的找到并取消 |
-| `Service.Query(conn, sql, queryID)` | 函数 | 支持取消；取消时返回 `Error = "查询已取消"` |
-| `Service.Execute(conn, sql)` | 函数 | DDL/DML，返回 `ExecResult` |
-| `ensureMutationSync(sql)` | 函数 | mutation 语句（`ALTER ... UPDATE/DELETE`、`DELETE FROM`）自动追加 `SETTINGS mutations_sync = 2`，等服务端 mutation 完成才返回；已显式指定则不覆盖 |
-| `isMutationStatement(sql)` / `stripLeadingComments(sql)` / `hasSetting(sql, key)` | 函数 | 语句类型判定（跳过前置注释）、SETTINGS 键存在性检查 |
+| `Service.cancelByConn(connID)` | 函数 | 批量取消该连接下全部在途查询，返回取消数量 |
+| `Service.CloseAll()` | 函数 | 关闭全部连接池，应用退出时调用 |
 | `buildDSN(conn)` | 函数 | 由 protocol + secure 决定 scheme |
-| `scanRows(ctx, rows, limit)` | 函数 | 逐行检查 ctx，使取消能在一行内生效 |
-| `errQueryCanceled` | 常量 | `"查询已取消"`，前端按此文案识别取消 |
-| `isCanceled(ctx)` | 函数 | 只认 `context.Canceled`，超时不算用户取消 |
-| `QueryResult` | struct | `columns` 现为 `[]ColumnInfo`（含 name/type/comment/is_primary/has_default） |
-| `ColumnInfo` / `TableInfo` / `ClusterInfo` | struct | 元数据返回结构 |
-| `DefaultQueryRowLimit` | 常量 | 见 export.go，50000 |
+| `scanRows(ctx, rows, limit)` | 函数 | 逐行检查 ctx，使取消能在一行内生效；被 `query.go` 调用 |
+| `ColumnInfo` / `TableInfo` / `ClusterInfo` / `QueryResult` / `ExecResult` / `ExecBatchResult` / `StatementResult` | struct | 对外数据契约（`docs/API.md` 对应） |
+| `toString` / `toInt` / `quoteLiteral` / `quoteIdent` / `isTruthy` / `serializeValue` | 函数 | 类型转换与 SQL 转义工具 |
 
 **重要设计说明**：文件头注释解释了为什么用 DSN 而非 `clickhouse.Open` + `Options.Protocol` —— 后者存在协议路由缺陷，指定 HTTP 仍发 Native 握手包。**这是踩过坑的记录，改动建连方式前务必读完那段注释。**
+
+### [internal/clickhouse/query.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/query.go)
+
+职责：查询执行与结果组装（P14-3 从 `service.go` 拆出）。
+
+| 符号 | 说明 |
+|---|---|
+| `Service.Query(conn, sql, queryID)` | 支持取消；取消时返回 `Error = "查询已取消"` |
+| `Service.QueryWithLimit(conn, sql, queryID, rowLimit)` | 同上，可指定行数上限；`rowLimit <= 0` 退回 `DefaultQueryRowLimit` |
+| `errQueryCanceled` | 常量 `"查询已取消"`，前端按此文案识别取消 |
+| `emptyQueryResult(msg, elapsed, rowLimit)` | 构造空结果，`Columns`/`Rows` 初始化为空切片以序列化成 `[]` |
+| `isCanceled(ctx)` | 只认 `context.Canceled`，超时不算用户取消 |
+| `elapsedMs(start)` | 毫秒计时，保留两位小数 |
+
+### [internal/clickhouse/exec.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/exec.go)
+
+职责：DDL/DML 执行（P14-3 从 `service.go` 拆出）。
+
+| 符号 | 说明 |
+|---|---|
+| `Service.Exec(conn, sql)` | 单条 DDL/DML，返回 `ExecResult`；mutation 自动加 `mutations_sync` |
+| `Service.ExecBatch(conn, statements, continueOnError)` | 同池串行批量执行，返回逐条回执 |
+| `Service.execBatchWith(statements, continueOnError, exec)` | 内部实现，注入执行函数以便单测 |
+| `ensureMutationSync(sql)` | mutation 语句追加 `SETTINGS mutations_sync = 2`，已显式指定则不覆盖 |
+| `isMutationStatement(sql)` / `stripLeadingComments(sql)` / `hasSetting(sql, key)` | 语句类型判定（跳过前置注释）、SETTINGS 键存在性检查 |
+
+### [internal/clickhouse/metadata.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/metadata.go)
+
+职责：元数据读取（P14-3 从 `service.go` 拆出）。
+
+| 符号 | 说明 |
+|---|---|
+| `Service.GetDatabases(conn)` | `SHOW DATABASES` |
+| `Service.GetTables(conn, database)` | `system.tables` 中非 View 引擎的表 |
+| `Service.GetViews(conn, database)` | `system.tables` 中引擎以 `View` 结尾的对象 |
+| `Service.GetTableSchema(conn, database, table)` | `DESCRIBE TABLE`，按列名解析（兼容不同版本列数差异） |
+| `Service.GetClusters(conn)` | 先 introspect `system.columns` 再动态 SELECT，兼容老版本缺少 `version` / `uuid` |
 
 ### [internal/clickhouse/export.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/export.go)
 
@@ -320,6 +352,10 @@ Tailwind 指令入口（`@tailwind base/components/utilities`）+ 全局基础�
 ### [shims-vue.d.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/shims-vue.d.ts)
 
 仅声明 `*.vue` 模块，供 `vue-tsc` 识别单文件组件。**不要删除**，删了类型检查会全线报错。
+
+### [vitest.config.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/vitest.config.ts)
+
+`mergeConfig` 复用 `vite.config.ts`，仅追加测试域配置：`include: ['src/**/*.test.ts']`、`environment: 'node'` + `environmentMatchGlobs`（`src/components/**` → `jsdom`，`src/utils/**` → `node`）。见「组件层测试」一节。
 
 ### [api.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/api.ts)
 
@@ -610,6 +646,29 @@ export const api = {
 
 > `ResultGrid` 用 1 秒 `setInterval` 驱动倒计时，到点 emit `refresh`；父组件 `QueryEditor.onResultRefresh` 以 `keepResult = true` 调 `executeSelectedSQL`，刷新过程中旧结果不闪空。查询进行中 `tickRefresh` 不叠加触发。
 
+### [utils/queryState.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/queryState.ts)
+
+**纯函数，无副作用**，同一标签页并发查询的取消与过期判定（P14-1）。
+
+| 符号 | 说明 |
+|---|---|
+| `shouldCancelPrevious(currentQueryId)` | 非空即需取消（新查询发起前调用） |
+| `reconcileQueryIds(previous, next)` | 对比前后待处理集合，返回 `{ cancel, keep }` |
+| `isStaleResult(currentQueryId, pendingQueryIds)` | 结果返回时判定是否属于已作废的请求 |
+| `addPending(list, id)` / `removePending(list, id)` | 维护标签页 `pendingQueryIds` 队列 |
+
+> `QueryTab.pendingQueryIds` 在每次发起查询时 push 新 id、返回后移除；关标签页时对整个队列逐个 `CancelQuery`，不再只取消最后一个。
+
+### [utils/connectionError.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/connectionError.ts)
+
+**纯函数，无副作用**，连接断开类错误识别（P14-4）。
+
+| 符号 | 说明 |
+|---|---|
+| `isDisconnectedError(text)` | 匹配 `connection closed` / `EOF` / `broken pipe` / `connection refused|reset` / `i/o timeout` / `server closed the connection` 等关键词，大小写不敏感 |
+
+> `ResultGrid` 错误面板命中时改用琥珀色「连接已断开」标题与说明，并提供「重新连接」按钮（emit `refresh`）。
+
 ### 前端单元测试
 
 `utils/` 下每个模块均有同名 `*.test.ts`，由 **Vitest 2.x**（与 vite 5 兼容，勿升到 5.x）驱动：
@@ -619,7 +678,20 @@ cd frontend && npm run test          # 单次
 cd frontend && npm run test:watch    # 监听
 ```
 
-遵循项目后端同款约定：表驱动 + 中文用例名 + 覆盖正常 / 边界。当前覆盖 `ddl` / `tabs` / `resultTable` / `sqlLiteral` / `explain` / `sqlError` / `pagination` / `completionContext` / `completionItems` / `resultView` / `resultFilter` / `autoRefresh` / `cellEdit` / `menuPosition` 十四个模块（**453** 用例）。新增纯函数进 `utils/` 时同步补测试。
+遵循项目后端同款约定：表驱动 + 中文用例名 + 覆盖正常 / 边界。当前覆盖 `ddl` / `tabs` / `resultTable` / `sqlProjection` / `dragPanel` / `splitPane` / `menuPosition` / `sqlLiteral` / `explain` / `sqlError` / `pagination` / `completionContext` / `completionItems` / `resultView` / `resultFilter` / `autoRefresh` / `cellEdit` / `queryState` / `connectionError` 十九个模块（19 个测试文件、**649** 用例）。新增纯函数进 `utils/` 时同步补测试。
+
+### 组件层测试（P14-2）
+
+`npm run test` 走 [vitest.config.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/vitest.config.ts)，用 `environmentMatchGlobs` 按路径区分环境：`src/components/**/*.test.ts` → `jsdom`，`src/utils/**/*.test.ts` → `node`（默认 `node`）。组件测试共用 [testUtils.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/testUtils.ts)（`mountWithI18n` / `textOf` / `bodyText`）。
+
+| 文件 | 用例数 | 覆盖 |
+|---|---|---|
+| [ResultToolbarInfo.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultToolbarInfo.test.ts) | 13 | 行数 / 耗时文案、刷新中、倒计时、复制提示、过滤统计、`toggle-sql`、`update:search-text`、`clear-search` |
+| [ResultToolbarActions.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultToolbarActions.test.ts) | 22 | 刷新文案与角标、按钮 enabled 表驱动、Explain 下拉、`manual-refresh` / `explain` / `toggle-export` / `open-filter` 等 emit |
+| [ResultHeaderMenu.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultHeaderMenu.test.ts) | 21 | Teleport 菜单项文本、定位、`canExplain` / `canEdit` / `hiddenCount` 条件、12 组 emit 载荷 |
+| [ResultCellMenu.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultCellMenu.test.ts) | 13 | Teleport 菜单项文本、定位、`canExplain` 条件、8 组 emit 载荷 |
+
+合计 **4 个文件 / 69 条用例**；全量 `npm run test` 共 **23 个文件 / 718 条用例**。`ResultGrid.vue` / `ResultTableBody.vue` / `QueryEditor.vue` / `DatabaseTree.vue` 与各 Modal 依赖 `api` 或 Monaco，未纳入。
 
 ### composables/
 

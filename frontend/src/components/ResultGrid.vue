@@ -62,6 +62,7 @@ import { useAutoRefresh } from '../composables/useAutoRefresh'
 import { useResultFilterPanel } from '../composables/useResultFilterPanel'
 import { useCellEditing, type ApplyResult } from '../composables/useCellEditing'
 import { parseSqlError } from '../utils/sqlError'
+import { isDisconnectedError } from '../utils/connectionError'
 import { rewriteProjectionToColumns, stripPageTail } from '../utils/sqlProjection'
 import { MENU_MARGIN, clampMenuPosition as clampMenuPositionAt } from '../utils/menuPosition'
 
@@ -216,6 +217,7 @@ watch(
 )
 
 const parsedError = computed(() => (props.error ? parseSqlError(props.error) : null))
+const errorIsDisconnected = computed(() => isDisconnectedError(props.error))
 const canExplainCurrent = computed(() => canExplain(props.availableSql))
 const pageState = computed(() => props.page ?? resetPage())
 const pageNumber = computed(() => currentPageNumber(pageState.value))
@@ -821,8 +823,19 @@ defineExpose({
     </div>
 
     <div v-else-if="parsedError" class="flex-1 overflow-auto p-4">
-      <div class="text-sm text-red-400 font-semibold">{{ parsedError.summary || t('editor.queryFailed') }}</div>
+      <div v-if="errorIsDisconnected" class="text-sm text-amber-400 font-semibold">{{ t('editor.connectionLost') }}</div>
+      <div v-else class="text-sm text-red-400 font-semibold">{{ parsedError.summary || t('editor.queryFailed') }}</div>
       <div v-if="parsedError.code !== null" class="text-xs text-ch-muted mt-1">Code: {{ parsedError.code }}</div>
+      <div v-if="errorIsDisconnected" class="text-xs text-ch-muted mt-1">{{ t('editor.connectionLostHint') }}</div>
+      <button
+        v-if="errorIsDisconnected"
+        type="button"
+        class="mt-2 px-3 py-1 text-xs rounded border border-ch-border text-ch-text hover:bg-ch-hover disabled:opacity-50"
+        :disabled="querying"
+        @click="emit('refresh')"
+      >
+        {{ t('editor.reconnect') }}
+      </button>
       <pre class="text-xs text-ch-text mt-2 whitespace-pre-wrap font-mono">{{ parsedError.raw }}</pre>
     </div>
 

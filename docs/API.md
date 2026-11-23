@@ -99,12 +99,14 @@ interface Connection {
 ---
 
 ### Disconnect(connectionID)
-断开指定连接的连接池，下次查询自动重新建连。
+断开指定连接：先取消该连接下全部在途查询（`cancelByConn`），再关闭并移除连接池，下次查询自动重新建连。
 
 | | |
 |---|---|
 | Go | `func (a *App) Disconnect(connectionID string)` |
 | TS | `api.Disconnect(connectionID: string): Promise<void>` |
+
+> 断开后仍在途的查询会立即以 `QueryResult.error = "查询已取消"` 返回，而非驱动层原始报错。前端若收到 `connection closed` / `EOF` 类错误，应提示「连接已断开」并提供重连入口。
 
 ---
 

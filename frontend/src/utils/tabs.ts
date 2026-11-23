@@ -9,6 +9,7 @@ export interface QueryTab {
   error: string | null
   querying: boolean
   queryId: string | null
+  pendingQueryIds: string[]
   canceled: boolean
   resultScrollTop: number
   viewState: unknown | null
@@ -25,6 +26,7 @@ export function createTab(index: number, sql = '-- ClickHouse SQL\nSELECT versio
     error: null,
     querying: false,
     queryId: null,
+    pendingQueryIds: [],
     canceled: false,
     resultScrollTop: 0,
     viewState: null,
@@ -56,6 +58,7 @@ export function restoreTabs(snapshot: TabsSnapshot): RestoredTabs {
     error: null,
     querying: false,
     queryId: null,
+    pendingQueryIds: [],
     canceled: false,
     resultScrollTop: 0,
     viewState: null,

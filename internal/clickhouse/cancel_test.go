@@ -28,7 +28,7 @@ func TestCancelQuery(t *testing.T) {
 		{
 			name: "已注册的 queryID 取消成功",
 			setup: func(s *Service) string {
-				_, _ = s.register("q-1")
+				_, _ = s.register("", "q-1")
 				return "q-1"
 			},
 			want: true,
@@ -47,7 +47,7 @@ func TestCancelQuery(t *testing.T) {
 
 func TestCancelQueryRemovesEntry(t *testing.T) {
 	s := NewService()
-	_, unregister := s.register("q-2")
+	_, unregister := s.register("", "q-2")
 	defer unregister()
 
 	if !s.CancelQuery("q-2") {
@@ -67,7 +67,7 @@ func TestCancelQueryRemovesEntry(t *testing.T) {
 
 func TestRegisterUnregisterCleansUp(t *testing.T) {
 	s := NewService()
-	ctx, unregister := s.register("q-3")
+	ctx, unregister := s.register("", "q-3")
 	if ctx.Err() != nil {
 		t.Fatal("刚注册的 context 不应已取消")
 	}
@@ -87,7 +87,7 @@ func TestRegisterUnregisterCleansUp(t *testing.T) {
 
 func TestRegisterEmptyIDReturnsBackground(t *testing.T) {
 	s := NewService()
-	ctx, unregister := s.register("")
+	ctx, unregister := s.register("", "")
 	defer unregister()
 
 	if ctx != context.Background() {
@@ -104,10 +104,10 @@ func TestRegisterEmptyIDReturnsBackground(t *testing.T) {
 
 func TestRegisterDuplicateIDCancelsOld(t *testing.T) {
 	s := NewService()
-	oldCtx, oldUnregister := s.register("q-4")
+	oldCtx, oldUnregister := s.register("", "q-4")
 	defer oldUnregister()
 
-	_, newUnregister := s.register("q-4")
+	_, newUnregister := s.register("", "q-4")
 	defer newUnregister()
 
 	if oldCtx.Err() != context.Canceled {
@@ -119,6 +119,115 @@ func TestRegisterDuplicateIDCancelsOld(t *testing.T) {
 	s.mu.Unlock()
 	if count != 1 {
 		t.Errorf("重复注册后 running 应只保留 1 条，实际 %d 条", count)
+	}
+}
+
+func TestCancelByConn(t *testing.T) {
+	tests := []struct {
+		name     string
+		connID   string
+		queryIDs []string
+		want     int
+		wantCtx  bool
+	}{
+		{
+			name:     "空连接 ID 不取消任何查询",
+			connID:   "",
+			queryIDs: []string{""},
+			want:     0,
+			wantCtx:  false,
+		},
+		{
+			name:     "同连接多条查询全部取消",
+			connID:   "c-1",
+			queryIDs: []string{"q-1", "q-2", "q-3"},
+			want:     3,
+			wantCtx:  true,
+		},
+		{
+			name:     "无在途查询时返回 0",
+			connID:   "c-1",
+			queryIDs: []string{},
+			want:     0,
+			wantCtx:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewService()
+			ctxs := make([]context.Context, 0, len(tt.queryIDs))
+			for _, id := range tt.queryIDs {
+				ctx, unregister := s.register(tt.connID, id)
+				defer unregister()
+				ctxs = append(ctxs, ctx)
+			}
+
+			if got := s.cancelByConn(tt.connID); got != tt.want {
+				t.Fatalf("cancelByConn(%q) = %d, want %d", tt.connID, got, tt.want)
+			}
+			for _, ctx := range ctxs {
+				if tt.wantCtx && ctx.Err() != context.Canceled {
+					t.Errorf("连接内查询应被取消，实际 %v", ctx.Err())
+				}
+				if !tt.wantCtx && ctx.Err() != nil {
+					t.Errorf("不应被取消，实际 %v", ctx.Err())
+				}
+			}
+
+			s.mu.Lock()
+			running := len(s.running)
+			owners := len(s.owners)
+			s.mu.Unlock()
+			if tt.wantCtx && (running != 0 || owners != 0) {
+				t.Errorf("取消后 running/owners 应为空，实际 %d/%d", running, owners)
+			}
+		})
+	}
+}
+
+func TestCancelByConnOnlySameConnection(t *testing.T) {
+	s := NewService()
+	ctxA, unregisterA := s.register("c-a", "q-a")
+	defer unregisterA()
+	ctxB, unregisterB := s.register("c-b", "q-b")
+	defer unregisterB()
+
+	if got := s.cancelByConn("c-a"); got != 1 {
+		t.Fatalf("cancelByConn(c-a) = %d, want 1", got)
+	}
+	if ctxA.Err() != context.Canceled {
+		t.Errorf("c-a 的查询应被取消，实际 %v", ctxA.Err())
+	}
+	if ctxB.Err() != nil {
+		t.Errorf("c-b 的查询不应受影响，实际 %v", ctxB.Err())
+	}
+
+	s.mu.Lock()
+	remaining := len(s.running)
+	s.mu.Unlock()
+	if remaining != 1 {
+		t.Errorf("c-b 的在途查询应保留，实际剩 %d 条", remaining)
+	}
+}
+
+func TestInvalidateCancelsRunningQueries(t *testing.T) {
+	s := NewService()
+	ctx, unregister := s.register("c-1", "q-1")
+	defer unregister()
+
+	s.Invalidate("c-1")
+	if ctx.Err() != context.Canceled {
+		t.Errorf("Invalidate 应取消该连接的在途查询，实际 %v", ctx.Err())
+	}
+
+	s.Invalidate("c-1")
+
+	s.mu.Lock()
+	dbs := len(s.dbs)
+	running := len(s.running)
+	s.mu.Unlock()
+	if dbs != 0 || running != 0 {
+		t.Errorf("Invalidate 后 dbs/running 应为空，实际 %d/%d", dbs, running)
 	}
 }
 

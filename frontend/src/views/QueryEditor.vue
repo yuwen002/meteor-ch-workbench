@@ -14,6 +14,13 @@ import SavedSQLPanel from '../components/SavedSQLPanel.vue'
 import { useMonaco } from '../composables/useMonaco'
 import type { ApplyResult } from '../composables/useCellEditing'
 import { clampSplitRatio, splitRatioFromY } from '../utils/splitPane'
+import {
+  addPending,
+  isStaleResult,
+  reconcileQueryIds,
+  removePending,
+  shouldCancelPrevious,
+} from '../utils/queryState'
 
 const { t } = useI18n()
 const store = useAppStore()
@@ -184,12 +191,17 @@ async function executeSelectedSQL(rawSQL: string, page: PageState | null = null,
     tab.resultScrollTop = 0
     tab.page = page
   }
+  const previousQueryId = shouldCancelPrevious(tab.queryId)
+  if (previousQueryId) {
+    api.CancelQuery(previousQueryId).catch(() => {})
+  }
   tab.queryId = crypto.randomUUID()
   const queryId = tab.queryId
+  tab.pendingQueryIds = addPending(tab.pendingQueryIds, queryId)
   tab.lastExecutedSql = execSQL
   try {
     const r: QueryResult = await api.Query(store.activeConnectionId, execSQL, queryId)
-    if (tab.queryId !== queryId) return
+    if (isStaleResult(queryId, tab.queryId, tab.pendingQueryIds)) return
     if (r.error === CANCELED_MESSAGE) {
       tab.canceled = true
     } else {
@@ -199,9 +211,10 @@ async function executeSelectedSQL(rawSQL: string, page: PageState | null = null,
       }
     }
   } catch (e: any) {
-    if (tab.queryId !== queryId) return
+    if (isStaleResult(queryId, tab.queryId, tab.pendingQueryIds)) return
     tab.error = e?.message || t('editor.queryFailed')
   } finally {
+    tab.pendingQueryIds = removePending(tab.pendingQueryIds, queryId)
     if (tab.queryId === queryId) {
       tab.querying = false
       tab.queryId = null
@@ -292,11 +305,15 @@ async function onResultApplyEdits(statements: string[]) {
 
 async function cancelQuery() {
   const tab = activeTab.value
-  const queryId = tab.queryId
-  if (!queryId) return
-  try {
-    await api.CancelQuery(queryId)
-  } catch {
+  const ids = [...(tab.pendingQueryIds ?? [])]
+  const current = shouldCancelPrevious(tab.queryId)
+  if (current && !ids.includes(current)) ids.push(current)
+  tab.pendingQueryIds = []
+  for (const id of ids) {
+    try {
+      await api.CancelQuery(id)
+    } catch {
+    }
   }
 }
 
@@ -433,12 +450,20 @@ function addTab() {
   persistTabs()
 }
 
+function cancelTabQueries(tab: QueryTab) {
+  const { cancel } = reconcileQueryIds(tab.pendingQueryIds, null)
+  const current = shouldCancelPrevious(tab.queryId)
+  if (current && !cancel.includes(current)) cancel.push(current)
+  tab.pendingQueryIds = []
+  for (const queryId of cancel) {
+    api.CancelQuery(queryId).catch(() => {})
+  }
+}
+
 function closeTab(id: string) {
   if (tabs.value.length === 1) {
     const tab = tabs.value[0]
-    if (tab.querying && tab.queryId) {
-      api.CancelQuery(tab.queryId).catch(() => {})
-    }
+    cancelTabQueries(tab)
     tab.sql = '-- ClickHouse SQL\nSELECT version()'
     tab.result = null
     tab.error = null
@@ -456,9 +481,7 @@ function closeTab(id: string) {
   const idx = tabs.value.findIndex((t) => t.id === id)
   if (idx < 0) return
   const closing = tabs.value[idx]
-  if (closing.querying && closing.queryId) {
-    api.CancelQuery(closing.queryId).catch(() => {})
-  }
+  cancelTabQueries(closing)
   tabs.value.splice(idx, 1)
   if (activeTabId.value === id) {
     const next = tabs.value[Math.min(idx, tabs.value.length - 1)]

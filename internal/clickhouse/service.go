@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/yuwen002/meteor-ch-workbench/internal/config"
@@ -101,6 +100,7 @@ type Service struct {
 	mu      sync.Mutex                    // 保护 dbs 与 running 映射的互斥锁
 	dbs     map[string]*sql.DB            // 连接 ID -> 连接池
 	running map[string]context.CancelFunc // 查询 ID -> 取消函数
+	owners  map[string]string             // 查询 ID -> 所属连接 ID，用于按连接批量取消
 }
 
 // NewService 创建 ClickHouse 服务实例，初始化空的连接池与运行中查询映射。
@@ -108,12 +108,14 @@ func NewService() *Service {
 	return &Service{
 		dbs:     make(map[string]*sql.DB),
 		running: make(map[string]context.CancelFunc),
+		owners:  make(map[string]string),
 	}
 }
 
 // register 为一个查询 ID 注册可取消的 context，返回该 context 与注销函数。
 // 未提供 queryID 时退化为不可取消的 context，保持向后兼容。
-func (s *Service) register(queryID string) (context.Context, func()) {
+// connID 记录查询归属，使断开连接时能批量取消该连接的全部在途查询。
+func (s *Service) register(connID string, queryID string) (context.Context, func()) {
 	if queryID == "" {
 		return context.Background(), func() {}
 	}
@@ -123,13 +125,46 @@ func (s *Service) register(queryID string) (context.Context, func()) {
 		old()
 	}
 	s.running[queryID] = cancel
+	if connID != "" {
+		s.owners[queryID] = connID
+	} else {
+		delete(s.owners, queryID)
+	}
 	s.mu.Unlock()
 	return ctx, func() {
 		s.mu.Lock()
 		delete(s.running, queryID)
+		delete(s.owners, queryID)
 		s.mu.Unlock()
 		cancel()
 	}
+}
+
+// cancelByConn 取消指定连接下所有在途查询，返回被取消的数量。
+func (s *Service) cancelByConn(connID string) int {
+	if connID == "" {
+		return 0
+	}
+	s.mu.Lock()
+	cancels := make([]context.CancelFunc, 0)
+	for queryID, owner := range s.owners {
+		if owner != connID {
+			continue
+		}
+		if cancel, ok := s.running[queryID]; ok {
+			cancels = append(cancels, cancel)
+			delete(s.running, queryID)
+			delete(s.owners, queryID)
+		}
+	}
+	s.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	if len(cancels) > 0 {
+		log.Printf("[cancelByConn] connectionID=%q 取消了 %d 个在途查询", connID, len(cancels))
+	}
+	return len(cancels)
 }
 
 // CancelQuery 取消指定查询 ID 正在执行的查询。
@@ -142,6 +177,7 @@ func (s *Service) CancelQuery(queryID string) bool {
 	cancel, ok := s.running[queryID]
 	if ok {
 		delete(s.running, queryID)
+		delete(s.owners, queryID)
 	}
 	s.mu.Unlock()
 	if ok {
@@ -241,7 +277,9 @@ func (s *Service) TestConnection(conn config.Connection) error {
 
 // Invalidate 关闭并移除指定连接的连接池。
 // 连接参数变更、删除连接或测试失败时调用，确保后续操作重新建连。
+// 先取消该连接下所有在途查询再关闭连接池，避免旧会话继续持有已失效的凭据。
 func (s *Service) Invalidate(id string) {
+	s.cancelByConn(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if db, ok := s.dbs[id]; ok {
@@ -290,511 +328,7 @@ func scanRows(ctx context.Context, rows *sql.Rows, limit int) ([][]interface{}, 
 	return result, truncated, nil
 }
 
-// Query 在指定连接上执行 SQL 并返回结果集，行数上限为 DefaultQueryRowLimit。
-// 如需按用户配置调整上限，请改用 QueryWithLimit。
-// SQL 执行期错误不会向上返回 error，而是写入 QueryResult.Error，
-// 前端据此在结果面板内展示错误；只有连接/列读取等基础设施错误才返回 error。
-//
-// queryID 用于支持主动取消：非空时注册可取消 context，调用 CancelQuery(queryID)
-// 会让本次查询立即返回，错误信息标记为「查询已取消」，已读取的部分结果被丢弃。
-func (s *Service) Query(conn config.Connection, sqlText string, queryID string) (*QueryResult, error) {
-	return s.QueryWithLimit(conn, sqlText, queryID, DefaultQueryRowLimit)
-}
-
-// QueryWithLimit 与 Query 相同，但允许调用方指定行数上限。
-// rowLimit <= 0 时退回 DefaultQueryRowLimit；上游（App）负责传入用户配置的值。
-func (s *Service) QueryWithLimit(conn config.Connection, sqlText string, queryID string, rowLimit int) (*QueryResult, error) {
-	if rowLimit <= 0 {
-		rowLimit = DefaultQueryRowLimit
-	}
-	db, err := s.getDB(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	start := time.Now()
-	ctx, unregister := s.register(queryID)
-	defer unregister()
-
-	rows, err := db.QueryContext(ctx, sqlText)
-	if err != nil {
-		if isCanceled(ctx) {
-			return emptyQueryResult(errQueryCanceled, elapsedMs(start), rowLimit), nil
-		}
-		return emptyQueryResult(err.Error(), elapsedMs(start), rowLimit), nil
-	}
-	defer rows.Close()
-
-	result := &QueryResult{
-		RowLimit: rowLimit,
-		Columns:  []ColumnInfo{},
-		Rows:     make([][]interface{}, 0),
-	}
-	cols, err := rows.Columns()
-	if err != nil {
-		return result, err
-	}
-	for _, col := range cols {
-		result.Columns = append(result.Columns, ColumnInfo{Name: col})
-	}
-
-	data, truncated, err := scanRows(ctx, rows, rowLimit)
-	if err != nil {
-		if isCanceled(ctx) {
-			return emptyQueryResult(errQueryCanceled, elapsedMs(start), rowLimit), nil
-		}
-		return result, err
-	}
-	result.Rows = data
-	result.RowCount = int64(len(data))
-	result.Truncated = truncated
-	result.ElapsedMs = elapsedMs(start)
-	return result, nil
-}
-
-// errQueryCanceled 是用户主动取消查询时写入 QueryResult.Error 的提示文本。
-const errQueryCanceled = "查询已取消"
-
-// emptyQueryResult 构造一个不含结果集的 QueryResult。
-// Columns / Rows 显式初始化为空切片，保证 JSON 序列化成 [] 而不是 null，
-// 避免前端访问 result.columns[i] 时触发 "Cannot read properties of null"。
-func emptyQueryResult(message string, elapsed float64, rowLimit int) *QueryResult {
-	return &QueryResult{
-		Columns:   []ColumnInfo{},
-		Rows:      make([][]interface{}, 0),
-		ElapsedMs: elapsed,
-		RowLimit:  rowLimit,
-		Error:     message,
-	}
-}
-
-// isCanceled 判断 context 是否已被主动取消。
-// 只认 context.Canceled；由超时导致的 DeadlineExceeded 不算用户取消。
-func isCanceled(ctx context.Context) bool {
-	return ctx.Err() == context.Canceled
-}
-
-// elapsedMs 返回从 start 到当前时刻的毫秒数，保留两位小数。
-func elapsedMs(start time.Time) float64 {
-	return float64(time.Since(start).Microseconds()) / 1000.0
-}
-
-// Exec 执行一条不返回结果集的 SQL（DDL / DML）。
-// 包括 CREATE / ALTER / DROP / TRUNCATE / INSERT / RENAME 等。
-// 与 Query 保持一致：SQL 执行期错误写入 ExecResult.Error，
-// 只有连接等基础设施错误才作为 error 返回。
-func (s *Service) Exec(conn config.Connection, sqlText string) (*ExecResult, error) {
-	db, err := s.getDB(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := context.Background()
-	res, err := db.ExecContext(ctx, ensureMutationSync(sqlText))
-	if err != nil {
-		return &ExecResult{Error: err.Error()}, nil
-	}
-
-	affected, _ := res.RowsAffected()
-	return &ExecResult{RowsAffected: affected}, nil
-}
-
-// execFunc 执行单条语句并返回受影响行数，供 ExecBatch 注入以便单测。
-type execFunc func(ctx context.Context, sqlText string) (int64, error)
-
-// ExecBatch 在同一个连接池上顺序执行多条 DDL/DML 语句。
-//
-// 相对逐条调用 Exec，批量执行只建立一次连接、只做一次跨进程往返，
-// 避免「改 N 个单元格 = N 次 API 调用」的串行等待。
-// 语句始终串行执行：ClickHouse 的 ALTER ... UPDATE 是 mutation，
-// 并发提交只会让服务端排队，收益为零。
-//
-// continueOnError 为 false 时遇到第一条失败即停止，后续语句标记为 skipped；
-// 为 true 时继续执行剩余语句，一次收集全部失败点。
-//
-// 与 Exec 保持一致：SQL 执行期错误写入回执中的 Error，不向上返回 error；
-// 只有获取连接等基础设施错误才作为 error 返回。
-func (s *Service) ExecBatch(conn config.Connection, statements []string, continueOnError bool) (*ExecBatchResult, error) {
-	return s.execBatchWith(statements, continueOnError, func(ctx context.Context, sqlText string) (int64, error) {
-		db, err := s.getDB(conn)
-		if err != nil {
-			return 0, err
-		}
-		res, err := db.ExecContext(ctx, ensureMutationSync(sqlText))
-		if err != nil {
-			return 0, err
-		}
-		affected, _ := res.RowsAffected()
-		return affected, nil
-	})
-}
-
-// execBatchWith 是 ExecBatch 的内部实现，执行动作由 exec 注入，
-// 便于在没有真实 ClickHouse 的单元测试中覆盖中断 / 全量收集 / 下标回执等分支。
-func (s *Service) execBatchWith(statements []string, continueOnError bool, exec execFunc) (*ExecBatchResult, error) {
-	start := time.Now()
-	result := &ExecBatchResult{Statements: make([]StatementResult, 0, len(statements))}
-
-	ctx := context.Background()
-	stopped := false
-	for i, stmt := range statements {
-		if stopped {
-			result.Statements = append(result.Statements, StatementResult{Index: i, SQL: stmt})
-			result.Skipped++
-			continue
-		}
-		affected, err := exec(ctx, stmt)
-		entry := StatementResult{Index: i, SQL: stmt}
-		if err != nil {
-			entry.Error = err.Error()
-			result.Statements = append(result.Statements, entry)
-			result.Failed++
-			if !continueOnError {
-				stopped = true
-			}
-			continue
-		}
-		entry.RowsAffected = affected
-		result.Statements = append(result.Statements, entry)
-		result.Ok++
-	}
-	result.ElapsedMs = elapsedMs(start)
-	return result, nil
-}
-
-// ensureMutationSync 对 ALTER ... UPDATE / DELETE 类 mutation 语句追加 SETTINGS mutations_sync=2，
-// 让服务端等 mutation 在全部副本上完成后才返回，避免调用方紧接着查询时仍读到旧数据。
-// 非 mutation 语句，或调用方已显式指定 mutations_sync 时原样返回。
-func ensureMutationSync(sqlText string) string {
-	if !isMutationStatement(sqlText) {
-		return sqlText
-	}
-	if hasSetting(sqlText, "mutations_sync") {
-		return sqlText
-	}
-	trimmed := strings.TrimRight(strings.TrimSpace(sqlText), ";")
-	return trimmed + " SETTINGS mutations_sync = 2"
-}
-
-// isMutationStatement 判断语句是否为 ClickHouse 需要等待完成的 mutation。
-// 只看首两个关键字：ALTER TABLE ... UPDATE / DELETE，以及独立的 DELETE FROM。
-func isMutationStatement(sqlText string) bool {
-	fields := strings.Fields(strings.ToUpper(stripLeadingComments(sqlText)))
-	if len(fields) == 0 {
-		return false
-	}
-	if fields[0] == "DELETE" {
-		return len(fields) > 1 && fields[1] == "FROM"
-	}
-	if fields[0] != "ALTER" || len(fields) < 3 {
-		return false
-	}
-	for _, f := range fields {
-		if f == "UPDATE" || f == "DELETE" {
-			return true
-		}
-	}
-	return false
-}
-
-// stripLeadingComments 去掉语句开头的空白与 -- / /* */ 注释，便于按关键字判断语句类型。
-func stripLeadingComments(sqlText string) string {
-	s := strings.TrimSpace(sqlText)
-	for {
-		if strings.HasPrefix(s, "--") {
-			if idx := strings.IndexByte(s, '\n'); idx >= 0 {
-				s = strings.TrimSpace(s[idx+1:])
-				continue
-			}
-			return ""
-		}
-		if strings.HasPrefix(s, "/*") {
-			if idx := strings.Index(s, "*/"); idx >= 0 {
-				s = strings.TrimSpace(s[idx+2:])
-				continue
-			}
-			return ""
-		}
-		return s
-	}
-}
-
-// hasSetting 判断语句中是否已显式包含指定的 SETTINGS 键。
-func hasSetting(sqlText, key string) bool {
-	lower := strings.ToLower(sqlText)
-	return strings.Contains(lower, strings.ToLower(key)+" ")
-}
-
-// GetDatabases 返回该连接可见的全部数据库名（SHOW DATABASES）。
-// 使用大权限账号且未指定默认库时，前端可据此在侧边栏列出所有库。
-func (s *Service) GetDatabases(conn config.Connection) ([]string, error) {
-	db, err := s.getDB(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := context.Background()
-	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var dbs []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		dbs = append(dbs, name)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return dbs, nil
-}
-
-// GetTables 返回指定数据库下的全部表信息（名称、引擎、注释）。
-// 数据库名通过 quoteLiteral 转义后拼入 SQL，避免特殊字符导致语句异常。
-func (s *Service) GetTables(conn config.Connection, database string) ([]TableInfo, error) {
-	db, err := s.getDB(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := context.Background()
-	query := "SELECT name, engine, comment FROM system.tables WHERE database = " + quoteLiteral(database) +
-		" AND engine NOT LIKE '%View'"
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var tables []TableInfo
-	for rows.Next() {
-		var name, engine, comment string
-		if err := rows.Scan(&name, &engine, &comment); err != nil {
-			return nil, err
-		}
-		tables = append(tables, TableInfo{
-			Name:    name,
-			Engine:  engine,
-			Comment: comment,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return tables, nil
-}
-
-// GetViews 返回指定数据库下的全部视图信息（名称、引擎、注释）。
-// 视图同样存储在 system.tables 中，通过引擎以 View 结尾来区分。
-func (s *Service) GetViews(conn config.Connection, database string) ([]TableInfo, error) {
-	db, err := s.getDB(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := context.Background()
-	query := "SELECT name, engine, comment FROM system.tables WHERE database = " + quoteLiteral(database) +
-		" AND engine LIKE '%View'"
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var views []TableInfo
-	for rows.Next() {
-		var name, engine, comment string
-		if err := rows.Scan(&name, &engine, &comment); err != nil {
-			return nil, err
-		}
-		views = append(views, TableInfo{
-			Name:    name,
-			Engine:  engine,
-			Comment: comment,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return views, nil
-}
-
-// GetTableSchema 返回指定表的列结构。
-// 按结果列名（name/type/comment）匹配取值，而不是按固定列序，
-// 这样在不同 ClickHouse 版本上（DESCRIBE 返回的列数可能不同）都能正确解析。
-func (s *Service) GetTableSchema(conn config.Connection, database string, table string) ([]ColumnInfo, error) {
-	db, err := s.getDB(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := context.Background()
-	query := fmt.Sprintf("DESCRIBE TABLE %s.%s", quoteIdent(database), quoteIdent(table))
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-	var schema []ColumnInfo
-	for rows.Next() {
-		vals := make([]interface{}, len(cols))
-		ptrs := make([]interface{}, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
-		}
-		info := ColumnInfo{}
-		for i, name := range cols {
-			switch name {
-			case "name", "type", "comment":
-				sval, _ := vals[i].(string)
-				switch name {
-				case "name":
-					info.Name = sval
-				case "type":
-					info.Type = sval
-				case "comment":
-					info.Comment = sval
-				}
-			case "primary_key":
-				info.IsPrimary = isTruthy(vals[i])
-			case "default_type":
-				sval, _ := vals[i].(string)
-				info.HasDefault = sval != ""
-			}
-		}
-		schema = append(schema, info)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return schema, nil
-}
-
-// GetClusters 返回 system.clusters 中的集群拓扑信息。
-// 不同版本的 ClickHouse 在 system.clusters 表中提供的列略有差异
-// （例如 version、uuid 是较新版本才加入的），这里先通过 introspect
-// 确认有哪些列可用，再动态构建 SELECT，保证对老版本（如 22.5）兼容。
-// 库内 port、shard_num、replica_num 为无符号类型，这里先按 uint64 读取再转 int。
-func (s *Service) GetClusters(conn config.Connection) ([]ClusterInfo, error) {
-	db, err := s.getDB(conn)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := context.Background()
-
-	colRows, err := db.QueryContext(ctx,
-		"SELECT name FROM system.columns WHERE database = 'system' AND table = 'clusters'")
-	if err != nil {
-		return nil, err
-	}
-	defer colRows.Close()
-
-	available := map[string]bool{}
-	for colRows.Next() {
-		var name string
-		if err := colRows.Scan(&name); err != nil {
-			return nil, err
-		}
-		available[name] = true
-	}
-	if err := colRows.Err(); err != nil {
-		return nil, err
-	}
-
-	type colSpec struct {
-		name     string
-		required bool
-	}
-	desired := []colSpec{
-		{"cluster", true},
-		{"host_name", true},
-		{"host_address", true},
-		{"port", true},
-		{"is_local", true},
-		{"shard_num", true},
-		{"replica_num", true},
-		{"version", false},
-		{"uuid", false},
-	}
-
-	var selectCols []string
-	for _, c := range desired {
-		if c.required && !available[c.name] {
-			return nil, fmt.Errorf("system.clusters 缺少必要列 %q，无法获取集群信息", c.name)
-		}
-		if available[c.name] {
-			selectCols = append(selectCols, c.name)
-		}
-	}
-
-	query := "SELECT " + strings.Join(selectCols, ", ") + " FROM system.clusters"
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	var clusters []ClusterInfo
-	for rows.Next() {
-		vals := make([]interface{}, len(cols))
-		ptrs := make([]interface{}, len(cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
-		}
-		info := ClusterInfo{}
-		for i, name := range cols {
-			switch name {
-			case "cluster":
-				info.Cluster = toString(vals[i])
-			case "version":
-				info.Version = toString(vals[i])
-			case "host_name":
-				info.HostName = toString(vals[i])
-			case "host_address":
-				info.HostAddress = toString(vals[i])
-			case "port":
-				info.Port = toInt(vals[i])
-			case "is_local":
-				if b, ok := vals[i].(bool); ok {
-					info.IsLocal = b
-				}
-			case "shard_num":
-				info.ShardNum = toInt(vals[i])
-			case "replica_num":
-				info.ReplicaNum = toInt(vals[i])
-			case "uuid":
-				info.UUID = toString(vals[i])
-			}
-		}
-		clusters = append(clusters, info)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return clusters, nil
-}
+// Query / Exec / 元数据读取分别见 query.go、exec.go、metadata.go。
 
 func toString(v interface{}) string {
 	if v == nil {

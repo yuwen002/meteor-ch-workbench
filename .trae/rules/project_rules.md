@@ -49,6 +49,8 @@ go test ./...                         # 后端测试（改 internal/ 必须跑�
 ## 前端结构约定
 - 组件层不直接写 `Call.ByName`，一律走 `api.ts`。
 - `utils/` 只放纯函数（如 `ddl.ts` / `tabs.ts`），不引入 store 或 API 调用；**每个纯函数模块必须配同名 `*.test.ts`**（Vitest），测试沿用后端风格：表驱动 + 中文用例名 + 覆盖正常 / 边界。
+- 组件测试与被测组件同目录，同样命名 `*.test.ts`，共用 `src/components/testUtils.ts` 的 `mountWithI18n`；断言只查文本与 emit，不查 class 名。走 `<Teleport to="body">` 的组件必须用 `bodyText()` / `document.body` 查询，并在 `afterEach` 清空 `document.body`。
+- `npm run test` 使用独立 `frontend/vitest.config.ts`：`src/components/**` 跑 jsdom，`src/utils/**` 跑 node，**不要改动这个按路径分环境的配置**，否则 649 条纯函数用例会因 jsdom 变慢/异常。
 - Modal 统一用 `<Teleport to="body">`，z-index 2000 或 3000，关闭靠 `v-if + @click.self + Esc`。
 - 数据库树外层需要 `group` 类，内层按钮才能用 `group-hover:opacity-100` 显示。
 

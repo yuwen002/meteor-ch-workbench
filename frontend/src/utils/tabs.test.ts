@@ -8,6 +8,7 @@ describe('createTab', () => {
     expect(tab.error).toBeNull()
     expect(tab.querying).toBe(false)
     expect(tab.queryId).toBeNull()
+    expect(tab.pendingQueryIds).toEqual([])
     expect(tab.canceled).toBe(false)
     expect(tab.resultScrollTop).toBe(0)
     expect(tab.viewState).toBeNull()

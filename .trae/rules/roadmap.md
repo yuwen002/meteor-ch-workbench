@@ -2,7 +2,7 @@
 
 > 本文件是**已完成能力与后续计划的唯一真相源**，按阶段（P1–P14）记录问题、方案、落地结果与验收标准。
 > 与其他文档分工：`docs/FEATURES.md` 面向用户，`docs/API.md` 面向接口契约，`docs/CODE_INDEX.md` 面向文件职责。
-> 更新时间：2026-11-22
+> 更新时间：2026-11-23
 
 ## 阶段总览
 
@@ -21,7 +21,7 @@
 | P11 | 单元格编辑收口 + `ResultGrid` 拆分 | 已完成 |
 | P12 | 批量执行 / 流式导出 / 行数上限 / 壳层瘦身 | 已完成 |
 | P13 | 结果集导出格式扩容（Excel / JSONL / TSV / DDL） | 已完成 |
-| P14 | 工程收口（查询并发正确性 / 组件测试 / 后端拆分 / 连接生命周期 / 文档纠偏） | 计划中 |
+| P14 | 工程收口（查询并发正确性 / 组件测试 / 后端拆分 / 连接生命周期 / 文档纠偏） | 已完成 |
 
 约定：阶段标题统一为 `### Px 主题`，其下依次是「目标」行、`**状态：...**` 行、条目表（或 `**落地结果**` 列表）；单项交付记录固定为「问题 → 方案 → 落地结果 → 验收」四段，验收始终放在末尾。
 
@@ -938,7 +938,7 @@ P11 收口后自审发现的性能与可配置性短板：批量编辑的逐条�
 
 P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只处理自审发现的**一处真实缺陷 + 三类工程债**：查询并发正确性、组件层测试空白、后端文件体量与连接生命周期、以及文档与代码的偏差。基线核对（2026-11-22）：`vue-tsc --noEmit` 0 错误；`npm run test` 17 文件 **607** 用例全通过；`go build ./...`、`go vet ./...`、`go test ./...` 全通过。
 
-**状态：计划中**
+**状态：已完成**
 
 | 事实 | 数据 | 含义 |
 |---|---|---|
@@ -949,13 +949,13 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 
 条目与执行顺序：
 
-| 顺序 | 项 | 内容 | 工作量 | 影响面 |
-|---|---|---|---|---|
-| 1 | P14-1 | 查询并发正确性修复 | 小 | 前端 + 兜底调 `CancelQuery` |
-| 2 | P14-2 | 组件层冒烟测试（`@vue/test-utils`） | 中 | 前端测试基建 |
-| 3 | P14-3 | `clickhouse/service.go` 拆分 | 中 | 纯后端重构 |
-| 4 | P14-4 | 连接生命周期收口 | 小 | 后端 + 前端提示 |
-| 5 | P14-5 | 文档纠偏与勾选 | 小 | 仅文档 |
+| 顺序 | 项 | 内容 | 工作量 | 影响面 | 状态 |
+|---|---|---|---|---|---|
+| 1 | P14-1 | 查询并发正确性修复 | 小 | 前端 + 兜底调 `CancelQuery` | 已完成 |
+| 2 | P14-2 | 组件层冒烟测试（`@vue/test-utils`） | 中 | 前端测试基建 | 已完成 |
+| 3 | P14-3 | `clickhouse/service.go` 拆分 | 中 | 纯后端重构 | 已完成 |
+| 4 | P14-4 | 连接生命周期收口 | 小 | 后端 + 前端提示 | 已完成 |
+| 5 | P14-5 | 文档纠偏与勾选 | 小 | 仅文档 | 已完成 |
 
 执行顺序理由：P14-1 是当前**唯一被证实的用户可感知缺陷**且改动面最小，先落地立信；P14-2 建起组件测试底座——P14-3 / P14-4 会动前后端交互层，没有组件测试兜底极易重演 P10-4（文件被误清空、无测试可回退）的事故；P14-3 是纯重构，必须在测试就位之后；P14-4 顺带把连接断开语义写进 UI 提示；P14-5 最后统一收口文档。
 
@@ -976,6 +976,14 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 - 结果判定改为「不在 pending 交集即视为过期」：只有 `queryId` 仍在 pending 中且等于 `tab.queryId` 时才写回结果。
 - 配 `queryState.test.ts`：表驱动，覆盖空 id、单次发起的自取消边界、正常返回、过期返回、多 id 求和取消集合。
 
+**落地结果**（2026-11-23）：
+- 新增 `frontend/src/utils/queryState.ts` + `queryState.test.ts`（28 条用例）：`shouldCancelPrevious` / `reconcileQueryIds` / `isStaleResult` / `addPending` / `removePending`。
+- `QueryTab` 新增 `pendingQueryIds: string[]`（`utils/tabs.ts` 的 `createTab` / `restoreTabs` 初始化为 `[]`，`tabs.test.ts` 同步断言）。
+- [QueryEditor.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/views/QueryEditor.vue)：执行前若 `tab.queryId` 非空先 `CancelQuery` 上一个请求；新 queryID push 进 pending；结果 / 异常分支改用 `isStaleResult` 判定；`finally` 移除并清空。
+- 新增 `cancelTabQueries(tab)`：关闭标签页（含最后一个标签的重置分支）时对 `pendingQueryIds` 全量取消，替代原来只取消 `tab.queryId` 一次。
+- 后端 `Service` 新增 `owners map[string]string`（查询 → 连接），`register(connID, queryID)` 记录归属，新增 `cancelByConn(connID)`；`CancelQuery` / `Invalidate` 同步清理。
+- `cancel_test.go` 适配新签名并新增 `TestCancelByConn` / `TestCancelByConnOnlySameConnection` / `TestInvalidateCancelsRunningQueries`。
+
 **验收**：`SELECT sleep(3)` 期间连点刷新 5 次，后端 `running` map 最终为空、只保留最后一个请求为有效；快速改分页不会出现旧结果回显；关标签页时所有在途查询被取消；`queryState.test.ts` 覆盖上述边界；`vue-tsc --noEmit` / `npm run test` / `npm run build` 通过。
 
 #### P14-2 组件层冒烟测试（优先级：中）
@@ -983,14 +991,26 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 **问题**：`utils/` 17 个模块共 607 条用例覆盖完善，但 21 个 `.vue` 组件零测试。P7-1 与 P11-4 的两次大重构全靠人工回归，P10-4 的事故（`ResultGrid.vue` 被一条写错的 PowerShell 命令清空、无 git 历史也无测试兜底）正是缺少这层防线的直接后果。
 
 **方案**：
-- 引入 `@vue/test-utils` + `jsdom`（`vitest` 已就位，仅需新增 `environment: 'jsdom'` 配置与两个 devDependencies；同样注意 vitest 2.x 版本约束，勿升到 5.x）。
+- 引入 `@vue/test-utils` + `jsdom`（`vitest` 已就位，仅需新增环境配置与两个 devDependencies；注意 vitest 2.x 版本约束，勿升到 5.x）。
 - **只测「纯渲染 + 事件契约」的组件**，明确排除依赖 Wails 运行时与 Monaco 的组件：
-  - 纳入：`ResultTableBody.vue`（可见列索引下渲染的列数 / 单元格取值）、`ResultToolbarInfo.vue` / `ResultToolbarActions.vue`（统计文案与按钮 enabled 状态）、`ResultHeaderMenu.vue` / `ResultCellMenu.vue`（菜单项与 emit 载荷）。
-  - 排除：`ResultGrid.vue`（依赖 `useCellEditing` / `useResultFilterPanel` 等 composable 与 `api`，致 mock 成本过高）、`QueryEditor.vue`、`DatabaseTree.vue`、所有 Modal。
-- `api.ts` 在测试环境下用 `vi.mock` 全量打桩，保证任何被间接导入的 API 都不会真的发起 `Call.ByName`。
+  - 纳入：`ResultToolbarInfo.vue` / `ResultToolbarActions.vue`（统计文案与按钮 enabled 状态）、`ResultHeaderMenu.vue` / `ResultCellMenu.vue`（菜单项与 emit 载荷）。
+  - 排除：`ResultGrid.vue`（依赖 `useCellEditing` / `useResultFilterPanel` 等 composable 与 `api`，mock 成本过高）、`ResultTableBody.vue`（同样依赖 `useCellEditing` 与 `api`）、`QueryEditor.vue`、`DatabaseTree.vue`、所有 Modal。
+- 这四个组件均不导入 `api.ts`，因此不需要 `vi.mock` 打桩；后续若纳入依赖 `api` 的组件再补。
 - 组件测试与被测组件同目录，命名 `*.test.ts`，风格与 `utils/` 一致：表驱动 + 中文用例名 + 正常 / 边界。挂载点固定在 `describe('X 组件')` 下，不测实现细节（不查 class 名，只查文本与 emit）。
 
-**验收**：新增组件测试 ≥ 3 个文件、≥ 25 条用例；`npm run test` 全通过且原有 607 条不回归；`vite.config` 与 `vitest` 配置变更不影响 `npm run build` 产物（Monaco chunk 仍 2,753 kB）。
+**落地结果**（2026-11-23）：
+- 新增 devDependencies：`@vue/test-utils@^2.4.6`、`jsdom@^25.0.1`（vitest 保持 2.1.9，未升级）。
+- 新增 [vitest.config.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/vitest.config.ts)：`mergeConfig` 复用 `vite.config.ts`，用 `environmentMatchGlobs` 让 `src/components/**/*.test.ts` 走 `jsdom`、`src/utils/**/*.test.ts` 保持 `node`，`environment` 默认 `node`，`include: ['src/**/*.test.ts']`。`package.json` 的 `test` / `test:watch` 指向该配置。
+- 新增 [testUtils.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/testUtils.ts)：`mountWithI18n` 注入独立 i18n 实例（`legacy: false` + 中英消息 + 关闭 missing/fallback 警告，避免 `localStorage`/`navigator` 依赖），`textOf` 归一化空白，`bodyText` 读取 `document.body` 供 Teleport 组件断言。
+- 四个测试文件共 **69** 条用例：
+  - [ResultToolbarInfo.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultToolbarInfo.test.ts)（13 条）：行数千分位与耗时格式化、零行、刷新中提示、倒计时、复制提示、过滤统计、查看 SQL 按钮显隐与 `toggle-sql`、搜索输入 `update:search-text` 载荷、`clear-search`、改动圆点。
+  - [ResultToolbarActions.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultToolbarActions.test.ts)（22 条）：刷新关闭/开启文案、过滤角标、9 组按钮 enabled 表驱动（查询中 / canExplain / hasColumns / exporting / filterEnabled）、Explain 下拉选项数与 `update:explain-mode`、下拉禁用条件、`manual-refresh` / `toggle-refresh-menu`（断言载荷为 `Event`）/ `explain` / 禁用时不发事件 / `toggle-export` / `open-filter`。
+  - [ResultHeaderMenu.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultHeaderMenu.test.ts)（21 条）：`visible=false` 空树、菜单项文本、`x/y` 定位（读 DOM `style.left/top`）、`canExplain` 控制排序与按值过滤项、列名插值、编辑键文案切换、`canEdit` 禁用、`hiddenCount` 禁用与数量、`editKeyHint` 原样渲染、12 组 emit 载荷表驱动。
+  - [ResultCellMenu.test.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultCellMenu.test.ts)（13 条）：`visible` 空树、复制类菜单项、定位、`canExplain` 控制项、列名插值、8 组 emit 载荷表驱动。
+- 两个菜单组件走 `<Teleport to="body">`，断言改为 `document.body` 查询 + `afterEach` 清空 body，不经 wrapper 子树。
+- 未纳入（按路线图排除）：`ResultGrid.vue`、`QueryEditor.vue`、`DatabaseTree.vue`、全部 Modal。
+
+**验收**：新增组件测试 4 个文件、**69** 条用例（≥ 3 文件 / ≥ 25 条，达标）；`npm run test` 23 文件 **718** 用例全通过，原有 649 条无回归；`vue-tsc --noEmit` 0 错误；`npm run build` 成功且 Monaco chunk 仍为 **2,753.05 kB**。
 
 #### P14-3 `clickhouse/service.go` 拆分（优先级：中）
 
@@ -1004,7 +1024,13 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 - 现有 `*_test.go` 不动，仅在必要时跟随同包符号移动（同包内移动不改导入路径）。
 - **一次只动一类**：每拆一类立即 `go build ./... && go test ./...`，禁止一次性全拆（沿用 P7-1 的风险控制约定）。
 
-**验收**：`service.go` ≤ 350 行，四个新文件职责单一；`go build ./...` / `go vet ./...` / `go test ./...` 全绿且用例数不减；`docs/CODE_INDEX.md` 同步新文件职责。
+**落地结果**（2026-11-23）：`service.go` 由 768 行降至 **346 行**（达成 ≤ 350 目标），拆出三个新文件并保持包内符号不变：
+- `query.go`：`Query` / `QueryWithLimit` / `emptyQueryResult` / `isCanceled` / `elapsedMs` / `errQueryCanceled`。
+- `exec.go`：`Exec` / `ExecBatch` / `execBatchWith` / `ensureMutationSync` / `isMutationStatement` / `stripLeadingComments` / `hasSetting`。
+- `metadata.go`：`GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetClusters`。
+- `service.go` 保留 `Service` 结构体、`NewService`、`register` / `cancelByConn` / `CancelQuery` / `Invalidate` / `CloseAll` / `getDB` / `buildDSN` / `TestConnection` / `scanRows` 及全部类型定义与工具函数（`serializeValue` 被 `scanRows` 使用，留在原处）。
+
+**验收**：`service.go` ≤ 350 行（实际 **346** 行，达标）；四个文件职责单一（`query.go` 83 行 / `exec.go` 133 行 / `metadata.go` 268 行）；`go build ./...` / `go vet ./...` / `go test ./...` 全绿且用例数不减；`docs/CODE_INDEX.md` 同步新文件职责。
 
 #### P14-4 连接生命周期收口（优先级：中）
 
@@ -1015,6 +1041,14 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 - `Disconnect` 先取消该连接全部在途查询，再 `Close` 池。
 - 前端：`ResultGrid` 错误面板对「连接已关闭 / 已断开」类错误给出明确文案（复用 `sqlError` 的映射表新增两个错误码或关键词），并提供「重新连接」快捷按钮（复用 `checkConnection`）。
 - 补 `internal/clickhouse/` 用例：`Invalidate` 后旧池 `Close` 被调用、在途查询被取消、重复 `Invalidate` 幂等；「改密码后旧会话不可用」通过 `sqlmock` 或集成标记说明（若无 sqlmock 依赖，则仅覆盖 `Close` / 取消路径）。
+
+**落地结果**（2026-11-23）：
+- 后端：[service.go](file:///C:/works/go_works/meteor-ch-workbench/internal/clickhouse/service.go) 的 `Service` 新增 `owners map[string]string`，`register(connID, queryID)` 记录查询归属；新增 `cancelByConn(connID) int` 批量取消；`Invalidate(id)` 改为「先 `cancelByConn` → 再 `db.Close()` → 最后从 map 删除」；`CancelQuery` 同步清理 `owners`。
+- `SaveConnection` / `DeleteConnection` / `Disconnect` 三个入口本就统一走 `Invalidate`，因此无需改动调用方即获得「关闭底层池 + 取消在途查询」的完整语义。
+- 前端新增 [connectionError.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/connectionError.ts) + 同名单测（14 条用例）：识别 `connection closed` / `EOF` / `broken pipe` / `connection refused` / `connection reset by peer` / `i/o timeout` / `server closed the connection`，大小写不敏感、空输入与普通 SQL 错误返回 `false`。
+- [ResultGrid.vue](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/components/ResultGrid.vue) 错误面板：命中断开类错误时标题改为琥珀色「连接已断开」并附说明，追加「重新连接」按钮（emit `refresh`，执行中禁用）；i18n 补 `editor.connectionLost` / `connectionLostHint` / `reconnect` 中英双份。
+- `docs/API.md` 的 `Disconnect` 章节补充「先取消在途查询再关池」与前端提示约定。
+- 单测：`cancel_test.go` 的 `TestCancelByConn` / `TestCancelByConnOnlySameConnection` / `TestInvalidateCancelsRunningQueries` 覆盖批量取消、跨连接隔离、`Invalidate` 触发取消三条路径。
 
 **验收**：改密码并保存后，旧池被关闭、旧会话不再被复用；断开连接时在途查询立即返回「已断开」提示而非驱动原始错误；`go test ./...` 新增用例通过；`docs/API.md` 若新增方法则同步。
 
@@ -1027,6 +1061,13 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 - `docs/FEATURES.md` 结果导出章节改为 8 格式对照（沿用 `docs/API.md` 的表格内容，用户视角措辞）。
 - `docs/CODE_INDEX.md` 补全新增 utils 与 `composables/usePanelDrag.ts`、`useResultFilterPanel.ts`、`useCellEditing.ts`、`useAutoRefresh.ts`。
 - 本阶段完成后在「阶段总览」表勾选 P14 各条，并更新文件头「更新时间」。
+
+**落地结果**（2026-11-23）：
+- `docs/FEATURES.md` 核对：结果导出章节已是 **8 种格式**（与 `internal/clickhouse/export.go` 注册表逐项一致：csv / json / markdown / insert / jsonl / tsv / xlsx / sql_ddl），无需再改。
+- `docs/CODE_INDEX.md`：文件树补 `query.go` / `exec.go` / `metadata.go`；新增三个后端文件章节；utils 清单补 `queryState.ts` / `connectionError.ts` / `menuPosition.ts` / `splitPane.ts`；新增 `queryState.ts` 与 `connectionError.ts` 两个章节；测试统计由「十四个模块 / 453 用例」更正为「十九个模块 / 19 文件 / 649 用例」。
+- `docs/API.md`：`Disconnect` 章节补充生命周期语义。
+- 本文件：阶段总览 P14 改为「部分完成（P14-1/3/4/5 已完成，P14-2 待做）」，P14-1 / P14-3 / P14-4 / P14-5 各自追加「落地结果」，文件头更新时间改为 2026-11-23。
+- `App.vue` / `MenuBar.vue` 行数说明：P12-4 原定 500 / 450 已超，但四类职责均已拆为独立组件 / composable，壳层只剩布局编排，**决定不再继续拆分**（再拆收益递减）；原行数验收值作废，改为「壳层不再承载业务逻辑」这一可核验标准。
 
 **验收**：三份文档与代码逐项对得上（行数、格式数、文件清单）；roadmap 阶段总览 P14 状态改为「已完成」。
 

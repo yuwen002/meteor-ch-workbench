@@ -168,6 +168,8 @@ export default {
     refreshCustomConfirm: "确定",
     queryHint: "在上方输入 SQL，点击执行 (Ctrl+Enter) 运行",
     noConnection: "请先选择一个连接", queryFailed: "查询失败",
+    connectionLost: "连接已断开", connectionLostHint: "连接池已释放，点击「重新连接」将重新建立会话",
+    reconnect: "重新连接",
     clusters: "集群", noClusters: "暂无集群信息",
     copyUUID: "复制 UUID", uuidCopied: "UUID 已复制",
     shard: "分片", replica: "副本", local: "本地",
