@@ -385,7 +385,7 @@ func resultColumnWeights(columns []clickhouse.ColumnInfo, rows [][]interface{}) 
 const (
 	minResultColumnWidth unit.Dp = 80
 	maxResultColumnWidth unit.Dp = 480
-	resultColumnResizeHandleWidth unit.Dp = 8
+	resultColumnResizeHandleWidth unit.Dp = 12
 )
 
 func adjustResultColumnWidth(current unit.Dp, delta float32) unit.Dp {
