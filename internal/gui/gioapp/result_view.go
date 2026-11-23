@@ -79,7 +79,7 @@ func resultValueMatchesColumnCondition(value interface{}, expression string) boo
 	actual := "NULL"
 	if value != nil { actual = fmt.Sprint(value) }
 	if operator == "" || operator == "!" {
-		matched := strings.Contains(strings.ToLower(actual), strings.ToLower(expected))
+		matched := resultValueMatchesFilter(value, expected)
 		if operator == "!" { return !matched }
 		return matched
 	}
@@ -105,7 +105,9 @@ func resultValueMatchesColumnCondition(value interface{}, expression string) boo
 }
 
 func resultValueMatchesFilter(value interface{}, filter string) bool {
-	return resultValueMatchesColumnCondition(value, filter)
+	text := "NULL"
+	if value != nil { text = fmt.Sprint(value) }
+	return strings.Contains(strings.ToLower(text), strings.ToLower(filter))
 }
 
 func resultRowMatchesFilter(row []interface{}, filter string) bool {
