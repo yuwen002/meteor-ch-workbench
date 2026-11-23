@@ -1173,15 +1173,19 @@ func (s *screen) openSavedSQL() {
 	s.refreshSavedSQL(true)
 }
 
+func savedSQLMatches(entry config.SavedSQL, keyword, connectionID, connectionName string, onlyCurrentConnection bool) bool {
+	if onlyCurrentConnection && (connectionID == "" || entry.ConnectionID != connectionID) { return false }
+	keyword = strings.ToLower(strings.TrimSpace(keyword))
+	if keyword == "" { return true }
+	searchable := strings.ToLower(entry.Name + "\n" + entry.SQL + "\n" + connectionName)
+	return strings.Contains(searchable, keyword)
+}
+
 func (s *screen) filteredSavedSQL() []savedSQLListItem {
-	keyword := strings.ToLower(strings.TrimSpace(s.savedSQLSearch.Text()))
+	keyword := s.savedSQLSearch.Text()
 	filtered := make([]savedSQLListItem, 0, len(s.savedSQLEntries))
 	for i, entry := range s.savedSQLEntries {
-		if s.savedSQLOnlyCurrentConnection && (s.selectedConnectionID == "" || entry.ConnectionID != s.selectedConnectionID) { continue }
-		if keyword != "" {
-			searchable := strings.ToLower(entry.Name + "\n" + entry.SQL + "\n" + s.historyConnectionName(entry.ConnectionID))
-			if !strings.Contains(searchable, keyword) { continue }
-		}
+		if !savedSQLMatches(entry, keyword, s.selectedConnectionID, s.historyConnectionName(entry.ConnectionID), s.savedSQLOnlyCurrentConnection) { continue }
 		filtered = append(filtered, savedSQLListItem{entry: entry, index: i})
 	}
 	return filtered
