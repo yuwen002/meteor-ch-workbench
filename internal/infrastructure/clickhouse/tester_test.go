@@ -12,14 +12,6 @@ import (
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 )
 
-type testDriver struct { pingErr error }
-func (d testDriver) Open(string)(driver.Conn,error) { return testConn{pingErr:d.pingErr},nil }
-type testConn struct { pingErr error }
-func (c testConn) Prepare(string)(driver.Stmt,error) { return nil,errors.New("not implemented") }
-func (c testConn) Close()error { return nil }
-func (c testConn) Begin()(driver.Tx,error) { return nil,errors.New("not implemented") }
-func (c testConn) Ping(context.Context)error { return c.pingErr }
-
 type blockingPingDriver struct{}
 func (blockingPingDriver) Open(string)(driver.Conn,error) { return blockingPingConn{},nil }
 type blockingPingConn struct{}
