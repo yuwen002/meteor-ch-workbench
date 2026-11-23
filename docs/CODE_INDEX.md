@@ -16,6 +16,8 @@ meteor-ch-workbench/
 ├── go.mod / go.sum      Go 依赖
 ├── internal/
 │   ├── app/             GUI 无关的应用服务编排（连接 / 查询 / 配置 / 历史 / 收藏 / 标签 / 设置）
+│   ├── platform/        文件对话框、打开目录等平台能力端口
+│   │   └── wailsadapter/ Wails v3 平台能力实现
 │   ├── clickhouse/      数据库交互层（service.go / export.go）
 │   └── config/          持久化层（manager / export / import / history / tabs / saved_sql / settings）
 ├── frontend/
@@ -40,6 +42,7 @@ meteor-ch-workbench/
 
 ```
 app.go（Wails 兼容适配层）
+  ├─► internal/platform/wailsadapter（系统对话框 / 打开目录）
   └─► internal/app（GUI 无关的应用用例）
         ├─► internal/config
         └─► internal/clickhouse ──► internal/config（仅引用 Connection 类型）
@@ -72,7 +75,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 
 ### [app.go](file:///C:/works/go_works/meteor-ch-workbench/app.go)
 
-职责：**旧版前端调用的兼容入口**，保留历史方法签名并委托给 `internal/app.Service`；文件对话框和结果文件写入仍留在适配层。
+职责：**旧版前端调用的兼容入口**，保留历史方法签名并委托给 `internal/app.Service`；文件对话框和打开目录通过 `internal/platform` 端口调用；文件内容读写仍在兼容适配层。
 
 | 区块 | 方法 | 说明 |
 |---|---|---|
@@ -89,7 +92,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | 收藏 SQL | `GetSavedSQL` / `SaveSQL` / `UpdateSavedSQL` / `DeleteSavedSQL` | 无上限、无清空；重复 SQL 拒绝 |
 | 标签 | `GetTabs` / `SaveTabs` | |
 | 元数据 | `GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetClusters` | |
-| 其他 | `OpenConfigFolder` / `GetAppVersion` | |
+| 其他 | `OpenConfigFolder` / `GetAppVersion` | 平台操作经 `internal/platform` 注入 |
 
 **阅读顺序建议**：先看 `GetAll` 了解数据结构，再看 `Query` 了解错误约定，其余方法模式高度一致。
 
@@ -767,3 +770,13 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 | 用户设置 | 设置读取/保存，查询行数上限仍通过设置管理器生效 |
 
 **边界**：本包不得依赖 Wails、Gio、WebView 或前端运行时。文件选择、保存对话框、剪贴板和系统打开目录等平台交互继续留在适配层，下一批再抽取为 `internal/platform` 端口。
+
+
+### [internal/platform](../internal/platform/platform.go)
+
+职责：定义 GUI 适配层需要的平台能力，不依赖具体 GUI 框架。
+
+- `Platform.SaveFile`：保存文件对话框。
+- `Platform.OpenFile`：打开文件对话框。
+- `Platform.OpenDirectory`：使用系统文件管理器打开目录。
+- `internal/platform/wailsadapter`：当前 Wails v3 实现；未来 Gio 适配器实现同一接口即可。
