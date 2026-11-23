@@ -27,14 +27,14 @@ type poolEntry struct {
 type PoolManager struct {
 	mu sync.Mutex
 	pools map[string]poolEntry
-	open func(string)(*sql.DB,error)
+	open func(string,string)(*sql.DB,error)
 }
 
 func NewPoolManager() *PoolManager {
 	return &PoolManager{pools:make(map[string]poolEntry),open:sql.Open}
 }
 
-func newPoolManager(open func(string)(*sql.DB,error)) *PoolManager {
+func newPoolManager(open func(string,string)(*sql.DB,error)) *PoolManager {
 	return &PoolManager{pools:make(map[string]poolEntry),open:open}
 }
 
