@@ -2,8 +2,8 @@ package gioapp
 
 import (
 	"fmt"
+	"math/big"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -85,10 +85,8 @@ func resultValueMatchesColumnCondition(value interface{}, expression string) boo
 	}
 	if operator == "=" || operator == "!=" {
 		matched := strings.EqualFold(actual, expected)
-		if left, err := strconv.ParseFloat(actual, 64); err == nil {
-			if right, rightErr := strconv.ParseFloat(expected, 64); rightErr == nil {
-				matched = left == right
-			}
+		if comparison, ok := compareResultNumbers(actual, expected); ok {
+			matched = comparison == 0
 		} else if leftTime, err := parseResultTime(actual); err == nil {
 			if rightTime, rightErr := parseResultTime(expected); rightErr == nil {
 				matched = leftTime.Equal(rightTime)
@@ -98,14 +96,12 @@ func resultValueMatchesColumnCondition(value interface{}, expression string) boo
 		return matched
 	}
 	if value == nil { return false }
-	left, leftErr := strconv.ParseFloat(actual, 64)
-	right, rightErr := strconv.ParseFloat(expected, 64)
-	if leftErr == nil && rightErr == nil {
+	if comparison, ok := compareResultNumbers(actual, expected); ok {
 		switch operator {
-		case ">": return left > right
-		case "<": return left < right
-		case ">=": return left >= right
-		case "<=": return left <= right
+		case ">": return comparison > 0
+		case "<": return comparison < 0
+		case ">=": return comparison >= 0
+		case "<=": return comparison <= 0
 		}
 		return false
 	}
@@ -148,14 +144,8 @@ func compareResultValues(left, right interface{}) int {
 	if rightNull { return -1 }
 
 	ls, rs := fmt.Sprint(left), fmt.Sprint(right)
-	lf, le := strconv.ParseFloat(ls, 64)
-	rf, re := strconv.ParseFloat(rs, 64)
-	if le == nil && re == nil {
-		switch {
-		case lf < rf: return -1
-		case lf > rf: return 1
-		default: return 0
-		}
+	if comparison, ok := compareResultNumbers(ls, rs); ok {
+		return comparison
 	}
 	lt, lte := parseResultTime(ls)
 	rt, rte := parseResultTime(rs)
@@ -172,6 +162,19 @@ func compareResultValues(left, right interface{}) int {
 	case ls > rs: return 1
 	default: return 0
 	}
+}
+
+// compareResultNumbers 使用有理数比较，避免 UInt64 和高精度 Decimal 转 float64 后丢失精度。
+func compareResultNumbers(left, right string) (int, bool) {
+	leftNumber, ok := new(big.Rat).SetString(strings.TrimSpace(left))
+	if !ok {
+		return 0, false
+	}
+	rightNumber, ok := new(big.Rat).SetString(strings.TrimSpace(right))
+	if !ok {
+		return 0, false
+	}
+	return leftNumber.Cmp(rightNumber), true
 }
 
 func parseResultTime(value string) (time.Time, error) {
