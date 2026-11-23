@@ -2,7 +2,6 @@ package connectionfile
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -81,6 +80,4 @@ func TestRandomIDGenerator(t *testing.T) {
 	first,err:=g.NewID(); if err!=nil { t.Fatal(err) }
 	second,err:=g.NewID(); if err!=nil { t.Fatal(err) }
 	if len(first)!=32 || first==second { t.Fatalf("随机 ID 不符合预期: %q %q",first,second) }
-	var decoded []byte
-	if err:=json.Unmarshal([]byte(`"not-used"`),&decoded); err!=nil { t.Fatal(err) }
 }
