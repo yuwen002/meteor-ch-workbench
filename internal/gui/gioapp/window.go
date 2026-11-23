@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io"
 	"strings"
 	"time"
 
 	"gioui.org/app"
 	"gioui.org/gesture"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/pointer"
 	"gioui.org/op/clip"
 	"gioui.org/layout"
@@ -64,6 +66,11 @@ type screen struct {
 	selectedSchema []clickhouse.ColumnInfo
 	selectedTableDetails *clickhouse.TableDetails
 	tableDetailsError string
+	detailsOpen bool
+	detailsToggle widget.Clickable
+	copyDDL widget.Clickable
+	detailsList widget.List
+	ddlLines []string
 	queryResults chan queryResult
 	querySequence uint64
 	runningQueryID string
@@ -202,8 +209,10 @@ func (s *screen) selectTable(database, table string) {
 	requestID := s.schemaSequence
 	connectionID, connectionSequence := s.selectedConnectionID, s.connectionSequence
 	s.selectedSchemaDatabase, s.selectedSchemaTable = database, table
+	s.detailsOpen = true
 	s.selectedSchema = nil
 	s.selectedTableDetails = nil
+	s.ddlLines = nil
 	s.tableDetailsError = ""
 	s.schemaError = ""
 	s.schemaLoading = true
@@ -261,6 +270,10 @@ func (s *screen) drainSchemaResults() {
 			}
 			s.selectedSchema = result.columns
 			s.selectedTableDetails = result.details
+			s.ddlLines = nil
+			if result.details != nil {
+				s.ddlLines = splitDDLLines(result.details.CreateTableQuery)
+			}
 			if result.detailsErr != nil { s.tableDetailsError = result.detailsErr.Error() }
 			s.status = fmt.Sprintf("已加载 %s.%s 的 %d 个字段", result.database, result.table, len(result.columns))
 		default:
@@ -335,6 +348,16 @@ func resultColumnWeights(columns []clickhouse.ColumnInfo, rows [][]interface{}) 
 	return weights
 }
 
+// splitDDLLines 将建表语句拆成可独立滚动显示的行，并统一换行符。
+func splitDDLLines(ddl string) []string {
+	if ddl == "" {
+		return nil
+	}
+	ddl = strings.ReplaceAll(ddl, "\r\n", "\n")
+	ddl = strings.ReplaceAll(ddl, "\r", "\n")
+	return strings.Split(ddl, "\n")
+}
+
 func formatResultCell(value interface{}) string {
 	if value == nil {
 		return "NULL"
@@ -379,6 +402,8 @@ func (s *screen) connectConnection(connection config.Connection) {
 	s.selectedSchema = nil
 	s.selectedTableDetails = nil
 	s.tableDetailsError = ""
+	s.ddlLines = nil
+	s.detailsOpen = false
 	s.selectedSchemaDatabase, s.selectedSchemaTable, s.schemaError = "", "", ""
 	s.status = "正在连接 " + connection.Name + "…"
 	go func() {
@@ -440,6 +465,11 @@ func (s *screen) layout(gtx context) dimensions {
 		s.sidebarOpen = !s.sidebarOpen
 		s.saveWorkspaceLayout()
 	}
+	for s.detailsToggle.Clicked(gtx) {
+		if s.selectedSchemaTable != "" {
+			s.detailsOpen = !s.detailsOpen
+		}
+	}
 	for s.editorSmaller.Clicked(gtx) {
 		s.editorRatio = clampEditorRatio(s.editorRatio - 0.05)
 		s.saveWorkspaceLayout()
@@ -467,6 +497,12 @@ func (s *screen) layoutToolbar(gtx context) dimensions {
 				label := "隐藏导航"
 				if !s.sidebarOpen { label = "显示导航" }
 				return material.Button(s.theme, &s.sidebarToggle, label).Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+			layout.Rigid(func(gtx context) dimensions {
+				label := "表详情"
+				if s.detailsOpen { label = "隐藏详情" }
+				return material.Button(s.theme, &s.detailsToggle, label).Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx context) dimensions {
@@ -502,7 +538,7 @@ func (s *screen) layoutToolbar(gtx context) dimensions {
 }
 
 func (s *screen) layoutWorkspace(gtx context) dimensions {
-	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+	children := []layout.FlexChild{
 		layout.Rigid(func(gtx context) dimensions {
 			if !s.sidebarOpen {
 				return dimensions{}
@@ -513,7 +549,11 @@ func (s *screen) layoutWorkspace(gtx context) dimensions {
 			return s.layoutSidebar(gtx)
 		}),
 		layout.Flexed(1, s.layoutEditorAndResults),
-	)
+	}
+	if s.detailsOpen && s.selectedSchemaTable != "" {
+		children = append(children, layout.Rigid(s.layoutTableDetails))
+	}
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 }
 
 func emptyMetadata(value string) string {
@@ -586,75 +626,6 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 				}))
 			}
 		}
-		if s.selectedSchemaTable != "" {
-			children = append(children, layout.Rigid(func(gtx context) dimensions {
-				return material.H6(s.theme, "表结构").Layout(gtx)
-			}))
-			title := s.selectedSchemaDatabase + "." + s.selectedSchemaTable
-			children = append(children, layout.Rigid(func(gtx context) dimensions {
-				return material.Caption(s.theme, title).Layout(gtx)
-			}))
-			if s.schemaLoading {
-				children = append(children, layout.Rigid(func(gtx context) dimensions {
-					return material.Caption(s.theme, "正在加载字段…").Layout(gtx)
-				}))
-			} else if s.schemaError != "" {
-				message := s.schemaError
-				children = append(children, layout.Rigid(func(gtx context) dimensions {
-					return material.Caption(s.theme, "加载失败："+message).Layout(gtx)
-				}))
-			} else {
-				for _, column := range s.selectedSchema {
-					column := column
-					label := column.Name + "  " + column.Type
-					if column.IsPrimary { label += "  [主键]" }
-					if column.HasDefault { label += "  [默认值]" }
-					children = append(children, layout.Rigid(func(gtx context) dimensions {
-						return material.Caption(s.theme, label).Layout(gtx)
-					}))
-					if column.Comment != "" {
-						comment := column.Comment
-						children = append(children, layout.Rigid(func(gtx context) dimensions {
-							return material.Caption(s.theme, "    "+comment).Layout(gtx)
-						}))
-					}
-				}
-				if len(s.selectedSchema) == 0 {
-					children = append(children, layout.Rigid(func(gtx context) dimensions {
-						return material.Caption(s.theme, "该表没有可见字段").Layout(gtx)
-					}))
-				}
-			}
-			if s.tableDetailsError != "" {
-				message := s.tableDetailsError
-				children = append(children, layout.Rigid(func(gtx context) dimensions {
-					return material.Caption(s.theme, "表详情读取失败："+message).Layout(gtx)
-				}))
-			} else if s.selectedTableDetails != nil {
-				details := s.selectedTableDetails
-				metadata := []string{
-					"引擎："+details.Engine,
-					"注释："+details.Comment,
-					"PARTITION BY："+emptyMetadata(details.PartitionKey),
-					"ORDER BY："+emptyMetadata(details.SortingKey),
-					"PRIMARY KEY："+emptyMetadata(details.PrimaryKey),
-					"TTL："+emptyMetadata(details.TTLExpression),
-				}
-				for _, item := range metadata {
-					line := item
-					children = append(children, layout.Rigid(func(gtx context) dimensions {
-						return material.Caption(s.theme, line).Layout(gtx)
-					}))
-				}
-				if details.CreateTableQuery != "" {
-					ddl := "建表语句：\n" + details.CreateTableQuery
-					children = append(children, layout.Rigid(func(gtx context) dimensions {
-						return material.Caption(s.theme, ddl).Layout(gtx)
-					}))
-				}
-			}
-			}
-		}
 		children = append(children,
 			layout.Rigid(layout.Spacer{Height: unit.Dp(20)}.Layout),
 			layout.Rigid(func(gtx context) dimensions {
@@ -667,6 +638,85 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 				return material.Body2(s.theme, "收藏 SQL").Layout(gtx)
 			}),
 		)
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	})
+}
+
+func (s *screen) layoutTableDetails(gtx context) dimensions {
+	width := gtx.Dp(360)
+	gtx.Constraints.Min.X = width
+	gtx.Constraints.Max.X = width
+	return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
+		children := []layout.FlexChild{
+			layout.Rigid(func(gtx context) dimensions { return material.H6(s.theme, "表详情").Layout(gtx) }),
+			layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, s.selectedSchemaDatabase+"."+s.selectedSchemaTable).Layout(gtx) }),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		}
+		if s.schemaLoading {
+			children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "正在加载表结构与存储信息…").Layout(gtx) }))
+		} else if s.schemaError != "" {
+			message := s.schemaError
+			children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "表结构读取失败："+message).Layout(gtx) }))
+		} else {
+			for _, column := range s.selectedSchema {
+				line := column.Name+"  "+column.Type
+				if column.IsPrimary { line += "  [主键]" }
+				if column.HasDefault { line += "  [默认值]" }
+				children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, line).Layout(gtx) }))
+				if column.Comment != "" {
+					comment := column.Comment
+					children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "  "+comment).Layout(gtx) }))
+				}
+			}
+			if len(s.selectedSchema) == 0 {
+				children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "该表没有可见字段").Layout(gtx) }))
+			}
+		}
+		if s.tableDetailsError != "" {
+			message := s.tableDetailsError
+			children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "存储详情读取失败："+message).Layout(gtx) }))
+		} else if details := s.selectedTableDetails; details != nil {
+			metadata := []string{
+				"引擎："+emptyMetadata(details.Engine),
+				"注释："+emptyMetadata(details.Comment),
+				"PARTITION BY："+emptyMetadata(details.PartitionKey),
+				"ORDER BY："+emptyMetadata(details.SortingKey),
+				"PRIMARY KEY："+emptyMetadata(details.PrimaryKey),
+				"TTL："+emptyMetadata(details.TTLExpression),
+			}
+			for _, item := range metadata {
+				line := item
+				children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, line).Layout(gtx) }))
+			}
+			if details.CreateTableQuery != "" {
+				children = append(children,
+					layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+					layout.Rigid(func(gtx context) dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, func(gtx context) dimensions { return material.Body2(s.theme, "建表语句（可滚动）").Layout(gtx) }),
+							layout.Rigid(func(gtx context) dimensions {
+								dims := material.Button(s.theme, &s.copyDDL, "复制 DDL").Layout(gtx)
+								for s.copyDDL.Clicked(gtx) {
+									gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(details.CreateTableQuery))})
+									s.status = "已将 "+s.selectedSchemaDatabase+"."+s.selectedSchemaTable+" 的 DDL 复制到剪贴板"
+								}
+								return dims
+							}),
+						)
+					}),
+				)
+				children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+					return material.List(s.theme, &s.detailsList).Layout(gtx, len(s.ddlLines), func(gtx context, index int) dimensions {
+						line := s.ddlLines[index]
+						return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx context) dimensions {
+							return material.Caption(s.theme, line).Layout(gtx)
+						})
+					})
+				}))
+			} else {
+				children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "该表没有可用的建表语句").Layout(gtx) }))
+			}
+		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
 }
