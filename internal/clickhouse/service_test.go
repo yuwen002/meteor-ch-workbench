@@ -55,3 +55,39 @@ func TestEmptyQueryResultJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractTTLExpression(t *testing.T) {
+	tests := []struct {
+		name string
+		createSQL string
+		want string
+	}{
+		{
+			name: "TTL 位于 SETTINGS 之前",
+			createSQL: "CREATE TABLE events (ts DateTime) ENGINE = MergeTree ORDER BY ts TTL ts + INTERVAL 30 DAY DELETE SETTINGS index_granularity = 8192",
+			want: "ts + INTERVAL 30 DAY DELETE",
+		},
+		{
+			name: "无 TTL",
+			createSQL: "CREATE TABLE events (id UInt64) ENGINE = MergeTree ORDER BY id",
+			want: "",
+		},
+		{
+			name: "多行 TTL",
+			createSQL: "CREATE TABLE events (ts DateTime) ENGINE = MergeTree ORDER BY ts\nTTL ts + INTERVAL 7 DAY TO VOLUME 'cold'",
+			want: "ts + INTERVAL 7 DAY TO VOLUME 'cold'",
+		},
+		{
+			name: "保留多个 TTL 规则",
+			createSQL: "CREATE TABLE events (ts DateTime) ENGINE = MergeTree ORDER BY ts TTL ts + INTERVAL 1 DAY DELETE, ts + INTERVAL 7 DAY TO DISK 'cold' SETTINGS allow_nullable_key = 1",
+			want: "ts + INTERVAL 1 DAY DELETE, ts + INTERVAL 7 DAY TO DISK 'cold'",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractTTLExpression(tt.createSQL); got != tt.want {
+				t.Fatalf("extractTTLExpression() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
