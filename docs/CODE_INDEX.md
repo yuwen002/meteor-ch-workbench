@@ -88,7 +88,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | 配置导入 | `ImportConfig` / `GetImportFormats` / `PickImportFile` / `ImportConfigWithOptions` | |
 | 查询 | `Query` / `CancelQuery` / `Execute` | SQL 错误放返回体 `.error`，非 Go error；`Query` 必须传 queryID 才能取消 |
 | 结果导出 | `GetResultExportFormats` / `SaveQueryResultAs` | |
-| 历史 | `GetQueryHistory` / `DeleteQueryHistory` / `ClearQueryHistory`（查询后由应用服务自动记录） | `recordHistory` 在 `Query` 后自动调用 |
+| 历史 | `GetQueryHistory` / `DeleteQueryHistory` / `ClearQueryHistory` | 查询历史由 `internal/app.Service.Query` 自动记录 |
 | 收藏 SQL | `GetSavedSQL` / `SaveSQL` / `UpdateSavedSQL` / `DeleteSavedSQL` | 无上限、无清空；重复 SQL 拒绝 |
 | 标签 | `GetTabs` / `SaveTabs` | |
 | 元数据 | `GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetClusters` | |
@@ -780,3 +780,25 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `Platform.OpenFile`：打开文件对话框。
 - `Platform.OpenDirectory`：使用系统文件管理器打开目录。
 - `internal/platform/wailsadapter`：当前 Wails v3 实现；未来 Gio 适配器实现同一接口即可。
+
+
+### [internal/app/service.go](../internal/app/service.go)
+
+职责：与 GUI 无关的应用服务编排，供 Wails 兼容层和后续 Gio 界面共同调用。
+
+- 连接管理、SQL 查询/取消、DDL/DML 执行、元数据查询。
+- 配置导入导出、连接文件夹排序、查询历史、收藏 SQL、标签页快照和用户设置。
+- 查询结果通过 `io.Writer` 导出，不负责选择文件路径。
+- `Close` 统一释放 ClickHouse 连接池。
+
+### [internal/platform/platform.go](../internal/platform/platform.go)
+
+职责：定义桌面平台能力端口，不绑定具体 GUI 框架。
+
+- `Platform.SaveFile`：保存文件对话框。
+- `Platform.OpenFile`：打开文件对话框。
+- `Platform.OpenDirectory`：使用系统文件管理器打开目录。
+
+### [internal/platform/wailsadapter/adapter.go](../internal/platform/wailsadapter/adapter.go)
+
+职责：将平台能力端口适配到 Wails v3。未来 Gio 入口可实现相同接口，应用服务无需改动。
