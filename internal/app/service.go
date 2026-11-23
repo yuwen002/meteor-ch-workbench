@@ -18,6 +18,8 @@ import (
 type Service struct {
 	conf  *config.Manager
 	hist  *config.HistoryManager
+	tabs  *config.TabsManager
+	saved *config.SavedSQLManager
 	ch    *clickhouse.Service
 	prefs *config.SettingsManager
 }
@@ -26,10 +28,12 @@ type Service struct {
 func NewService(
 	conf *config.Manager,
 	hist *config.HistoryManager,
+	tabs *config.TabsManager,
+	saved *config.SavedSQLManager,
 	ch *clickhouse.Service,
 	prefs *config.SettingsManager,
 ) *Service {
-	return &Service{conf: conf, hist: hist, ch: ch, prefs: prefs}
+	return &Service{conf: conf, hist: hist, tabs: tabs, saved: saved, ch: ch, prefs: prefs}
 }
 
 // SaveConnection 保存连接配置，并使旧连接池失效。
@@ -149,3 +153,48 @@ func (s *Service) GetClusters(connectionID string) ([]clickhouse.ClusterInfo, er
 	}
 	return s.ch.GetClusters(*conn)
 }
+
+
+// --- 配置与本地工作区用例 ---
+
+func (s *Service) GetAll() (*config.DataFile, error) { return s.conf.LoadAll() }
+func (s *Service) GetConnections() ([]config.Connection, error) { return s.conf.ListConnections() }
+func (s *Service) GetConnection(id string) (*config.Connection, error) { return s.conf.GetConnection(id) }
+func (s *Service) GetFolders() ([]config.Folder, error) { return s.conf.ListFolders() }
+func (s *Service) SaveFolder(folder config.Folder) error { return s.conf.SaveFolder(folder) }
+func (s *Service) DeleteFolder(id string) error { return s.conf.DeleteFolder(id) }
+func (s *Service) ReorderFolders(ids []string) error { return s.conf.ReorderFolders(ids) }
+func (s *Service) ReorderConnections(ids []string) error { return s.conf.ReorderConnections(ids) }
+func (s *Service) ExportConfig() (string, error) { return s.conf.ExportData() }
+func (s *Service) GetExportFormats() []config.ExportFormat { return config.ExportFormats() }
+func (s *Service) ExportConfigByFormat(format string, includePassword bool) (string, string, error) {
+	return s.conf.ExportByFormat(format, includePassword)
+}
+func (s *Service) ImportConfig(raw string) error { return s.conf.ImportData(raw) }
+func (s *Service) GetImportFormats() []config.ImportFormat { return config.ImportFormats() }
+func (s *Service) ImportConfigWithOptions(raw string, opts config.ImportOptions) (config.ImportResult, error) {
+	return s.conf.ImportDataWithOptions(raw, opts)
+}
+func (s *Service) GetSettings() (config.SettingsFile, error) { return s.prefs.Load() }
+func (s *Service) SaveSettings(settings config.SettingsFile) (config.SettingsFile, error) {
+	if err := s.prefs.Save(settings); err != nil { return config.SettingsFile{}, err }
+	return s.prefs.Load()
+}
+func (s *Service) GetQueryHistory() ([]config.HistoryEntry, error) { return s.hist.List() }
+func (s *Service) ClearQueryHistory() error { return s.hist.Clear() }
+func (s *Service) DeleteQueryHistory(id string) error { return s.hist.Delete(id) }
+func (s *Service) GetSavedSQL() ([]config.SavedSQL, error) { return s.saved.List() }
+func (s *Service) SaveSQL(name, sql, connectionID string) (*config.SavedSQL, error) {
+	item, err := s.saved.Add(config.SavedSQL{Name:name, SQL:sql, ConnectionID:connectionID})
+	if err != nil { return nil, err }
+	return &item, nil
+}
+func (s *Service) UpdateSavedSQL(id, name, sql string) (*config.SavedSQL, error) {
+	item, err := s.saved.Update(id, name, sql)
+	if err != nil { return nil, err }
+	return &item, nil
+}
+func (s *Service) DeleteSavedSQL(id string) error { return s.saved.Delete(id) }
+func (s *Service) GetTabs() (config.TabsFile, error) { return s.tabs.Load() }
+func (s *Service) SaveTabs(snapshot config.TabsFile) error { return s.tabs.Save(snapshot) }
+func (s *Service) ConfigDir() string { return s.conf.ConfigDir() }
