@@ -32,3 +32,19 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 	w.bytes += int64(n)
 	return n, err
 }
+
+func formatExportSize(size int64) string {
+	const mib = 1024 * 1024
+	if size >= mib {
+		return fmt.Sprintf("%.2f MiB", float64(size)/mib)
+	}
+	return fmt.Sprintf("%.1f KiB", float64(size)/1024)
+}
+
+func exportRowsPerSecond(rows int64, duration time.Duration) float64 {
+	seconds := duration.Seconds()
+	if seconds <= 0 {
+		return 0
+	}
+	return float64(rows) / seconds
+}
