@@ -784,6 +784,14 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `splitDDLLines` 统一 LF / CRLF 换行并保留空行；`schema_test.go` 覆盖空 DDL、LF、CRLF 和空行场景。
 - `widget.Editor` 目前仍是基础编辑器，语法高亮、补全和大 SQL 性能尚未验收。
 
+### [internal/gui/gioapp/export_file.go](../internal/gui/gioapp/export_file.go)
+
+职责：导出失败或取消后，针对本地 `*os.File` 尝试删除不完整文件；非本地 Explorer 文件句柄不执行不安全的路径删除。
+
+### [internal/gui/gioapp/export_file_test.go](../internal/gui/gioapp/export_file_test.go)
+
+职责：验证本地临时文件可被清理，以及非本地写入句柄会安全跳过清理。
+
 ### [internal/gui/gioapp/query_test.go](../internal/gui/gioapp/query_test.go)
 
 职责：验证查询结果单元格显示格式、复制完整值、整行制表符分隔与引号转义、自动列宽边界和拖动列宽上下限。
