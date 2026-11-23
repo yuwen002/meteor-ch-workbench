@@ -215,3 +215,20 @@ func resultColumnLabel(columns []clickhouse.ColumnInfo, column, sortColumn int, 
 	}
 	return label
 }
+
+// resultColumnFilterSummary 返回非空列条件的可读摘要，忽略超出列定义的条件。
+func resultColumnFilterSummary(columns []clickhouse.Column, filters []string) []string {
+	limit := len(columns)
+	if len(filters) < limit {
+		limit = len(filters)
+	}
+	var summaries []string
+	for i := 0; i < limit; i++ {
+		expression := strings.TrimSpace(filters[i])
+		if expression == "" {
+			continue
+		}
+		summaries = append(summaries, fmt.Sprintf("%s: %s", columns[i].Name, expression))
+	}
+	return summaries
+}
