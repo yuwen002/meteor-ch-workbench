@@ -1,7 +1,7 @@
 // Package platform 定义桌面应用需要的操作系统能力端口。
 package platform
 
-import "io"
+import "io/fs"
 
 // FileFilter 描述文件对话框中的文件类型筛选条件。
 type FileFilter struct {
@@ -35,6 +35,6 @@ type Platform interface {
 // 将其与对话框接口分离，便于 Gio 等其他 GUI 入口复用并独立测试。
 type FileSystem interface {
 	ReadFile(path string) ([]byte, error)
-	WriteFile(path string, content []byte, perm io.FileMode) error
+	WriteFile(path string, content []byte, perm fs.FileMode) error
 	Create(path string) (io.WriteCloser, error)
 }
