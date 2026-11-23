@@ -5,6 +5,7 @@
 package gioapp
 
 import (
+	"fmt"
 	"image/color"
 
 	"gioui.org/app"
@@ -41,6 +42,10 @@ type screen struct {
 	connect     widget.Clickable
 	stop        widget.Clickable
 	themeToggle widget.Clickable
+	sidebarToggle widget.Clickable
+	editorSmaller widget.Clickable
+	editorLarger widget.Clickable
+	editorRatio float32
 	status      string
 	lightTheme  bool
 	sidebarOpen bool
@@ -52,6 +57,7 @@ func newScreen() *screen {
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
 		lightTheme:  false,
 		sidebarOpen: true,
+		editorRatio: 0.62,
 	}
 	s.sqlEditor.SetText("SELECT\n    database,\n    table,\n    engine\nFROM system.tables\nORDER BY database, table\nLIMIT 100;")
 	s.applyTheme()
@@ -82,6 +88,15 @@ func (s *screen) layout(gtx context) dimensions {
 	for s.stop.Clicked(gtx) {
 		s.status = "当前没有正在执行的查询"
 	}
+	for s.sidebarToggle.Clicked(gtx) {
+		s.sidebarOpen = !s.sidebarOpen
+	}
+	for s.editorSmaller.Clicked(gtx) {
+		s.editorRatio = clampEditorRatio(s.editorRatio - 0.05)
+	}
+	for s.editorLarger.Clicked(gtx) {
+		s.editorRatio = clampEditorRatio(s.editorRatio + 0.05)
+	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(s.layoutToolbar),
@@ -97,6 +112,12 @@ func (s *screen) layoutToolbar(gtx context) dimensions {
 				return material.H6(s.theme, "Meteor CH Workbench").Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(24)}.Layout),
+			layout.Rigid(func(gtx context) dimensions {
+				label := "隐藏导航"
+				if !s.sidebarOpen { label = "显示导航" }
+				return material.Button(s.theme, &s.sidebarToggle, label).Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 			layout.Rigid(func(gtx context) dimensions {
 				return material.Button(s.theme, &s.connect, "连接").Layout(gtx)
 			}),
@@ -187,11 +208,37 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 func (s *screen) layoutEditorAndResults(gtx context) dimensions {
 	return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Flexed(0.62, s.layoutEditor),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-			layout.Flexed(0.38, s.layoutResults),
+			layout.Flexed(s.editorRatio, s.layoutEditor),
+			layout.Rigid(s.layoutSplitControls),
+			layout.Flexed(1-s.editorRatio, s.layoutResults),
 		)
 	})
+}
+
+func clampEditorRatio(value float32) float32 {
+	if value < 0.35 { return 0.35 }
+	if value > 0.80 { return 0.80 }
+	return value
+}
+
+func (s *screen) layoutSplitControls(gtx context) dimensions {
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx context) dimensions {
+			return material.Caption(s.theme, "编辑器 / 结果区比例").Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx context) dimensions {
+			return material.Button(s.theme, &s.editorSmaller, "编辑器 −").Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+		layout.Rigid(func(gtx context) dimensions {
+			return material.Button(s.theme, &s.editorLarger, "编辑器 +").Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx context) dimensions {
+			return material.Caption(s.theme, fmt.Sprintf("%.0f%% / %.0f%%", s.editorRatio*100, (1-s.editorRatio)*100)).Layout(gtx)
+		}),
+	)
 }
 
 func (s *screen) layoutEditor(gtx context) dimensions {
