@@ -1,7 +1,7 @@
 // Package gioapp 提供 Meteor CH Workbench 的 Gio 原生界面原型。
 //
-// 当前阶段只验证主窗口布局与基础文本输入；连接、查询执行和结果绑定
-// 将在确认 SQL 编辑器能力后接入 internal/app.Service。
+// 当前阶段已接入共享应用服务读取本地连接配置；数据库连接测试、SQL 执行
+// 与结果绑定仍在后续阶段实现。
 package gioapp
 
 import (
