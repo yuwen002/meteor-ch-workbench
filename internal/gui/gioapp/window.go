@@ -664,7 +664,7 @@ func (s *screen) openHistory() {
 
 func (s *screen) selectHistoryEntry(entry config.HistoryEntry) {
 	s.sqlEditor.SetText(entry.SQL)
-	s.saveActiveTabText()
+	s.persistTabs()
 	s.status = "已将查询历史回填到当前 SQL 标签"
 }
 
@@ -685,7 +685,7 @@ func (s *screen) runHistoryEntry(entry config.HistoryEntry) {
 		return
 	}
 	s.sqlEditor.SetText(entry.SQL)
-	s.saveActiveTabText()
+	s.persistTabs()
 	if s.treeConnected && s.selectedConnectionID == entry.ConnectionID {
 		s.executeSQL()
 		return
