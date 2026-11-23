@@ -80,3 +80,42 @@ func TestTabRuntimeStateIsRestoredIndependently(t *testing.T) {
 		t.Fatalf("原标签状态未独立保存：%#v", got)
 	}
 }
+
+func TestCloseTabState(t *testing.T) {
+	tests := []struct {
+		name string
+		tabs []config.TabState
+		active, close string
+		wantIDs []string
+		wantActive string
+		wantOK bool
+	}{
+		{name: "关闭非活动标签", tabs: []config.TabState{{ID:"a"},{ID:"b"},{ID:"c"}}, active:"b", close:"a", wantIDs:[]string{"b","c"}, wantActive:"b", wantOK:true},
+		{name: "关闭活动标签选择右侧", tabs: []config.TabState{{ID:"a"},{ID:"b"},{ID:"c"}}, active:"b", close:"b", wantIDs:[]string{"a","c"}, wantActive:"c", wantOK:true},
+		{name: "关闭末尾活动标签选择左侧", tabs: []config.TabState{{ID:"a"},{ID:"b"}}, active:"b", close:"b", wantIDs:[]string{"a"}, wantActive:"a", wantOK:true},
+		{name: "最后一个标签替换为空白标签", tabs: []config.TabState{{ID:"a"}}, active:"a", close:"a", wantIDs:[]string{"fresh"}, wantActive:"fresh", wantOK:true},
+		{name: "不存在的标签不修改", tabs: []config.TabState{{ID:"a"}}, active:"a", close:"missing", wantIDs:[]string{"a"}, wantActive:"a", wantOK:false},
+	}
+	for _, tt := range tests { t.Run(tt.name, func(t *testing.T) {
+		got, active, ok := closeTabState(tt.tabs, tt.active, tt.close, "fresh")
+		if ok != tt.wantOK || active != tt.wantActive || len(got) != len(tt.wantIDs) { t.Fatalf("got=%#v active=%q ok=%v", got, active, ok) }
+		for i, id := range tt.wantIDs { if got[i].ID != id { t.Fatalf("tabs[%d].ID=%q want %q", i, got[i].ID, id) } }
+	}) }
+}
+
+func TestRenameTabState(t *testing.T) {
+	tabs := []config.TabState{{ID:"a",Title:"旧标题"},{ID:"b",Title:"查询 2"}}
+	got, ok := renameTabState(tabs, "a", "  业务查询  ")
+	if !ok || got[0].Title != "业务查询" || got[1].Title != "查询 2" { t.Fatalf("unexpected rename result: %#v, ok=%v", got, ok) }
+	if _, ok := renameTabState(tabs, "a", "   "); ok { t.Fatal("空标题不应允许保存") }
+	if _, ok := renameTabState(tabs, "missing", "新标题"); ok { t.Fatal("不存在的标签不应允许重命名") }
+}
+
+func TestReorderTabState(t *testing.T) {
+	tabs := []config.TabState{{ID:"a"},{ID:"b"},{ID:"c"},{ID:"d"}}
+	got, ok := reorderTabState(tabs, 0, 2)
+	if !ok || got[0].ID != "b" || got[1].ID != "c" || got[2].ID != "a" || got[3].ID != "d" { t.Fatalf("unexpected reorder: %#v", got) }
+	got, ok = reorderTabState(got, 3, 1)
+	if !ok || got[0].ID != "b" || got[1].ID != "d" || got[2].ID != "c" || got[3].ID != "a" { t.Fatalf("unexpected reverse reorder: %#v", got) }
+	if _, ok := reorderTabState(tabs, -1, 0); ok { t.Fatal("越界索引不应成功") }
+}
