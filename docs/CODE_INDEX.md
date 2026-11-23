@@ -776,6 +776,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - SQL 编辑器内容通过 `internal/app.Service.Query` 执行，生成独立 queryID；停止操作调用 `CancelQuery`。
 - 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用纵向 Gio 列表滚动，表头和各结果行使用共享滚动位置的横向列表，保持列对齐。
 - 结果表格首列提供「复制行」操作；点击单元格复制当前值，点击行首操作复制整行，使用带引号转义的制表符分隔文本。
+- 表头各数据列末尾提供拖动手柄，列宽在 80–480dp 范围内调整；调整后的宽度同步应用于表头和所有结果行，拖动距离按设备像素换算为 dp。
 - `resultColumnWidth` 将列宽权重转换为固定 dp 宽度；列宽权重仍由列名和前 30 行样本估算。
 - 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；字段与 DDL 分别使用独立 Gio 列表纵向滚动，DDL 复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
 - `splitDDLLines` 统一 LF / CRLF 换行并保留空行；`schema_test.go` 覆盖空 DDL、LF、CRLF 和空行场景。
@@ -783,7 +784,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 ### [internal/gui/gioapp/query_test.go](../internal/gui/gioapp/query_test.go)
 
-职责：验证查询结果单元格显示格式、复制完整值、整行制表符分隔与引号转义，以及列宽边界。
+职责：验证查询结果单元格显示格式、复制完整值、整行制表符分隔与引号转义、自动列宽边界和拖动列宽上下限。
 
 ### [internal/app/service.go](../internal/app/service.go)
 
