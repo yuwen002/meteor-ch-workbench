@@ -94,12 +94,26 @@ func resultValueMatchesColumnCondition(value interface{}, expression string) boo
 	if value == nil { return false }
 	left, leftErr := strconv.ParseFloat(actual, 64)
 	right, rightErr := strconv.ParseFloat(expected, 64)
-	if leftErr != nil || rightErr != nil { return false }
+	if leftErr == nil && rightErr == nil {
+		switch operator {
+		case ">": return left > right
+		case "<": return left < right
+		case ">=": return left >= right
+		case "<=": return left <= right
+		}
+		return false
+	}
+
+	// 时间列复用统一解析规则：带时区的 RFC3339 按其偏移比较；
+	// 不带时区的 ClickHouse DateTime / DateTime64 文本按 UTC 解释。
+	leftTime, leftTimeErr := parseResultTime(actual)
+	rightTime, rightTimeErr := parseResultTime(expected)
+	if leftTimeErr != nil || rightTimeErr != nil { return false }
 	switch operator {
-	case ">": return left > right
-	case "<": return left < right
-	case ">=": return left >= right
-	case "<=": return left <= right
+	case ">": return leftTime.After(rightTime)
+	case "<": return leftTime.Before(rightTime)
+	case ">=": return !leftTime.Before(rightTime)
+	case "<=": return !leftTime.After(rightTime)
 	default: return false
 	}
 }
