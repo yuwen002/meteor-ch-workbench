@@ -127,6 +127,10 @@ type screen struct {
 	resultFilter widget.Editor
 	resultFilterLast string
 	resultFilterClear widget.Clickable
+	resultColumnFilterList widget.List
+	resultColumnFilterEditors []widget.Editor
+	resultColumnFilterLast []string
+	resultColumnFilterClear widget.Clickable
 	resultRowCopyClicks []widget.Clickable
 	connectionSequence uint64
 	databaseSequence uint64
@@ -1830,6 +1834,8 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultSortColumn, s.resultSortDescending = -1, false
 	s.resultFilter.SetText("")
 	s.resultFilterLast = ""
+	s.resultColumnFilterList.Position = layout.Position{}
+	s.resultColumnFilterEditors, s.resultColumnFilterLast = nil, nil
 	s.resultColumnWidths, s.resultColumnDrags = nil, nil
 	s.resultColumnDragLastX, s.resultColumnDragActive = nil, nil
 	s.selectedCellLabel, s.selectedCellValue, s.cellDetailLines = "", "", nil
@@ -1841,6 +1847,11 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultColumnDragLastX = make([]float32, len(result.Columns))
 	s.resultColumnDragActive = make([]bool, len(result.Columns))
 	s.resultSortClicks = make([]widget.Clickable, len(result.Columns))
+	s.resultColumnFilterEditors = make([]widget.Editor, len(result.Columns))
+	s.resultColumnFilterLast = make([]string, len(result.Columns))
+	for i := range s.resultColumnFilterEditors {
+		s.resultColumnFilterEditors[i].SingleLine = true
+	}
 	s.resultCellClicks = make([][]widget.Clickable, len(result.Rows))
 	s.resultRowCopyClicks = make([]widget.Clickable, len(result.Rows))
 	for i := range result.Rows { s.resultCellClicks[i] = make([]widget.Clickable, len(result.Columns)) }
@@ -1966,7 +1977,16 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		columnWeights := resultColumnWeights(result.Columns, result.Rows)
 		filterText := s.resultFilter.Text()
 		if filterText != s.resultFilterLast { s.resultFilterLast = filterText; s.resultList.Position = layout.Position{} }
-		displayRows := buildResultRowView(result.Rows, filterText, s.resultSortColumn, s.resultSortDescending)
+		columnFilters := make([]string, len(s.resultColumnFilterEditors))
+		for i := range s.resultColumnFilterEditors {
+			columnFilters[i] = s.resultColumnFilterEditors[i].Text()
+			if i >= len(s.resultColumnFilterLast) || columnFilters[i] != s.resultColumnFilterLast[i] {
+				if i < len(s.resultColumnFilterLast) { s.resultColumnFilterLast[i] = columnFilters[i] }
+				s.resultColumnFilterList.Position = layout.Position{}
+				s.resultList.Position = layout.Position{}
+			}
+		}
+		displayRows := buildResultRowViewWithColumnFilters(result.Rows, filterText, columnFilters, s.resultSortColumn, s.resultSortDescending)
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Flexed(1, func(gtx context) dimensions { return material.Editor(s.theme, &s.resultFilter, "筛选当前结果（匹配任意列）").Layout(gtx) }),
@@ -1976,6 +1996,28 @@ func (s *screen) layoutResults(gtx context) dimensions {
 					return d
 				}),
 				layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, fmt.Sprintf("显示 %d / %d 行", len(displayRows), len(result.Rows))).Layout(gtx) }),
+			)
+		}))
+		children = append(children, layout.Rigid(func(gtx context) dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx context) dimensions {
+					s.resultColumnFilterList.Axis = layout.Horizontal
+					return material.List(s.theme, &s.resultColumnFilterList).Layout(gtx, len(result.Columns), func(gtx context, columnIndex int) dimensions {
+						width := resultColumnWidth(columnWeights[columnIndex])
+						if columnIndex < len(s.resultColumnWidths) && s.resultColumnWidths[columnIndex] > 0 { width = s.resultColumnWidths[columnIndex] }
+						gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
+						return material.Editor(s.theme, &s.resultColumnFilterEditors[columnIndex], "筛选 "+result.Columns[columnIndex].Name).Layout(gtx)
+					})
+				}),
+				layout.Rigid(func(gtx context) dimensions {
+					d := material.Button(s.theme, &s.resultColumnFilterClear, "清除列条件").Layout(gtx)
+					for s.resultColumnFilterClear.Clicked(gtx) {
+						for i := range s.resultColumnFilterEditors { s.resultColumnFilterEditors[i].SetText(""); s.resultColumnFilterLast[i] = "" }
+						s.resultColumnFilterList.Position = layout.Position{}
+						s.resultList.Position = layout.Position{}
+					}
+					return d
+				}),
 			)
 		}))
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
