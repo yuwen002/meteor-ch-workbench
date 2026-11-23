@@ -119,11 +119,18 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - **尚未完成**：新仓库还未接入 Gio；密码目前仍随新配置文件保存，依靠本地文件权限保护，后续需要独立凭据存储；尚未有真实 ClickHouse Tester 实现。
 - 测试文件已提交，但当前仅通过 GitHub 文件 API 写入，未在本地执行。
 
+### 阶段 B：ClickHouse 连接基础设施首批实现
+- 新增 `internal/infrastructure/clickhouse`：通过官方 clickhouse-go/v2 的 database/sql 驱动构建 Native / HTTP DSN，支持 TLS scheme、数据库、压缩及凭据 URL 转义。
+- 新增连接池管理器：按连接 ID 复用连接池；连接参数（包含凭据）变化时通过 SHA-256 指纹识别并替换旧池；支持单连接失效和全量关闭。
+- 新增连通性测试器：每次使用临时连接池，Ping 使用调用方 context + 默认 5 秒超时，结束后释放资源；错误信息只包含协议和 host:port，不包含用户名 / 密码。
+- 新增测试覆盖 DSN 协议与 TLS scheme、凭据和数据库名转义、参数指纹、取消上下文、Ping 失败后的资源释放、超时、连接池复用与配置变化。
+- **尚未完成**：没有真实 ClickHouse 实例集成测试；新连接池尚未接入查询用例或 Gio；TLS 使用驱动默认证书校验，尚无自定义 CA / 客户端证书配置 UI。
+
 ### 当前仍未完成项
 
 - Gio 入口仍调用 `internal/app.NewDefaultService`，新连接用例和新连接仓库尚未接入运行时。
 - `gioapp` 仍直接引用旧 `internal/app`、`internal/config`、`internal/clickhouse` 类型。
 - `window.go` 仍为大型单体原型，GUI 需要按新设计整体重写。
 - Vue `frontend/` 尚未删除，当前只作为行为参考。
-- 尚未实现新的 ClickHouse infrastructure / Tester、凭据存储、历史与工作区等本地存储。
-- 新连接存储的测试尚未实际执行；当前 Actions 查询无运行记录，最新提交状态为 pending。
+- 新 ClickHouse infrastructure 目前只有连接池和连通性测试首批实现；查询执行、元数据、取消、凭据独立存储、历史与工作区存储尚未实现。
+- 新连接存储和 ClickHouse 测试尚未实际执行；当前 Actions 查询无运行记录，最新提交状态为 pending。
