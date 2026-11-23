@@ -35,6 +35,16 @@ func TestFormatResultCellTruncatesByRune(t *testing.T) {
 	}
 }
 
+func TestFormatClipboardCellKeepsFullValue(t *testing.T) {
+	input := strings.Repeat("完整内容", 40)
+	if got := formatClipboardCell(input); got != input {
+		t.Fatalf("formatClipboardCell() 截断了原始值，长度 = %d，期望 = %d", len([]rune(got)), len([]rune(input)))
+	}
+	if got := formatClipboardCell(nil); got != "NULL" {
+		t.Fatalf("formatClipboardCell(nil) = %q，期望 NULL", got)
+	}
+}
+
 func TestFormatResultRowUsesQuotedTSV(t *testing.T) {
 	row := []interface{}{"普通文本", "包含\t制表符", "包含\n换行", nil, "包含\"引号\""}
 	want := "普通文本\t\"包含\t制表符\"\t\"包含\n换行\"\tNULL\t\"包含\"\"引号\"\"\""
