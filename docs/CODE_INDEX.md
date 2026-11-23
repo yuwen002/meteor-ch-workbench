@@ -949,3 +949,6 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/gui/gioapp/window.go`：每列筛选输入框提供独立「清除」按钮，另保留清空全部列条件；展示当前生效的列条件摘要。
 - `internal/gui/gioapp/result_view.go`：`resultColumnFilterSummary` 将非空筛选条件映射为「列名: 表达式」摘要。
 - `internal/gui/gioapp/result_view_test.go`：覆盖摘要列映射、空条件忽略和超出列数的条件忽略。
+
+
+- `internal/gui/gioapp/result_view_benchmark_test.go`：查询结果筛选性能基准，覆盖 1 万 / 10 万行、全局关键字、多列条件和组合排序；运行方式见迁移文档。
