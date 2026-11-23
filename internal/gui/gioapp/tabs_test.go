@@ -1,6 +1,7 @@
 package gioapp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
@@ -126,4 +127,21 @@ func TestTabHasUnsavedChanges(t *testing.T) {
 	if tabHasUnsavedChanges(tabs, "active", "active", "SELECT 1") { t.Fatal("内容未变化时不应提示未保存") }
 	if tabHasUnsavedChanges(tabs, "active", "other", "SELECT 3") { t.Fatal("非活动标签不应使用当前编辑器内容判断未保存") }
 	if tabHasUnsavedChanges(tabs, "active", "missing", "SELECT 3") { t.Fatal("不存在的标签不应提示未保存") }
+}
+
+func TestHistorySQLPreview(t *testing.T) {
+	tests := []struct {
+		name string
+		sql string
+		want string
+	}{
+		{name: "跳过空行", sql: "\n  \n SELECT 1\nFROM system.one", want: "SELECT 1"},
+		{name: "空 SQL", sql: " \n\t", want: "（空 SQL）"},
+		{name: "截断超长首行", sql: strings.Repeat("中", 100), want: strings.Repeat("中", 96) + "…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := historySQLPreview(tt.sql); got != tt.want { t.Fatalf("historySQLPreview() = %q, want %q", got, tt.want) }
+		})
+	}
 }
