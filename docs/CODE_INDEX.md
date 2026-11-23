@@ -859,3 +859,16 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 ### [internal/platform/wailsadapter/adapter_test.go](../internal/platform/wailsadapter/adapter_test.go)
 
 职责：验证 Wails 文件对话框取消错误的归一化判断，覆盖空错误、英式与美式取消拼写、大小写差异和非取消错误。该测试不启动 Wails 应用；系统对话框交互仍需在真实桌面环境中补充集成验证。
+
+
+### [internal/gui/gioapp/export_file.go](../internal/gui/gioapp/export_file.go)
+
+职责：封装 Gio 导出文件辅助逻辑。
+
+- `removeIncompleteExport`：仅对本地 `*os.File` 删除中断导出文件，避免对系统文件选择器的非本地句柄执行不安全删除。
+- `countingWriter`：包装通用 `io.Writer`，累计实际写入字节数，供导出完成摘要和失败状态使用。
+- `formatExportSize` / `exportRowsPerSecond`：格式化文件大小并计算平均导出行速率。
+
+### [internal/gui/gioapp/export_file_test.go](../internal/gui/gioapp/export_file_test.go)
+
+职责：验证中断文件清理、非本地句柄安全跳过，以及导出字节统计（包含底层部分写入错误）。
