@@ -195,7 +195,7 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 
 // startExport 重新执行最近一次成功查询，并将 ClickHouse 游标结果直接流式写入文件。
 func (s *screen) startExport(format string) {
-	if s.exportRunning || s.queryResult == nil || s.service == nil || s.explorer == nil {
+	if s.exportRunning || s.queryRunning || s.queryResult == nil || s.service == nil || s.explorer == nil {
 		return
 	}
 	if s.queryResult.Error != "" || len(s.queryResult.Columns) == 0 || strings.TrimSpace(s.lastExecutedSQL) == "" || s.lastExecutedConnectionID == "" {
@@ -1172,7 +1172,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			layout.Rigid(func(gtx context) dimensions { return material.H6(s.theme, "查询结果").Layout(gtx) }),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 		}
-		if s.queryRunning { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "查询正在执行，可点击停止取消。").Layout(gtx) })) }
+		if s.queryRunning && s.runningTabID == s.activeTabID { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "查询正在执行，可点击停止取消。").Layout(gtx) })) }
 		if s.queryResult == nil {
 			children = append(children, layout.Flexed(1, func(gtx context) dimensions {
 				message := "执行查询后，结果将在这里展示"
