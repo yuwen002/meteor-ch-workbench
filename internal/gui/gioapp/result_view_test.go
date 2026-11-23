@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
 )
 
 func TestBuildResultRowViewSortsWithoutMutatingSource(t *testing.T) {
@@ -283,5 +285,31 @@ func TestResultValueMatchesColumnConditionSupportsInclusiveRanges(t *testing.T) 
 				t.Fatalf("resultValueMatchesColumnCondition(%v, %q) = %v, want %v", tt.value, tt.expression, got, tt.want)
 			}
 		})
+	}
+}
+
+
+func TestResultColumnFilterSummary(t *testing.T) {
+	columns := []clickhouse.ColumnInfo{{Name: "database"}, {Name: "rows"}, {Name: "created_at"}}
+	got := resultColumnFilterSummary(columns, []string{"", ">=100", " between:2026-01-01..2026-01-31 "})
+	want := []string{"rows: >=100", "created_at: between:2026-01-01..2026-01-31"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resultColumnFilterSummary() = %#v, want %#v", got, want)
+	}
+}
+
+func TestResultColumnFilterSummaryIgnoresFiltersWithoutColumns(t *testing.T) {
+	columns := []clickhouse.ColumnInfo{{Name: "name"}}
+	got := resultColumnFilterSummary(columns, []string{"=alpha", "is:null"})
+	want := []string{"name: =alpha"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resultColumnFilterSummary() = %#v, want %#v", got, want)
+	}
+}
+
+func TestResultColumnFilterSummaryEmpty(t *testing.T) {
+	columns := []clickhouse.ColumnInfo{{Name: "name"}}
+	if got := resultColumnFilterSummary(columns, []string{"  "}); len(got) != 0 {
+		t.Fatalf("empty summary = %#v, want no entries", got)
 	}
 }
