@@ -69,6 +69,7 @@ type screen struct {
 	detailsOpen bool
 	detailsToggle widget.Clickable
 	copyDDL widget.Clickable
+	schemaList widget.List
 	detailsList widget.List
 	ddlLines []string
 	queryResults chan queryResult
@@ -658,19 +659,25 @@ func (s *screen) layoutTableDetails(gtx context) dimensions {
 			message := s.schemaError
 			children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "表结构读取失败："+message).Layout(gtx) }))
 		} else {
-			for _, column := range s.selectedSchema {
-				line := column.Name+"  "+column.Type
-				if column.IsPrimary { line += "  [主键]" }
-				if column.HasDefault { line += "  [默认值]" }
-				children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, line).Layout(gtx) }))
-				if column.Comment != "" {
-					comment := column.Comment
-					children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "  "+comment).Layout(gtx) }))
+			children = append(children, layout.Flexed(0.35, func(gtx context) dimensions {
+				itemCount := len(s.selectedSchema)
+				if itemCount == 0 {
+					itemCount = 1
 				}
-			}
-			if len(s.selectedSchema) == 0 {
-				children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "该表没有可见字段").Layout(gtx) }))
-			}
+				return material.List(s.theme, &s.schemaList).Layout(gtx, itemCount, func(gtx context, index int) dimensions {
+					if len(s.selectedSchema) == 0 {
+						return material.Caption(s.theme, "该表没有可见字段").Layout(gtx)
+					}
+					column := s.selectedSchema[index]
+					line := column.Name+"  "+column.Type
+					if column.IsPrimary { line += "  [主键]" }
+					if column.HasDefault { line += "  [默认值]" }
+					if column.Comment != "" { line += "  · "+column.Comment }
+					return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx context) dimensions {
+						return material.Caption(s.theme, line).Layout(gtx)
+					})
+				})
+			}))
 		}
 		if s.tableDetailsError != "" {
 			message := s.tableDetailsError
