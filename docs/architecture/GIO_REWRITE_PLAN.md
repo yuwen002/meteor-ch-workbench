@@ -134,3 +134,13 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - Vue `frontend/` 尚未删除，当前只作为行为参考。
 - 新 ClickHouse infrastructure 目前只有连接池和连通性测试首批实现；查询执行、元数据、取消、凭据独立存储、历史与工作区存储尚未实现。
 - 新连接存储和 ClickHouse 测试尚未实际执行；当前 Actions 查询无运行记录，最新提交状态为 pending。
+
+
+### 阶段 C：SQL 查询执行首批实现（2026-11-24）
+
+- 新增 `internal/application/query`：定义查询 / 执行请求、列元数据、批次回调、执行摘要、连接读取端口和执行器端口；用例按连接 ID 读取新连接仓库，再委托执行器。
+- 新连接文件仓库增加 `Get(ctx, id)`，查询用例不再需要读取完整连接列表。
+- 新增 `internal/infrastructure/clickhouse/query_executor.go`：使用新连接池执行 QueryContext / ExecContext；查询结果通过批次回调流式交付，不在应用层累积完整结果集。
+- 默认查询超时 30 秒、结果行数上限 10,000、批次大小 256；支持请求级覆盖、context 取消、列名 / ClickHouse 类型 / Go 扫描类型元数据、截断标记和 DDL/DML 受影响行数。
+- 增加应用用例测试和 fake database/sql driver 测试，覆盖连接读取、请求校验、列元数据、批次、行数截断、Exec 结果、取消和回调失败后的 Rows 释放。
+- **尚未完成**：尚未在本地运行 gofmt / go test / go vet / build；当前 GitHub Actions 未发现运行记录。查询执行器尚未接入 Gio GUI，也没有真实 ClickHouse 集成测试。结果回调的消费方必须自行限制 UI 队列 / 缓冲区，不能把所有批次重新累积到内存。
