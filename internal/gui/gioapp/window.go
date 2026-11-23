@@ -127,7 +127,6 @@ type screen struct {
 	resultFilter widget.Editor
 	resultFilterLast string
 	resultFilterClear widget.Clickable
-	resultColumnFilterList widget.List
 	resultColumnFilterEditors []widget.Editor
 	resultColumnFilterLast []string
 	resultColumnFilterClear widget.Clickable
@@ -1834,7 +1833,6 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultSortColumn, s.resultSortDescending = -1, false
 	s.resultFilter.SetText("")
 	s.resultFilterLast = ""
-	s.resultColumnFilterList.Position = layout.Position{}
 	s.resultColumnFilterEditors, s.resultColumnFilterLast = nil, nil
 	s.resultColumnWidths, s.resultColumnDrags = nil, nil
 	s.resultColumnDragLastX, s.resultColumnDragActive = nil, nil
@@ -1999,28 +1997,6 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			)
 		}))
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, func(gtx context) dimensions {
-					s.resultColumnFilterList.Axis = layout.Horizontal
-					return material.List(s.theme, &s.resultColumnFilterList).Layout(gtx, len(result.Columns), func(gtx context, columnIndex int) dimensions {
-						width := resultColumnWidth(columnWeights[columnIndex])
-						if columnIndex < len(s.resultColumnWidths) && s.resultColumnWidths[columnIndex] > 0 { width = s.resultColumnWidths[columnIndex] }
-						gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
-						return material.Editor(s.theme, &s.resultColumnFilterEditors[columnIndex], "筛选 "+result.Columns[columnIndex].Name).Layout(gtx)
-					})
-				}),
-				layout.Rigid(func(gtx context) dimensions {
-					d := material.Button(s.theme, &s.resultColumnFilterClear, "清除列条件").Layout(gtx)
-					for s.resultColumnFilterClear.Clicked(gtx) {
-						for i := range s.resultColumnFilterEditors { s.resultColumnFilterEditors[i].SetText(""); s.resultColumnFilterLast[i] = "" }
-						s.resultColumnFilterList.Position = layout.Position{}
-						s.resultList.Position = layout.Position{}
-					}
-					return d
-				}),
-			)
-		}))
-		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			s.resultColumnHeader.Axis = layout.Horizontal
 			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns)+1, func(gtx context, index int) dimensions {
 				if index == 0 {
@@ -2033,19 +2009,24 @@ func (s *screen) layoutResults(gtx context) dimensions {
 					width = s.resultColumnWidths[columnIndex]
 				}
 				gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, func(gtx context) dimensions {
-						d := s.resultSortClicks[columnIndex].Layout(gtx, func(gtx context) dimensions {
-							return material.Body2(s.theme, resultColumnLabel(result.Columns, columnIndex, s.resultSortColumn, s.resultSortDescending)).Layout(gtx)
-						})
-						for s.resultSortClicks[columnIndex].Clicked(gtx) {
-							if s.resultSortColumn == columnIndex { s.resultSortDescending = !s.resultSortDescending } else { s.resultSortColumn, s.resultSortDescending = columnIndex, false }
-							s.resultList.Position = layout.Position{}
-						}
-						return d
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx context) dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, func(gtx context) dimensions {
+								d := s.resultSortClicks[columnIndex].Layout(gtx, func(gtx context) dimensions {
+									return material.Body2(s.theme, resultColumnLabel(result.Columns, columnIndex, s.resultSortColumn, s.resultSortDescending)).Layout(gtx)
+								})
+								for s.resultSortClicks[columnIndex].Clicked(gtx) {
+									if s.resultSortColumn == columnIndex { s.resultSortDescending = !s.resultSortDescending } else { s.resultSortColumn, s.resultSortDescending = columnIndex, false }
+									s.resultList.Position = layout.Position{}
+								}
+								return d
+							}),
+							layout.Rigid(func(gtx context) dimensions { return s.layoutResultColumnResizeHandle(gtx, columnIndex) }),
+						)
 					}),
 					layout.Rigid(func(gtx context) dimensions {
-						return s.layoutResultColumnResizeHandle(gtx, columnIndex)
+						return material.Editor(s.theme, &s.resultColumnFilterEditors[columnIndex], "筛选 "+result.Columns[columnIndex].Name).Layout(gtx)
 					}),
 				)
 			})
