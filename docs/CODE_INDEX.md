@@ -101,7 +101,7 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | 历史 | `GetQueryHistory` / `DeleteQueryHistory` / `ClearQueryHistory` | 查询历史由 `internal/app.Service.Query` 自动记录 |
 | 收藏 SQL | `GetSavedSQL` / `SaveSQL` / `UpdateSavedSQL` / `DeleteSavedSQL` | 无上限、无清空；重复 SQL 拒绝 |
 | 标签 | `GetTabs` / `SaveTabs` | |
-| 元数据 | `GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetClusters` | |
+| 元数据 | `GetDatabases` / `GetTables` / `GetViews` / `GetTableSchema` / `GetTableDetails` / `GetClusters` | |
 | 其他 | `OpenConfigFolder` / `GetAppVersion` | 平台操作经 `internal/platform` 注入 |
 
 **阅读顺序建议**：先看 `GetAll` 了解数据结构，再看 `Query` 了解错误约定，其余方法模式高度一致。
@@ -126,7 +126,8 @@ main.ts ──► App.vue ──► router ──► QueryEditor.vue
 | `errQueryCanceled` | 常量 | `"查询已取消"`，前端按此文案识别取消 |
 | `isCanceled(ctx)` | 函数 | 只认 `context.Canceled`，超时不算用户取消 |
 | `QueryResult` | struct | `columns` 现为 `[]ColumnInfo`（含 name/type/comment/is_primary/has_default） |
-| `ColumnInfo` / `TableInfo` / `ClusterInfo` | struct | 元数据返回结构 |
+| `ColumnInfo` / `TableInfo` / `TableDetails` / `ClusterInfo` | struct | 元数据返回结构；`TableDetails` 包含引擎、注释、完整 DDL、分区键、排序键、主键和 TTL 摘要 |
+| `Service.GetTableDetails(conn, database, table)` | 函数 | 读取 `system.tables` 元数据；TTL 从 `create_table_query` 提取，完整 DDL 原样保留 |
 | `DefaultQueryRowLimit` | 常量 | 见 export.go，50000 |
 
 **重要设计说明**：文件头注释解释了为什么用 DSN 而非 `clickhouse.Open` + `Options.Protocol` —— 后者存在协议路由缺陷，指定 HTTP 仍发 Native 握手包。**这是踩过坑的记录，改动建连方式前务必读完那段注释。**
