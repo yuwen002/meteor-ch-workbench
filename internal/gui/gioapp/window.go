@@ -54,7 +54,7 @@ func Run(window *app.Window, service *appsvc.Service) error {
 
 type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
 type queryResult struct { queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
-type exportResult struct { format string; err error; canceled bool }
+type exportResult struct { format string; err error; canceled bool; rows int64 }
 type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
 type schemaResult struct { connectionID string; connectionSequence uint64; database string; table string; requestID uint64; columns []clickhouse.ColumnInfo; details *clickhouse.TableDetails; detailsErr error; err error }
 type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; tableClicks map[string]*widget.Clickable; err error }
@@ -88,6 +88,8 @@ type screen struct {
 	runningQueryID string
 	queryRunning bool
 	queryResult *clickhouse.QueryResult
+	lastExecutedSQL string
+	lastExecutedConnectionID string
 	resultList widget.List
 	resultColumnHeader widget.List
 	resultColumnRow widget.List
@@ -168,17 +170,13 @@ func (s *screen) startExport(format string) {
 	if s.exportRunning || s.queryResult == nil || s.service == nil || s.explorer == nil {
 		return
 	}
-	result := s.queryResult
-	if result.Error != "" || len(result.Columns) == 0 {
+	if s.queryResult.Error != "" || len(s.queryResult.Columns) == 0 || strings.TrimSpace(s.lastExecutedSQL) == "" || s.lastExecutedConnectionID == "" {
 		return
 	}
-	columns := make([]string, len(result.Columns))
-	for i, column := range result.Columns {
-		columns[i] = column.Name
-	}
-	rows := result.Rows
+	connectionID, sqlText := s.lastExecutedConnectionID, s.lastExecutedSQL
+	queryID := fmt.Sprintf("gio-export-%d", time.Now().UnixNano())
 	s.exportRunning = true
-	s.status = "正在准备导出 " + strings.ToUpper(format) + "…"
+	s.status = "正在重新执行当前 SQL，并流式导出完整结果…"
 	go func() {
 		file, err := s.explorer.CreateFile("query-result." + format)
 		if err != nil {
@@ -186,14 +184,14 @@ func (s *screen) startExport(format string) {
 			s.window.Invalidate()
 			return
 		}
-		_, writeErr := s.service.ExportQueryResult(file, format, columns, rows, "")
+		rows, writeErr := s.service.ExportQueryTo(file, connectionID, sqlText, queryID, format)
 		closeErr := file.Close()
 		if writeErr != nil {
 			err = writeErr
 		} else if closeErr != nil {
 			err = closeErr
 		}
-		s.exportResults <- exportResult{format: format, err: err}
+		s.exportResults <- exportResult{format: format, err: err, rows: rows}
 		s.window.Invalidate()
 	}()
 }
@@ -210,7 +208,7 @@ func (s *screen) drainExportResults() {
 			case result.err != nil:
 				s.status = "导出失败：" + result.err.Error()
 			default:
-				s.status = "已成功导出 " + strings.ToUpper(result.format) + " 查询结果"
+				s.status = fmt.Sprintf("已成功流式导出 %d 行 %s 查询结果（已重新执行 SQL）", result.rows, strings.ToUpper(result.format))
 			}
 		default:
 			return
@@ -368,6 +366,7 @@ func (s *screen) executeSQL() {
 	s.querySequence++
 	queryID := fmt.Sprintf("gio-%d-%d", time.Now().UnixNano(), s.querySequence)
 	sequence, connectionID := s.querySequence, s.selectedConnectionID
+	s.lastExecutedSQL, s.lastExecutedConnectionID = sqlText, connectionID
 	s.runningQueryID, s.queryRunning, s.queryResult = queryID, true, nil
 	s.resultColumnHeader.Position = layout.Position{}
 	s.resultColumnRow.Position = layout.Position{}
