@@ -111,6 +111,14 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 新增领域与应用层单元测试：覆盖必填字段、端口和协议边界、ID 生成失败、保存归一化、删除不存在连接、测试不落盘及底层错误链。
 - 以上代码不依赖 Gio、旧 `internal/app`、旧 `internal/config`、旧 `internal/clickhouse`，属于新架构代码；但目前尚未接入 Gio，也没有新的 ClickHouse / storage 基础设施实现。
 
+### 阶段 B：连接存储首批实现
+- 新增 `internal/infrastructure/storage/connectionfile`：独立版本化 JSON 文件仓库，实现连接列表、保存、删除。
+- 写入采用临时文件 + Sync + Rename；配置目录权限 0700、文件权限 0600，避免继续沿用旧配置管理器的宽松权限。
+- 增加显式 `ImportLegacyJSON` 一次性导入入口：旧文件由调用方读取并传入，不在运行时依赖旧配置包；支持缺失 ID / protocol 归一化、重复 ID 校验和单次写入。
+- 增加存储测试：新增/更新/列表/删除、文件权限、未知版本、重复 ID、旧配置导入及无效数据不产生部分写入。
+- **尚未完成**：新仓库还未接入 Gio；密码目前仍随新配置文件保存，依靠本地文件权限保护，后续需要独立凭据存储；尚未有真实 ClickHouse Tester 实现。
+- 测试文件已提交，但当前仅通过 GitHub 文件 API 写入，未在本地执行。
+
 ### 当前仍未完成项
 
 - Gio 入口仍调用 internal/app.NewDefaultService。
