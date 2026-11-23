@@ -121,6 +121,11 @@ type screen struct {
 	resultColumnDragLastX []float32
 	resultColumnDragActive []bool
 	resultCellClicks [][]widget.Clickable
+	resultSortClicks []widget.Clickable
+	resultSortColumn int
+	resultSortDescending bool
+	resultFilter widget.Editor
+	resultFilterClear widget.Clickable
 	resultRowCopyClicks []widget.Clickable
 	connectionSequence uint64
 	databaseSequence uint64
@@ -222,6 +227,8 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 		editorRatio: 0.62,
 	}
 	s.savedSQLSearch.SingleLine = true
+	s.resultFilter.SingleLine = true
+	s.resultSortColumn = -1
 	s.savedSQLNameEditor.SingleLine = true
 	if service != nil {
 		if settings, err := service.GetSettings(); err == nil {
@@ -1818,6 +1825,9 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultColumnHeader.Position = layout.Position{}
 	s.resultColumnRow.Position = layout.Position{}
 	s.resultCellClicks, s.resultRowCopyClicks = nil, nil
+	s.resultSortClicks = nil
+	s.resultSortColumn, s.resultSortDescending = -1, false
+	s.resultFilter.SetText("")
 	s.resultColumnWidths, s.resultColumnDrags = nil, nil
 	s.resultColumnDragLastX, s.resultColumnDragActive = nil, nil
 	s.selectedCellLabel, s.selectedCellValue, s.cellDetailLines = "", "", nil
@@ -1828,6 +1838,7 @@ func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
 	s.resultColumnDrags = make([]gesture.Drag, len(result.Columns))
 	s.resultColumnDragLastX = make([]float32, len(result.Columns))
 	s.resultColumnDragActive = make([]bool, len(result.Columns))
+	s.resultSortClicks = make([]widget.Clickable, len(result.Columns))
 	s.resultCellClicks = make([][]widget.Clickable, len(result.Rows))
 	s.resultRowCopyClicks = make([]widget.Clickable, len(result.Rows))
 	for i := range result.Rows { s.resultCellClicks[i] = make([]widget.Clickable, len(result.Columns)) }
@@ -1951,6 +1962,19 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 		}
 		columnWeights := resultColumnWeights(result.Columns, result.Rows)
+		filterText := s.resultFilter.Text()
+		displayRows := buildResultRowView(result.Rows, filterText, s.resultSortColumn, s.resultSortDescending)
+		children = append(children, layout.Rigid(func(gtx context) dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx context) dimensions { return material.Editor(s.theme, &s.resultFilter, "筛选当前结果（匹配任意列）").Layout(gtx) }),
+				layout.Rigid(func(gtx context) dimensions {
+					d := material.Button(s.theme, &s.resultFilterClear, "清除").Layout(gtx)
+					for s.resultFilterClear.Clicked(gtx) { s.resultFilter.SetText("") }
+					return d
+				}),
+				layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, fmt.Sprintf("显示 %d / %d 行", len(displayRows), len(result.Rows))).Layout(gtx) }),
+			)
+		}))
 		children = append(children, layout.Rigid(func(gtx context) dimensions {
 			s.resultColumnHeader.Axis = layout.Horizontal
 			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns)+1, func(gtx context, index int) dimensions {
@@ -1967,7 +1991,13 @@ func (s *screen) layoutResults(gtx context) dimensions {
 				gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, func(gtx context) dimensions {
-						return material.Body2(s.theme, column.Name).Layout(gtx)
+						d := s.resultSortClicks[columnIndex].Layout(gtx, func(gtx context) dimensions {
+							return material.Body2(s.theme, resultColumnLabel(result.Columns, columnIndex, s.resultSortColumn, s.resultSortDescending)).Layout(gtx)
+						})
+						for s.resultSortClicks[columnIndex].Clicked(gtx) {
+							if s.resultSortColumn == columnIndex { s.resultSortDescending = !s.resultSortDescending } else { s.resultSortColumn, s.resultSortDescending = columnIndex, false }
+						}
+						return d
 					}),
 					layout.Rigid(func(gtx context) dimensions {
 						return s.layoutResultColumnResizeHandle(gtx, columnIndex)
@@ -1977,14 +2007,15 @@ func (s *screen) layoutResults(gtx context) dimensions {
 		}))
 		children = append(children, layout.Flexed(1, func(gtx context) dimensions {
 			s.resultList.Axis = layout.Vertical
-			return material.List(s.theme, &s.resultList).Layout(gtx, len(result.Rows), func(gtx context, index int) dimensions {
-				row := result.Rows[index]
+			return material.List(s.theme, &s.resultList).Layout(gtx, len(displayRows), func(gtx context, index int) dimensions {
+				rowIndex := displayRows[index].Index
+				row := result.Rows[rowIndex]
 				s.resultColumnRow.Axis = layout.Horizontal
 				s.resultColumnRow.Position = s.resultColumnHeader.Position
 				dims := s.resultColumnRow.List.Layout(gtx, len(result.Columns)+1, func(gtx context, columnIndex int) dimensions {
 					if columnIndex == 0 {
 						gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(80), gtx.Dp(80)
-						return s.resultRowCopyClicks[index].Layout(gtx, func(gtx context) dimensions {
+						return s.resultRowCopyClicks[rowIndex].Layout(gtx, func(gtx context) dimensions {
 							return material.Caption(s.theme, "复制行").Layout(gtx)
 						})
 					}
@@ -1996,24 +2027,24 @@ func (s *screen) layoutResults(gtx context) dimensions {
 						width = s.resultColumnWidths[cellIndex]
 					}
 					gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
-					return s.resultCellClicks[index][cellIndex].Layout(gtx, func(gtx context) dimensions {
+					return s.resultCellClicks[rowIndex][cellIndex].Layout(gtx, func(gtx context) dimensions {
 						return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions {
 							return material.Caption(s.theme, cellText).Layout(gtx)
 						})
 					})
 				})
-				for s.resultRowCopyClicks[index].Clicked(gtx) {
+				for s.resultRowCopyClicks[rowIndex].Clicked(gtx) {
 					gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatResultRow(row)))})
 					s.status = fmt.Sprintf("已复制第 %d 行（制表符分隔）", index+1)
 				}
 				for cellIndex := range row {
-					if cellIndex < len(s.resultCellClicks[index]) && s.resultCellClicks[index][cellIndex].Clicked(gtx) {
+					if cellIndex < len(s.resultCellClicks[rowIndex]) && s.resultCellClicks[rowIndex][cellIndex].Clicked(gtx) {
 						gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(formatClipboardCell(row[cellIndex])))})
-						s.selectedCellLabel = fmt.Sprintf("第 %d 行 · %s", index+1, result.Columns[cellIndex].Name)
+						s.selectedCellLabel = fmt.Sprintf("第 %d 行 · %s", rowIndex+1, result.Columns[cellIndex].Name)
 						s.selectedCellValue = formatClipboardCell(row[cellIndex])
 						s.cellDetailLines = splitCellDetailLines(s.selectedCellValue)
 						s.cellDetailList.Position = layout.Position{}
-						s.status = fmt.Sprintf("已复制第 %d 行第 %d 列，并显示完整内容", index+1, cellIndex+1)
+						s.status = fmt.Sprintf("已复制第 %d 行第 %d 列，并显示完整内容", rowIndex+1, cellIndex+1)
 					}
 				}
 				s.resultColumnHeader.Position = s.resultColumnRow.Position
