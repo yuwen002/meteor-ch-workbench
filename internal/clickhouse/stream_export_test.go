@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"testing"
+	"testing"\n\t"time"
 )
 
 type fakeSQLRows struct {
@@ -107,5 +107,41 @@ func TestStreamSQLRowsToReportsProgress(t *testing.T) {
 		if updates[i] != want[i] {
 			t.Fatalf("progress updates = %v, want %v", updates, want)
 		}
+	}
+}
+
+
+func TestStreamSQLRowsToSerializesCommonClickHouseTypes(t *testing.T) {
+	timestamp := time.Date(2026, 11, 23, 10, 30, 0, 0, time.UTC)
+	rows := &fakeSQLRows{
+		columns: []string{"string_bytes", "array", "map", "datetime64"},
+		rows: [][]interface{}{{
+			[]byte("中文文本"),
+			[]string{"alpha", "beta"},
+			map[string]string{"region": "sg"},
+			timestamp,
+		}},
+	}
+	var output bytes.Buffer
+	count, err := streamSQLRowsTo(context.Background(), rows, &output, "csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	want := "string_bytes,array,map,datetime64\n中文文本,\"[\\\"alpha\\\",\\\"beta\\\"]\",\"{\\\"region\\\":\\\"sg\\\"}\",2026-11-23T10:30:00Z\n"
+	if output.String() != want {
+		t.Fatalf("CSV mismatch:\n got: %q\nwant: %q", output.String(), want)
+	}
+}
+
+func TestSerializeValuePreservesByteSliceAsText(t *testing.T) {
+	got, ok := serializeValue([]byte("ClickHouse 字符串")).(string)
+	if !ok {
+		t.Fatalf("serialized byte slice type = %T, want string", serializeValue([]byte("ClickHouse 字符串")))
+	}
+	if got != "ClickHouse 字符串" {
+		t.Fatalf("serialized byte slice = %q", got)
 	}
 }
