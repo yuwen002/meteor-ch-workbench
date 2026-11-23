@@ -81,3 +81,11 @@ func reorderTabState(tabs []config.TabState, from, to int) ([]config.TabState, b
 	updated[to] = moved
 	return updated, true
 }
+
+ 
+// tabHasUnsavedChanges 判断指定标签是否为活动标签且编辑器内容尚未写入标签快照。
+func tabHasUnsavedChanges(tabs []config.TabState, activeID, targetID, editorSQL string) bool {
+	if activeID != targetID { return false }
+	index := activeTabIndex(tabs, targetID)
+	return index >= 0 && tabs[index].SQL != editorSQL
+}
