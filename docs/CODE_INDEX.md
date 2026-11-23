@@ -891,3 +891,10 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/gui/gioapp/table_preview.go`：`buildTablePreviewSQL` 构造当前表的前 100 行预览 SQL；库名 / 表名使用反引号引用并转义标识符内部反引号。
 - `internal/gui/gioapp/table_preview_test.go`：覆盖普通库表、特殊标识符转义和 LIMIT 默认值。
 - `window.go` 的表详情面板提供「预览数据」按钮，将 SQL 回填到当前标签并复用已有查询链路；存在查询 / 导出任务时不重复发起。
+
+
+### 表数据预览分页
+
+- `internal/gui/gioapp/table_preview.go`：`buildTablePreviewPageSQL` 构造 LIMIT/OFFSET 分页 SQL；第一页省略 OFFSET 0。
+- `internal/gui/gioapp/table_preview_test.go`：覆盖第一页、后续页、每页行数变化、负页码和无效行数回退。
+- `window.go`：表预览分页控件支持上一页 / 下一页及 50 / 100 / 200 行切换；切换页数回到第一页，并通过当前 SQL 匹配防止普通 SQL 显示错误分页控件。
