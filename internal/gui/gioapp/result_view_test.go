@@ -183,3 +183,36 @@ func TestGlobalFilterKeepsLiteralOperatorCharacters(t *testing.T) {
 		t.Fatalf("global keyword filter should treat operator characters literally: %#v", got)
 	}
 }
+
+
+func TestResultValueMatchesColumnConditionSupportsTimeComparisons(t *testing.T) {
+	value := "2026-11-23 12:30:00.123456"
+	tests := []struct {
+		name string
+		expression string
+		want bool
+	}{
+		{"after earlier date", ">2026-11-22", true},
+		{"before next day", "<2026-11-24", true},
+		{"inclusive exact instant", ">=2026-11-23 12:30:00.123456", true},
+		{"exclusive exact instant", ">2026-11-23 12:30:00.123456", false},
+		{"RFC3339 offset equivalent", "=2026-11-23T13:30:00.123456+01:00", true},
+		{"invalid date", ">not-a-date", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resultValueMatchesColumnCondition(value, tt.expression); got != tt.want {
+				t.Fatalf("resultValueMatchesColumnCondition(%q, %q) = %v, want %v", value, tt.expression, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResultValueMatchesColumnConditionKeepsNumericComparison(t *testing.T) {
+	if !resultValueMatchesColumnCondition("1700000000", ">1699999999") {
+		t.Fatal("numeric comparison should continue to use numeric semantics")
+	}
+	if resultValueMatchesColumnCondition("1700000000", ">2026-01-01") {
+		t.Fatal("numeric value must not be treated as a timestamp")
+	}
+}
