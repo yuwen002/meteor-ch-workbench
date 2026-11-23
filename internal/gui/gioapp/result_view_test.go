@@ -103,9 +103,9 @@ func TestBuildResultRowViewCombinesMultipleColumnFilters(t *testing.T) {
 		{"beta", "ClickHouse", 30},
 		{"alpha", "ClickHouse", 40},
 	}
-	got := buildResultRowViewWithColumnFilters(rows, "", []string{"alpha", "clickhouse", "3"}, -1, false)
-	if len(got) != 1 || got[0].Index != 2 {
-		t.Fatalf("multiple column filters = %#v, want source row 2", got)
+	got := buildResultRowViewWithColumnFilters(rows, "", []string{"alpha", "clickhouse", "4"}, -1, false)
+	if len(got) != 1 || got[0].Index != 3 {
+		t.Fatalf("multiple column filters = %#v, want source row 3", got)
 	}
 }
 
