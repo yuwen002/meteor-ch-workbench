@@ -1,8 +1,16 @@
-# 原生 GUI 迁移架构说明
+# 原生 GUI 全量重构说明
+
+## 2026-11-24 架构决策（优先级高于本文历史迁移记录）
+
+用户已明确要求彻底切换到 Gio 原生桌面架构：不保留 Wails 兼容入口，也不把旧 Go 应用门面 / 业务实现作为最终后端。后续按新架构重新实现应用用例、连接管理、配置读写、查询编排、元数据、导入导出和工作区状态；旧实现仅可作为行为参考，不能因复用旧代码而计入迁移完成度。
+
+本轮已删除根目录 Wails 启动入口 `main.go`、旧前端绑定门面 `app.go`、对应平台行为测试、`internal/platform/wailsadapter` 和 `wails.json`，并从 `go.mod` 移除 Wails v3 直接依赖。Gio 唯一桌面启动入口为 `cmd/meteor-ch-gio`。旧 `frontend/` 目录暂作为功能盘点与交互参考资料，不参与新应用启动和发布；待 Gio 功能逐项替代并完成验收后再整体删除。
+
+`internal/app.Service`、`internal/clickhouse.Service` 和部分 `internal/config` 目前仍被 Gio 使用，是过渡中的旧 Go 业务实现，不是最终架构。后续必须按领域边界重写并迁移调用方，完成后删除旧实现及无用抽象。ClickHouse 官方驱动及必要底层协议库属于基础设施依赖，不属于需要删除的旧业务逻辑。
 
 ## 目标与约束
 
-本次迁移将桌面界面从 Wails WebView 逐步替换为 Gio 原生 GUI，保留 Go 业务逻辑、ClickHouse 驱动和现有本地数据格式。迁移期间旧 Wails + Vue 版本继续作为兼容基线，不提前删除。
+本次工作从 Wails + Vue 切换为 Gio 原生 GUI，并进一步将旧 Go 应用门面和业务编排替换为清晰的新领域 / 应用服务。保留 ClickHouse 驱动与必要的本地数据兼容能力；不保留旧 GUI 入口和旧业务实现作为运行时兼容层。
 
 - Community 核心采用 MIT 许可证。
 - Pro 功能未来通过独立私有仓库和独立构建入口组合，不进入 Community 默认依赖。
@@ -12,7 +20,7 @@
 ## 目标分层
 
 ```text
-Gio GUI / 现有 Wails Adapter
+Gio GUI
           |
           v
 internal/app          GUI 无关的应用用例
@@ -48,17 +56,17 @@ internal/app          GUI 无关的应用用例
 
 新建连接时应用服务先生成 ID，再持久化并失效对应连接池，避免配置管理器内部生成 ID 后调用方仍持有空 ID 的问题。
 
-默认依赖装配已抽取为 `internal/app.NewDefaultService`，统一创建本地配置管理器、查询历史、标签页、收藏 SQL、用户设置和 ClickHouse 服务；Wails 与 Gio 入口共用该构造函数，避免两套 GUI 各自维护业务依赖。根目录 `App` 仍保留 Wails 公开方法签名，作为旧前端兼容适配层。文件对话框和打开目录通过平台端口调用；文件内容读写通过 `internal/platform.FileSystem` 端口执行，默认由 `internal/platform/osfs` 使用 Go 标准库实现。应用服务新增 `Close`，由 GUI 生命周期回调统一释放 ClickHouse 连接池。
+默认依赖装配已抽取为 `internal/app.NewDefaultService`，统一创建本地配置管理器、查询历史、标签页、收藏 SQL、用户设置和 ClickHouse 服务；历史版本曾由 Wails 与 Gio 入口共用该构造函数；该兼容策略已于 2026-11-24 废弃，旧 Wails 门面和启动入口已删除。`internal/app.Service` 当前仅为 Gio 的过渡依赖，后续将按新领域边界重写。文件对话框和打开目录通过平台端口调用；文件内容读写通过 `internal/platform.FileSystem` 端口执行，默认由 `internal/platform/osfs` 使用 Go 标准库实现。应用服务新增 `Close`，由 GUI 生命周期回调统一释放 ClickHouse 连接池。
 
 ### 第三批：平台能力端口
 
-新增 `internal/platform.Platform`，定义保存文件、打开文件和打开配置目录三个能力；同时定义独立的 `FileSystem` 端口，封装文件读取、覆盖写入和创建写入句柄。`internal/platform/wailsadapter` 提供 Wails v3 对话框实现，`internal/platform/osfs` 提供基于 Go 标准库的文件系统实现。根目录 `App` 通过 `NewAppWithPlatform` 注入平台实现，并由 `NewAppWithDependencies` 同时注入文件系统实现。配置导入、配置导出和查询结果导出均通过文件系统端口完成，不再直接调用 `os.ReadFile`、`os.WriteFile` 或 `os.Create`。取消文件对话框仍按原有约定返回空路径，不视为错误。
+新增 `internal/platform.Platform`，定义保存文件、打开文件和打开配置目录三个能力；同时定义独立的 `FileSystem` 端口，封装文件读取、覆盖写入和创建写入句柄。历史版本的 `internal/platform/wailsadapter` 曾提供 Wails v3 对话框实现；该目录已删除。`internal/platform/osfs` 提供基于 Go 标准库的文件系统实现。根目录 `App` 通过 `NewAppWithPlatform` 注入平台实现，并由 `NewAppWithDependencies` 同时注入文件系统实现。配置导入、配置导出和查询结果导出均通过文件系统端口完成，不再直接调用 `os.ReadFile`、`os.WriteFile` 或 `os.Create`。取消文件对话框仍按原有约定返回空路径，不视为错误。
 
-该接口让未来 Gio 入口可以注入 Gio 平台实现，而不需要让应用服务依赖 Wails 或 Gio。
+该平台抽象为历史迁移过程遗留，需在 Gio 平台能力重构中评估保留必要部分或整体删除，不作为必须保留的架构约束。
 
 ## Gio 原生 GUI 第一阶段
 
-已新增独立入口 `cmd/meteor-ch-gio`，不影响根目录 `main.go` 的 Wails 启动方式；新增 `internal/gui/gioapp`，先落地 SQL 工作台主窗口骨架：
+已新增独立入口 `cmd/meteor-ch-gio`，已删除根目录 Wails 启动方式，新增 `internal/gui/gioapp`，先落地 SQL 工作台主窗口骨架：
 
 - 顶部工具栏：连接、执行 SQL、停止和主题切换入口。
 - 左侧连接 / 数据库导航区域，预留连接、数据库、表和系统表层级。
@@ -254,3 +262,14 @@ Gio 编辑区读取并恢复 `TabsManager` 保存的标签快照，支持新建�
 - 基准启用 `ReportAllocs`，可观察耗时和内存分配；该基准用于本地 Go 环境测量，不将未经执行的结果写成性能结论。
 - 建议在仓库根目录执行：`go test ./internal/gui/gioapp -run '^$' -bench '^BenchmarkBuildResultRowView$' -benchmem`。
 - 本轮尚未执行基准；完成测量后再依据数据决定是否缓存筛选解析结果或调整比较实现。
+
+
+## 全量替换后的执行顺序（2026-11-24）
+
+1. **新应用核心**：建立 Gio 专用应用服务和领域模型，明确连接、查询、元数据、配置、历史、收藏、标签页、设置、导入导出的接口与错误语义；逐项替换 `internal/app.Service` 的调用。
+2. **新数据与基础设施边界**：重构配置存储和 ClickHouse 访问层，加入可注入接口、连接池生命周期、取消与超时、流式结果；保留 ClickHouse 驱动，不复制旧服务的耦合设计。
+3. **Gio 功能补齐**：连接/文件夹管理、配置导入导出、集群面板、建表/编辑/删除、完整结果编辑和导出格式、SQL 编辑器高亮/补全/格式化。
+4. **替换完成后清理**：删除旧 `internal/app`、旧 `internal/clickhouse` 中不再使用的实现、旧配置兼容代码、`frontend/` Vue 源码及无用平台抽象；更新依赖和文档。
+5. **验收与发布**：建立 CI；运行 `gofmt`、`go test ./...`、`go vet ./...`、`go build ./cmd/meteor-ch-gio`；验证 Windows/macOS/Linux 桌面交互、数据迁移、启动内存、安装包体积。
+
+当前禁止将仍依赖旧 `internal/app.Service` 的 Gio 功能标记为“新后端已迁移”；功能界面已接入与后端独立重写是两项不同验收。
