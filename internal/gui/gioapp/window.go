@@ -115,8 +115,17 @@ type screen struct {
 	connectionClicks   []widget.Clickable
 	tabs               []config.TabState
 	activeTabID        string
-	tabClicks          []widget.Clickable
+ 	tabClicks          []widget.Clickable
+	tabRenameClicks    []widget.Clickable
+	tabCloseClicks     []widget.Clickable
+	tabDrags           []gesture.Drag
+	tabDragLastX       []float32
+	tabDragActive      []bool
 	tabList            widget.List
+	tabTitleEditor     widget.Editor
+	renameTabID        string
+	tabRenameSave      widget.Clickable
+	tabRenameCancel    widget.Clickable
 	newTab             widget.Clickable
 	selectedConnectionID string
 	theme       *material.Theme
@@ -185,7 +194,7 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 	snapshot = normalizeTabSnapshot(snapshot, defaultSQL)
 	s.tabs = snapshot.Tabs
 	s.activeTabID = snapshot.ActiveTabID
-	s.tabClicks = make([]widget.Clickable, len(s.tabs))
+	s.resetTabWidgets()
 	if index := activeTabIndex(s.tabs, s.activeTabID); index >= 0 {
 		s.sqlEditor.SetText(s.tabs[index].SQL)
 	}
@@ -1060,28 +1069,142 @@ func (s *screen) layoutTabBar(gtx context) dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx context) dimensions {
 			return material.List(s.theme, &s.tabList).Layout(gtx, len(s.tabs), func(gtx context, index int) dimensions {
-				tab := s.tabs[index]
-				label := tab.Title
-				if tab.ID == s.activeTabID {
-					label = "● " + label
+			tab := s.tabs[index]
+			return layout.Inset{Right: unit.Dp(5)}.Layout(gtx, func(gtx context) dimensions {
+				if s.renameTabID == tab.ID {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx context) dimensions { return material.Editor(s.theme, &s.tabTitleEditor, "标签名称").Layout(gtx) }),
+						layout.Rigid(func(gtx context) dimensions {
+							d := material.Button(s.theme, &s.tabRenameSave, "保存").Layout(gtx)
+							for s.tabRenameSave.Clicked(gtx) { s.commitTabRename() }
+							return d
+						}),
+						layout.Rigid(func(gtx context) dimensions {
+							d := material.Button(s.theme, &s.tabRenameCancel, "取消").Layout(gtx)
+							for s.tabRenameCancel.Clicked(gtx) { s.renameTabID = "" }
+							return d
+						}),
+					)
 				}
-				return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx context) dimensions {
-					dims := material.Button(s.theme, &s.tabClicks[index], label).Layout(gtx)
-					for s.tabClicks[index].Clicked(gtx) {
-						s.activateTab(tab.ID)
-					}
-					return dims
-				})
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx context) dimensions {
+						label := tab.Title
+						if tab.ID == s.activeTabID { label = "● " + label }
+						area := clip.Rect(image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)).Push(gtx.Ops)
+						pointer.CursorGrab.Add(gtx.Ops)
+						s.tabDrags[index].Add(gtx.Ops)
+						area.Pop()
+						d := material.Button(s.theme, &s.tabClicks[index], label).Layout(gtx)
+						for s.tabClicks[index].Clicked(gtx) { s.activateTab(tab.ID) }
+						if s.updateTabDrag(gtx, index) { return d }
+						return d
+					}),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.tabRenameClicks[index], "✎").Layout(gtx)
+						for s.tabRenameClicks[index].Clicked(gtx) { s.beginTabRename(tab.ID) }
+						return d
+					}),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.tabCloseClicks[index], "×").Layout(gtx)
+						for s.tabCloseClicks[index].Clicked(gtx) { s.closeTab(tab.ID) }
+						return d
+					}),
+				)
 			})
+		})
 		}),
 		layout.Rigid(func(gtx context) dimensions {
-			dims := material.Button(s.theme, &s.newTab, "+ 新建").Layout(gtx)
-			for s.newTab.Clicked(gtx) {
-				s.createTab()
-			}
-			return dims
+			d := material.Button(s.theme, &s.newTab, "+ 新建").Layout(gtx)
+			for s.newTab.Clicked(gtx) { s.createTab() }
+			return d
 		}),
 	)
+}
+
+func (s *screen) resetTabWidgets() {
+	s.tabClicks = make([]widget.Clickable, len(s.tabs))
+	s.tabRenameClicks = make([]widget.Clickable, len(s.tabs))
+	s.tabCloseClicks = make([]widget.Clickable, len(s.tabs))
+	s.tabDrags = make([]gesture.Drag, len(s.tabs))
+	s.tabDragLastX = make([]float32, len(s.tabs))
+	s.tabDragActive = make([]bool, len(s.tabs))
+}
+
+func (s *screen) beginTabRename(id string) {
+	index := activeTabIndex(s.tabs, id)
+	if index < 0 { return }
+	s.renameTabID = id
+	s.tabTitleEditor.SetText(s.tabs[index].Title)
+}
+
+func (s *screen) commitTabRename() {
+	tabs, ok := renameTabState(s.tabs, s.renameTabID, s.tabTitleEditor.Text())
+	if !ok { s.status = "标签名称不能为空"; return }
+	s.tabs = tabs
+	s.renameTabID = ""
+	s.persistTabs()
+	s.status = "标签名称已更新"
+}
+
+func (s *screen) closeTab(id string) {
+	if s.queryRunning && s.runningTabID == id {
+		s.status = "该标签仍有查询或导出任务，完成或取消后才能关闭"
+		return
+	}
+	s.saveActiveTabText()
+	s.saveActiveTabRuntime()
+	wasActive := s.activeTabID == id
+	newID := fmt.Sprintf("query-%d", time.Now().UnixNano())
+	tabs, activeID, ok := closeTabState(s.tabs, s.activeTabID, id, newID)
+	if !ok { return }
+	delete(s.tabRuntime, id)
+	s.tabs, s.activeTabID = tabs, activeID
+	s.resetTabWidgets()
+	if wasActive {
+		index := activeTabIndex(s.tabs, s.activeTabID)
+		s.sqlEditor.SetText(s.tabs[index].SQL)
+		s.restoreActiveTabRuntime()
+	}
+	if s.renameTabID == id { s.renameTabID = "" }
+	s.persistTabs()
+	s.status = "已关闭 SQL 标签"
+}
+
+func (s *screen) moveTab(from, to int) {
+	tabs, ok := reorderTabState(s.tabs, from, to)
+	if !ok { return }
+	s.tabs = tabs
+	s.resetTabWidgets()
+	s.persistTabs()
+}
+
+func (s *screen) updateTabDrag(gtx context, index int) bool {
+	if index < 0 || index >= len(s.tabDrags) { return false }
+	moved := false
+	for {
+		event, ok := s.tabDrags[index].Update(gtx.Metric, gtx.Source, gesture.Horizontal)
+		if !ok { break }
+		if event.Kind != pointer.Drag { continue }
+		if !s.tabDragActive[index] {
+			s.tabDragLastX[index] = event.Position.X
+			s.tabDragActive[index] = true
+			continue
+		}
+		delta := event.Position.X - s.tabDragLastX[index]
+		threshold := float32(gtx.Dp(72))
+		if delta >= threshold && index+1 < len(s.tabs) {
+			s.moveTab(index, index+1)
+			moved = true
+			break
+		}
+		if delta <= -threshold && index > 0 {
+			s.moveTab(index, index-1)
+			moved = true
+			break
+		}
+	}
+	if index < len(s.tabDragActive) && !s.tabDrags[index].Pressed() { s.tabDragActive[index] = false }
+	return moved
 }
 
 func (s *screen) saveActiveTabText() {
@@ -1155,7 +1278,7 @@ func (s *screen) createTab() {
 	s.saveActiveTabRuntime()
 	tab := nextTabState(s.tabs, fmt.Sprintf("query-%d", time.Now().UnixNano()))
 	s.tabs = append(s.tabs, tab)
-	s.tabClicks = append(s.tabClicks, widget.Clickable{})
+	s.resetTabWidgets()
 	s.activeTabID = tab.ID
 	s.sqlEditor.SetText("")
 	s.queryResult = nil
