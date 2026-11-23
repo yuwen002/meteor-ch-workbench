@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
@@ -20,12 +19,7 @@ import (
 type App struct {
 	ctx     context.Context         // Wails 注入的应用上下文，随应用生命周期结束而关闭
 	service *appsvc.Service         // 与 GUI 无关的应用服务
-	conf  *config.Manager         // 配置管理器，负责 connections.json 的读写
-	hist  *config.HistoryManager  // 查询历史管理器，负责 history.json 的读写
-	tabs  *config.TabsManager     // 标签页管理器，负责 tabs.json 的读写
-	saved *config.SavedSQLManager // 收藏 SQL 管理器，负责 saved_sql.json 的读写
-	chSvc *clickhouse.Service     // ClickHouse 连接池与查询服务
-	prefs *config.SettingsManager // 用户偏好设置，负责 settings.json 的读写
+	chSvc   *clickhouse.Service // ClickHouse 连接池与查询服务
 }
 
 // NewApp 创建 App 实例，并初始化配置管理器、查询历史管理器和 ClickHouse 服务。
@@ -38,11 +32,6 @@ func NewApp() *App {
 	prefs := config.NewSettingsManager(conf.ConfigDir())
 	chSvc := clickhouse.NewService()
 	return &App{
-		conf:    conf,
-		hist:    hist,
-		tabs:    tabs,
-		saved:   saved,
-		prefs:   prefs,
 		chSvc:   chSvc,
 		service: appsvc.NewService(conf, hist, tabs, saved, chSvc, prefs),
 	}
@@ -239,21 +228,6 @@ func (a *App) CancelQuery(queryID string) bool {
 	return a.service.CancelQuery(queryID)
 }
 
-// recordHistory 把一次执行记录追加到查询历史。
-// 历史写入失败不影响查询本身的结果，因此错误被静默忽略。
-func (a *App) recordHistory(connectionID, sql string, durationMs float64, success bool) {
-	if strings.TrimSpace(sql) == "" {
-		return
-	}
-	_ = a.hist.Add(config.HistoryEntry{
-		SQL:          sql,
-		ConnectionID: connectionID,
-		Timestamp:    time.Now(),
-		DurationMs:   durationMs,
-		Success:      success,
-	})
-}
-
 // GetQueryHistory 返回全部查询历史，最新的排在最前。
 func (a *App) GetQueryHistory() ([]config.HistoryEntry, error) {
 	return a.service.GetQueryHistory()
@@ -316,7 +290,7 @@ func (a *App) ExecuteBatch(connectionID string, statements []string) (*clickhous
 
 // GetResultExportFormats 返回支持的结果集导出格式元信息，供前端渲染格式选择。
 func (a *App) GetResultExportFormats() []clickhouse.ResultExportFormat {
-	return clickhouse.ResultExportFormats()
+	return a.service.GetResultExportFormats()
 }
 
 // SaveQueryResultAs 弹出系统「另存为」对话框，把结果集按指定格式导出到用户选择的位置。
@@ -345,7 +319,7 @@ func (a *App) SaveQueryResultAs(format string, columns []string, rows [][]interf
 	if err != nil {
 		return "", err
 	}
-	_, writeErr := clickhouse.ExportResultTo(file, format, columns, rows, target)
+	_, writeErr := a.service.ExportQueryResult(file, format, columns, rows, target)
 	closeErr := file.Close()
 	if writeErr != nil {
 		return "", writeErr
