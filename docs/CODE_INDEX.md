@@ -775,6 +775,8 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 异步连接测试、数据库列表和表 / 视图加载；使用请求序号过滤过期响应。
 - SQL 编辑器内容通过 `internal/app.Service.Query` 执行，生成独立 queryID；停止操作调用 `CancelQuery`。
 - 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用 Gio 列表滚动。
+- 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；DDL 使用独立 Gio 列表纵向滚动，复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
+- `splitDDLLines` 统一 LF / CRLF 换行并保留空行；`schema_test.go` 覆盖空 DDL、LF、CRLF 和空行场景。
 - `widget.Editor` 目前仍是基础编辑器，语法高亮、补全和大 SQL 性能尚未验收。
 
 ### [internal/gui/gioapp/query_test.go](../internal/gui/gioapp/query_test.go)
@@ -793,7 +795,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 | 工作区 | 查询历史、收藏 SQL、标签页快照 |
 | 用户设置 | 设置读取/保存，查询行数上限仍通过设置管理器生效 |
 
-**边界**：本包不得依赖 Wails、Gio、WebView 或前端运行时。文件选择、保存对话框和系统打开目录已通过 `internal/platform` 端口抽离；剪贴板等尚未迁移的平台能力仍留在旧适配层，后续按实际 GUI 需求逐项抽取。
+**边界**：本包不得依赖 Wails、Gio、WebView 或前端运行时。文件选择、保存对话框和系统打开目录已通过 `internal/platform` 端口抽离；Gio 专属剪贴板交互由 `internal/gui/gioapp` 直接使用 Gio clipboard command，不进入 GUI 无关的应用服务。
 
 
 ### [internal/platform](../internal/platform/platform.go)
