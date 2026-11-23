@@ -48,7 +48,7 @@ func Run(window *app.Window, service *appsvc.Service) error {
 type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
 type queryResult struct { queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
 type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
-type schemaResult struct { connectionID string; connectionSequence uint64; database string; table string; requestID uint64; columns []clickhouse.ColumnInfo; err error }
+type schemaResult struct { connectionID string; connectionSequence uint64; database string; table string; requestID uint64; columns []clickhouse.ColumnInfo; details *clickhouse.TableDetails; detailsErr error; err error }
 type databaseNode struct { click widget.Clickable; expanded bool; loading bool; loaded bool; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; tableClicks map[string]*widget.Clickable; err error }
 
 type screen struct {
@@ -62,6 +62,8 @@ type screen struct {
 	selectedSchemaDatabase string
 	selectedSchemaTable string
 	selectedSchema []clickhouse.ColumnInfo
+	selectedTableDetails *clickhouse.TableDetails
+	tableDetailsError string
 	queryResults chan queryResult
 	querySequence uint64
 	runningQueryID string
@@ -201,11 +203,18 @@ func (s *screen) selectTable(database, table string) {
 	connectionID, connectionSequence := s.selectedConnectionID, s.connectionSequence
 	s.selectedSchemaDatabase, s.selectedSchemaTable = database, table
 	s.selectedSchema = nil
+	s.selectedTableDetails = nil
+	s.tableDetailsError = ""
 	s.schemaError = ""
 	s.schemaLoading = true
 	s.status = fmt.Sprintf("正在加载表结构：%s.%s", database, table)
 	go func() {
 		columns, err := s.service.GetTableSchema(connectionID, database, table)
+		var details *clickhouse.TableDetails
+		var detailsErr error
+		if err == nil {
+			details, detailsErr = s.service.GetTableDetails(connectionID, database, table)
+		}
 		s.schemaResults <- schemaResult{
 			connectionID: connectionID,
 			connectionSequence: connectionSequence,
@@ -213,6 +222,8 @@ func (s *screen) selectTable(database, table string) {
 			table: table,
 			requestID: requestID,
 			columns: columns,
+			details: details,
+			detailsErr: detailsErr,
 			err: err,
 		}
 		s.window.Invalidate()
@@ -249,6 +260,8 @@ func (s *screen) drainSchemaResults() {
 				continue
 			}
 			s.selectedSchema = result.columns
+			s.selectedTableDetails = result.details
+			if result.detailsErr != nil { s.tableDetailsError = result.detailsErr.Error() }
 			s.status = fmt.Sprintf("已加载 %s.%s 的 %d 个字段", result.database, result.table, len(result.columns))
 		default:
 			return
@@ -364,6 +377,8 @@ func (s *screen) connectConnection(connection config.Connection) {
 	s.schemaSequence++
 	s.schemaLoading = false
 	s.selectedSchema = nil
+	s.selectedTableDetails = nil
+	s.tableDetailsError = ""
 	s.selectedSchemaDatabase, s.selectedSchemaTable, s.schemaError = "", "", ""
 	s.status = "正在连接 " + connection.Name + "…"
 	go func() {
@@ -501,6 +516,11 @@ func (s *screen) layoutWorkspace(gtx context) dimensions {
 	)
 }
 
+func emptyMetadata(value string) string {
+	if strings.TrimSpace(value) == "" { return "（无）" }
+	return value
+}
+
 func (s *screen) layoutSidebar(gtx context) dimensions {
 	return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
 		children := []layout.FlexChild{
@@ -604,6 +624,35 @@ func (s *screen) layoutSidebar(gtx context) dimensions {
 						return material.Caption(s.theme, "该表没有可见字段").Layout(gtx)
 					}))
 				}
+			}
+			if s.tableDetailsError != "" {
+				message := s.tableDetailsError
+				children = append(children, layout.Rigid(func(gtx context) dimensions {
+					return material.Caption(s.theme, "表详情读取失败："+message).Layout(gtx)
+				}))
+			} else if s.selectedTableDetails != nil {
+				details := s.selectedTableDetails
+				metadata := []string{
+					"引擎："+details.Engine,
+					"注释："+details.Comment,
+					"PARTITION BY："+emptyMetadata(details.PartitionKey),
+					"ORDER BY："+emptyMetadata(details.SortingKey),
+					"PRIMARY KEY："+emptyMetadata(details.PrimaryKey),
+					"TTL："+emptyMetadata(details.TTLExpression),
+				}
+				for _, item := range metadata {
+					line := item
+					children = append(children, layout.Rigid(func(gtx context) dimensions {
+						return material.Caption(s.theme, line).Layout(gtx)
+					}))
+				}
+				if details.CreateTableQuery != "" {
+					ddl := "建表语句：\n" + details.CreateTableQuery
+					children = append(children, layout.Rigid(func(gtx context) dimensions {
+						return material.Caption(s.theme, ddl).Layout(gtx)
+					}))
+				}
+			}
 			}
 		}
 		children = append(children,
