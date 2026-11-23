@@ -76,6 +76,7 @@ type screen struct {
 	selectedTableDetails *clickhouse.TableDetails
 	tableDetailsError string
 	detailsOpen bool
+	previewTable widget.Clickable
 	detailsToggle widget.Clickable
 	copyDDL widget.Clickable
 	schemaList widget.List
@@ -1336,13 +1337,37 @@ func (s *screen) layoutSavedSQLPanel(gtx context) dimensions {
 	})
 }
 
+func (s *screen) previewSelectedTable() {
+	if s.selectedSchemaDatabase == "" || s.selectedSchemaTable == "" {
+		s.status = "请先选择一张表"
+		return
+	}
+	if s.queryRunning || s.exportRunning {
+		s.status = "当前有查询或导出任务正在执行，请稍后再预览"
+		return
+	}
+	sqlText := buildTablePreviewSQL(s.selectedSchemaDatabase, s.selectedSchemaTable, 100)
+	s.sqlEditor.SetText(sqlText)
+	s.persistTabs()
+	s.executeSQL()
+}
+
 func (s *screen) layoutTableDetails(gtx context) dimensions {
 	width := gtx.Dp(360)
 	gtx.Constraints.Min.X = width
 	gtx.Constraints.Max.X = width
 	return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx context) dimensions {
 		children := []layout.FlexChild{
-			layout.Rigid(func(gtx context) dimensions { return material.H6(s.theme, "表详情").Layout(gtx) }),
+			layout.Rigid(func(gtx context) dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx context) dimensions { return material.H6(s.theme, "表详情").Layout(gtx) }),
+					layout.Rigid(func(gtx context) dimensions {
+						d := material.Button(s.theme, &s.previewTable, "预览数据").Layout(gtx)
+						if s.previewTable.Clicked(gtx) { s.previewSelectedTable() }
+						return d
+					}),
+				)
+			}),
 			layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, s.selectedSchemaDatabase+"."+s.selectedSchemaTable).Layout(gtx) }),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		}
