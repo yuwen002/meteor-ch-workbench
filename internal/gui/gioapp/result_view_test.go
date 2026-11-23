@@ -216,3 +216,41 @@ func TestResultValueMatchesColumnConditionKeepsNumericComparison(t *testing.T) {
 		t.Fatal("numeric value must not be treated as a timestamp")
 	}
 }
+
+
+func TestCompareResultValuesPreservesLargeIntegerPrecision(t *testing.T) {
+	if got := compareResultValues("18446744073709551614", "18446744073709551615"); got >= 0 {
+		t.Fatalf("adjacent UInt64 values compared as %d, want left < right", got)
+	}
+	if got := compareResultValues("9007199254740993", "9007199254740992"); got <= 0 {
+		t.Fatalf("values above float64 integer precision compared as %d, want left > right", got)
+	}
+}
+
+func TestCompareResultValuesPreservesDecimalPrecision(t *testing.T) {
+	left := "12345678901234567890.00000000009"
+	right := "12345678901234567890.0000000001"
+	if got := compareResultValues(left, right); got >= 0 {
+		t.Fatalf("high precision decimals compared as %d, want left < right", got)
+	}
+}
+
+func TestCompareResultNumbersSupportsScientificNotation(t *testing.T) {
+	got, ok := compareResultNumbers("1.25e3", "1250")
+	if !ok || got != 0 {
+		t.Fatalf("scientific notation comparison = (%d, %v), want (0, true)", got, ok)
+	}
+}
+
+func TestResultValueMatchesColumnConditionPreservesLargeNumberPrecision(t *testing.T) {
+	value := "18446744073709551615"
+	if !resultValueMatchesColumnCondition(value, ">18446744073709551614") {
+		t.Fatal("UInt64 maximum should be greater than its adjacent value")
+	}
+	if resultValueMatchesColumnCondition(value, "=18446744073709551614") {
+		t.Fatal("adjacent UInt64 values must not compare equal")
+	}
+	if !resultValueMatchesColumnCondition("12345678901234567890.0000000001", ">12345678901234567890.00000000009") {
+		t.Fatal("Decimal comparison should preserve fractional precision")
+	}
+}
