@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
@@ -26,7 +27,11 @@ type queryTestConn struct{}
 func (queryTestConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("not implemented") }
 func (queryTestConn) Close() error { return nil }
 func (queryTestConn) Begin() (driver.Tx, error) { return nil, errors.New("not implemented") }
-func (queryTestConn) QueryContext(ctx context.Context, _ string, _ []driver.NamedValue) (driver.Rows, error) {
+func (queryTestConn) QueryContext(ctx context.Context, statement string, _ []driver.NamedValue) (driver.Rows, error) {
+	if statement == "wait" {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	return &queryTestRows{index: 0}, nil
 }
 func (queryTestConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
@@ -114,4 +119,13 @@ func TestQueryExecutorHonorsCanceledContext(t *testing.T) {
 	cancel()
 	_, err := executor.Execute(ctx, queryTestConnection(), query.Request{SQL: "select 1"}, nil, nil)
 	if !errors.Is(err, context.Canceled) { t.Fatalf("期望 context.Canceled，得到 %v", err) }
+}
+
+func TestQueryExecutorHonorsTimeout(t *testing.T) {
+	executor, pools := newQueryTestExecutor(t)
+	defer pools.Close()
+	_, err := executor.Execute(context.Background(), queryTestConnection(), query.Request{SQL: "wait", Timeout: 10 * time.Millisecond}, nil, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("期望 context.DeadlineExceeded，得到 %v", err)
+	}
 }
