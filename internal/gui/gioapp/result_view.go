@@ -55,19 +55,57 @@ func resultRowMatchesColumnFilters(row []interface{}, filters []string) bool {
 		if filter == "" {
 			continue
 		}
-		if column >= len(row) || !resultValueMatchesFilter(row[column], filter) {
+		if column >= len(row) || !resultValueMatchesColumnCondition(row[column], filter) {
 			return false
 		}
 	}
 	return true
 }
 
-func resultValueMatchesFilter(value interface{}, filter string) bool {
-	text := "NULL"
-	if value != nil {
-		text = fmt.Sprint(value)
+// resultValueMatchesColumnCondition 支持默认包含、!不包含、=、!=、>、<、>=、<= 及 NULL 判断。
+func resultValueMatchesColumnCondition(value interface{}, expression string) bool {
+	expression = strings.TrimSpace(expression)
+	if expression == "" { return true }
+	if strings.EqualFold(expression, "is:null") { return value == nil }
+	if strings.EqualFold(expression, "is:not-null") { return value != nil }
+
+	operator, expected := "", expression
+	for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<", "!"} {
+		if strings.HasPrefix(expression, candidate) {
+			operator, expected = candidate, strings.TrimSpace(strings.TrimPrefix(expression, candidate))
+			break
+		}
 	}
-	return strings.Contains(strings.ToLower(text), strings.ToLower(filter))
+	actual := "NULL"
+	if value != nil { actual = fmt.Sprint(value) }
+	if operator == "" || operator == "!" {
+		matched := strings.Contains(strings.ToLower(actual), strings.ToLower(expected))
+		if operator == "!" { return !matched }
+		return matched
+	}
+	if operator == "=" || operator == "!=" {
+		matched := strings.EqualFold(actual, expected)
+		if left, err := strconv.ParseFloat(actual, 64); err == nil {
+			if right, rightErr := strconv.ParseFloat(expected, 64); rightErr == nil { matched = left == right }
+		}
+		if operator == "!=" { return !matched }
+		return matched
+	}
+	if value == nil { return false }
+	left, leftErr := strconv.ParseFloat(actual, 64)
+	right, rightErr := strconv.ParseFloat(expected, 64)
+	if leftErr != nil || rightErr != nil { return false }
+	switch operator {
+	case ">": return left > right
+	case "<": return left < right
+	case ">=": return left >= right
+	case "<=": return left <= right
+	default: return false
+	}
+}
+
+func resultValueMatchesFilter(value interface{}, filter string) bool {
+	return resultValueMatchesColumnCondition(value, filter)
 }
 
 func resultRowMatchesFilter(row []interface{}, filter string) bool {
