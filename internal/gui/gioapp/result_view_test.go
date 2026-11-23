@@ -87,3 +87,11 @@ func TestCompareResultValuesNumericAndText(t *testing.T) {
 		t.Fatal("text comparison should ignore case")
 	}
 }
+
+func TestBuildResultRowViewCanFilterNullValues(t *testing.T) {
+	rows := [][]interface{}{{nil}, {"not null"}}
+	got := buildResultRowView(rows, "null", -1, false)
+	if len(got) != 1 || got[0].Index != 0 {
+		t.Fatalf("NULL filter result = %#v", got)
+	}
+}
