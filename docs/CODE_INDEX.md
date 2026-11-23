@@ -781,6 +781,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/gui/gioapp/tabs_test.go`：覆盖空快照恢复、活动标签回退、标签定位、新标签默认值、关闭标签边界、未保存 SQL 判断、空标题保护、标签排序、标签查询结果 / SQL / 连接上下文独立保存与恢复，查询历史 SQL 摘要预览，以及收藏 SQL 搜索和连接筛选。
 - 结果区显示列名、结果行、行数、耗时、行数上限、截断状态和 SQL 错误；结果行使用纵向 Gio 列表滚动，表头和各结果行使用共享滚动位置的横向列表，保持列对齐。
 - 查询结果支持点击列名切换升序 / 降序，并可在筛选框中跨任意列进行大小写无关的包含匹配；显示过滤命中数，清除筛选恢复全部行。排序 / 筛选仅改变 UI 行索引视图，不修改原始查询结果，也不影响重新执行原 SQL 的全量 CSV / TSV 导出。
+- 查询结果支持点击列名切换升序 / 降序，并可在筛选框中跨任意列进行大小写无关的包含匹配；显示过滤命中数，清除筛选恢复全部行。排序 / 筛选仅改变 UI 行索引视图，不修改原始查询结果，也不影响重新执行原 SQL 的全量 CSV / TSV 导出。
 - 结果表格首列提供「复制行」操作；点击单元格仍复制原始完整值，并在结果区下方展示该单元格完整内容（多行 / 空行保留），支持再次复制完整内容和关闭详情；点击行首操作复制整行，使用带引号转义的制表符分隔文本。
 - 表头各数据列末尾提供拖动手柄，列宽在 80–480dp 范围内调整；调整后的宽度同步应用于表头和所有结果行，拖动距离按设备像素换算为 dp。
 - 查询结果摘要行提供「导出 CSV」和「导出 TSV」按钮；使用 `gioui.org/x/explorer` 系统保存对话框，重新执行最近一次成功查询的 SQL，并通过 `internal/app.Service.ExportQueryToWithProgress` 调用 ClickHouse 游标级流式导出，按行编码后写入文件；每 1000 行及结束时回报进度。停止操作可取消导出，结束后关闭文件；本地 `*os.File` 发生中断时尝试删除不完整文件，其他平台类型提示手动检查。
@@ -789,6 +790,14 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - 表结构和 ClickHouse 存储元数据显示在可隐藏的右侧详情面板；字段与 DDL 分别使用独立 Gio 列表纵向滚动，DDL 复制通过 `gioui.org/io/clipboard.WriteCmd` 执行。
 - `splitDDLLines` 统一 LF / CRLF 换行并保留空行；`schema_test.go` 覆盖空 DDL、LF、CRLF 和空行场景。
 - `widget.Editor` 目前仍是基础编辑器，语法高亮、补全和大 SQL 性能尚未验收。
+
+### [internal/gui/gioapp/result_view.go](../internal/gui/gioapp/result_view.go)
+
+职责：构造查询结果的本地展示行视图，提供跨列关键字筛选、稳定排序、数值 / 时间 / 文本比较与 NULL 末尾规则；不修改原始查询结果。
+
+### [internal/gui/gioapp/result_view_test.go](../internal/gui/gioapp/result_view_test.go)
+
+职责：覆盖数值升降序、NULL 排序、跨列筛选、筛选与排序组合、时间解析和源结果不可变。
 
 ### [internal/gui/gioapp/result_view.go](../internal/gui/gioapp/result_view.go)
 
