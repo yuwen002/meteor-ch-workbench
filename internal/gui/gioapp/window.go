@@ -55,7 +55,8 @@ func Run(window *app.Window, service *appsvc.Service) error {
 }
 
 type connectResult struct { connectionID string; sequence uint64; databases []string; err error }
-type queryResult struct { queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
+type queryResult struct { tabID string; queryID string; sequence uint64; result *clickhouse.QueryResult; err error }
+type tabRuntimeState struct { result *clickhouse.QueryResult; lastSQL string; connectionID string }
 type exportResult struct { format string; err error; canceled bool; rows int64; bytes int64; duration time.Duration; cleanupErr error; cleanupUnsupported bool }
 type databaseResult struct { connectionID string; connectionSequence uint64; database string; requestID uint64; tables []clickhouse.TableInfo; views []clickhouse.TableInfo; err error }
 type schemaResult struct { connectionID string; connectionSequence uint64; database string; table string; requestID uint64; columns []clickhouse.ColumnInfo; details *clickhouse.TableDetails; detailsErr error; err error }
@@ -89,6 +90,8 @@ type screen struct {
 	exportRunning bool
 	querySequence uint64
 	runningQueryID string
+	runningTabID string
+	tabRuntime map[string]tabRuntimeState
 	queryRunning bool
 	queryResult *clickhouse.QueryResult
 	lastExecutedSQL string
@@ -146,6 +149,7 @@ func newScreen(window *app.Window, service *appsvc.Service, fileExplorer *gioexp
 		exportResults: make(chan exportResult, 2),
 		exportProgress: make(chan int64, 1),
 		databaseNodes: make(map[string]*databaseNode),
+		tabRuntime: make(map[string]tabRuntimeState),
 		service:     service,
 		theme:       material.NewTheme(),
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
@@ -200,7 +204,7 @@ func (s *screen) startExport(format string) {
 	connectionID, sqlText := s.lastExecutedConnectionID, s.lastExecutedSQL
 	queryID := fmt.Sprintf("gio-export-%d", time.Now().UnixNano())
 	s.exportRunning = true
-	s.runningQueryID, s.queryRunning = queryID, true
+	s.runningQueryID, s.runningTabID, s.queryRunning = queryID, s.activeTabID, true
 	s.status = "正在重新执行当前 SQL，并流式导出完整结果…"
 	go func() {
 		file, err := s.explorer.CreateFile("query-result." + format)
@@ -254,7 +258,7 @@ drainResults:
 		select {
 		case result := <-s.exportResults:
 			s.exportRunning = false
-			s.queryRunning, s.runningQueryID = false, ""
+			s.queryRunning, s.runningQueryID, s.runningTabID = false, "", ""
 			switch {
 			case result.canceled:
 				s.status = fmt.Sprintf("已取消导出（已处理 %d 行，已写入 %s）", result.rows, formatExportSize(result.bytes))
@@ -426,9 +430,10 @@ func (s *screen) executeSQL() {
 	if s.queryRunning { s.status = "已有查询正在执行，请先停止或等待完成"; return }
 	s.querySequence++
 	queryID := fmt.Sprintf("gio-%d-%d", time.Now().UnixNano(), s.querySequence)
-	sequence, connectionID := s.querySequence, s.selectedConnectionID
+	sequence, connectionID, tabID := s.querySequence, s.selectedConnectionID, s.activeTabID
 	s.lastExecutedSQL, s.lastExecutedConnectionID = sqlText, connectionID
-	s.runningQueryID, s.queryRunning, s.queryResult = queryID, true, nil
+	s.runningQueryID, s.runningTabID, s.queryRunning, s.queryResult = queryID, tabID, true, nil
+	s.tabRuntime[tabID] = tabRuntimeState{lastSQL: sqlText, connectionID: connectionID}
 	s.resultColumnHeader.Position = layout.Position{}
 	s.resultColumnRow.Position = layout.Position{}
 	s.resultCellClicks = nil
@@ -436,7 +441,7 @@ func (s *screen) executeSQL() {
 	s.status = "正在执行 SQL…"
 	go func() {
 		result, err := s.service.Query(connectionID, sqlText, queryID)
-		s.queryResults <- queryResult{queryID: queryID, sequence: sequence, result: result, err: err}
+		s.queryResults <- queryResult{tabID: tabID, queryID: queryID, sequence: sequence, result: result, err: err}
 		s.window.Invalidate()
 	}()
 }
@@ -451,31 +456,22 @@ func (s *screen) drainQueryResults() {
 		select {
 		case result := <-s.queryResults:
 			if result.queryID != s.runningQueryID || result.sequence != s.querySequence { continue }
-			s.queryRunning, s.runningQueryID = false, ""
-			if result.err != nil { s.queryResult = nil; s.status = "查询失败：" + result.err.Error(); continue }
-			s.queryResult = result.result
-			s.resultColumnWidths = nil
-			s.resultColumnDrags = nil
-			s.resultColumnDragLastX = nil
-			s.resultColumnDragActive = nil
-			s.resultCellClicks = nil
-			s.resultRowCopyClicks = nil
-			if result.result != nil {
-				s.resultColumnWidths = make([]unit.Dp, len(result.result.Columns))
-				for columnIndex, weight := range resultColumnWeights(result.result.Columns, result.result.Rows) {
-					s.resultColumnWidths[columnIndex] = resultColumnWidth(weight)
-				}
-				s.resultColumnDrags = make([]gesture.Drag, len(result.result.Columns))
-				s.resultColumnDragLastX = make([]float32, len(result.result.Columns))
-				s.resultColumnDragActive = make([]bool, len(result.result.Columns))
-				s.resultCellClicks = make([][]widget.Clickable, len(result.result.Rows))
-				s.resultRowCopyClicks = make([]widget.Clickable, len(result.result.Rows))
-				for rowIndex := range result.result.Rows {
-					s.resultCellClicks[rowIndex] = make([]widget.Clickable, len(result.result.Columns))
-				}
+			s.queryRunning, s.runningQueryID, s.runningTabID = false, "", ""
+			state := s.tabRuntime[result.tabID]
+			if result.err != nil {
+				state.result = nil
+				s.tabRuntime[result.tabID] = state
+					if result.tabID == s.activeTabID { s.queryResult = nil; s.status = "查询失败：" + result.err.Error() }
+					continue
 			}
+			state.result = result.result
+			s.tabRuntime[result.tabID] = state
+			if result.tabID != s.activeTabID { s.status = "后台标签查询完成：" + result.tabID; continue }
+			s.queryResult = result.result
+			s.resetResultWidgets(result.result)
 			if result.result == nil { s.status = "查询未返回结果" } else if result.result.Error != "" { s.status = "SQL 执行失败：" + result.result.Error } else { s.status = fmt.Sprintf("查询完成：%d 行 · %.2f ms", result.result.RowCount, result.result.ElapsedMs) }
-		default: return
+		default:
+			return
 		}
 	}
 }
@@ -1107,38 +1103,58 @@ func (s *screen) persistTabs() {
 	}
 }
 
+func (s *screen) saveActiveTabRuntime() {
+	if s.tabRuntime == nil || s.activeTabID == "" { return }
+	s.tabRuntime[s.activeTabID] = tabRuntimeState{result: s.queryResult, lastSQL: s.lastExecutedSQL, connectionID: s.lastExecutedConnectionID}
+}
+
+func (s *screen) restoreActiveTabRuntime() {
+	state := s.tabRuntime[s.activeTabID]
+	s.queryResult, s.lastExecutedSQL, s.lastExecutedConnectionID = state.result, state.lastSQL, state.connectionID
+	s.resetResultWidgets(state.result)
+}
+
+func (s *screen) resetResultWidgets(result *clickhouse.QueryResult) {
+	s.resultColumnHeader.Position = layout.Position{}
+	s.resultColumnRow.Position = layout.Position{}
+	s.resultCellClicks, s.resultRowCopyClicks = nil, nil
+	s.resultColumnWidths, s.resultColumnDrags = nil, nil
+	s.resultColumnDragLastX, s.resultColumnDragActive = nil, nil
+	if result == nil { return }
+	s.resultColumnWidths = make([]unit.Dp, len(result.Columns))
+	for i, weight := range resultColumnWeights(result.Columns, result.Rows) { s.resultColumnWidths[i] = resultColumnWidth(weight) }
+	s.resultColumnDrags = make([]gesture.Drag, len(result.Columns))
+	s.resultColumnDragLastX = make([]float32, len(result.Columns))
+	s.resultColumnDragActive = make([]bool, len(result.Columns))
+	s.resultCellClicks = make([][]widget.Clickable, len(result.Rows))
+	s.resultRowCopyClicks = make([]widget.Clickable, len(result.Rows))
+	for i := range result.Rows { s.resultCellClicks[i] = make([]widget.Clickable, len(result.Columns)) }
+}
+
 func (s *screen) activateTab(id string) {
 	if id == s.activeTabID {
 		return
 	}
-	if s.queryRunning {
-		s.status = "查询执行期间暂不能切换标签，请等待查询结束或先停止查询"
-		return
-	}
 	s.saveActiveTabText()
+	s.saveActiveTabRuntime()
 	index := activeTabIndex(s.tabs, id)
 	if index < 0 {
 		return
 	}
 	s.activeTabID = id
 	s.sqlEditor.SetText(s.tabs[index].SQL)
-	s.queryResult = nil
-	s.lastExecutedSQL = ""
-	s.lastExecutedConnectionID = ""
+	s.restoreActiveTabRuntime()
 	s.persistTabs()
 	s.status = "已切换到 " + s.tabs[index].Title
 }
 
 func (s *screen) createTab() {
-	if s.queryRunning {
-		s.status = "查询执行期间暂不能新建标签，请等待查询结束或先停止查询"
-		return
-	}
 	if len(s.tabs) >= config.TabMaxCount {
 		s.status = fmt.Sprintf("标签页最多支持 %d 个", config.TabMaxCount)
 		return
 	}
 	s.saveActiveTabText()
+	s.saveActiveTabRuntime()
 	tab := nextTabState(s.tabs, fmt.Sprintf("query-%d", time.Now().UnixNano()))
 	s.tabs = append(s.tabs, tab)
 	s.tabClicks = append(s.tabClicks, widget.Clickable{})
@@ -1147,6 +1163,7 @@ func (s *screen) createTab() {
 	s.queryResult = nil
 	s.lastExecutedSQL = ""
 	s.lastExecutedConnectionID = ""
+	s.tabRuntime[tab.ID] = tabRuntimeState{}
 	s.persistTabs()
 	s.status = "已新建空白 SQL 标签"
 }
