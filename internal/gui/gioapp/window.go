@@ -1372,8 +1372,14 @@ func (s *screen) runTablePreviewPage() {
 	s.executeSQL()
 }
 
+func (s *screen) isCurrentTablePreview() bool {
+	if !s.previewMode || s.previewDatabase == "" || s.previewTableName == "" { return false }
+	want := buildTablePreviewPageSQL(s.previewDatabase, s.previewTableName, s.previewPageLimit, s.previewPage)
+	return strings.TrimSpace(s.lastExecutedSQL) == want
+}
+
 func (s *screen) changePreviewPage(delta int) {
-	if !s.previewMode || s.queryRunning || s.exportRunning { return }
+	if !s.isCurrentTablePreview() || s.queryRunning || s.exportRunning { return }
 	next := s.previewPage + delta
 	if next < 0 { return }
 	if delta > 0 && (s.queryResult == nil || len(s.queryResult.Rows) < s.previewPageLimit) { return }
@@ -1382,7 +1388,7 @@ func (s *screen) changePreviewPage(delta int) {
 }
 
 func (s *screen) cyclePreviewPageSize() {
-	if !s.previewMode || s.queryRunning || s.exportRunning { return }
+	if !s.isCurrentTablePreview() || s.queryRunning || s.exportRunning { return }
 	switch s.previewPageLimit {
 	case 50: s.previewPageLimit = 100
 	case 100: s.previewPageLimit = 200
@@ -1846,7 +1852,7 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 		}
 		if s.queryRunning && s.runningTabID == s.activeTabID { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Body2(s.theme, "查询正在执行，可点击停止取消。").Layout(gtx) })) }
-		if s.previewMode {
+		if s.isCurrentTablePreview() {
 			children = append(children, layout.Rigid(func(gtx context) dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx context) dimensions {
