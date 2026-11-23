@@ -40,10 +40,23 @@ type Connection struct {
 
 // Validate 检查连接配置的必要字段，不执行网络访问。
 func (c Connection) Validate() error {
-	if strings.TrimSpace(c.ID) == "" { return ErrMissingID }
-	if strings.TrimSpace(c.Name) == "" { return ErrMissingName }
-	if strings.TrimSpace(c.Host) == "" { return ErrMissingHost }
-	if c.Port < 1 || c.Port > 65535 { return ErrInvalidPort }
+	if strings.TrimSpace(c.ID) == "" {
+		return ErrMissingID
+	}
+	return c.ValidateForTest()
+}
+
+// ValidateForTest 校验网络连接参数，允许尚未保存、因此没有 ID 的连接。
+func (c Connection) ValidateForTest() error {
+	if strings.TrimSpace(c.Name) == "" {
+		return ErrMissingName
+	}
+	if strings.TrimSpace(c.Host) == "" {
+		return ErrMissingHost
+	}
+	if c.Port < 1 || c.Port > 65535 {
+		return ErrInvalidPort
+	}
 	if c.Protocol != ProtocolNative && c.Protocol != ProtocolHTTP {
 		return fmt.Errorf("%w: %q", ErrInvalidProtocol, c.Protocol)
 	}
