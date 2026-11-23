@@ -1980,7 +1980,6 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			columnFilters[i] = s.resultColumnFilterEditors[i].Text()
 			if i >= len(s.resultColumnFilterLast) || columnFilters[i] != s.resultColumnFilterLast[i] {
 				if i < len(s.resultColumnFilterLast) { s.resultColumnFilterLast[i] = columnFilters[i] }
-				s.resultColumnFilterList.Position = layout.Position{}
 				s.resultList.Position = layout.Position{}
 			}
 		}
@@ -1989,8 +1988,16 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Flexed(1, func(gtx context) dimensions { return material.Editor(s.theme, &s.resultFilter, "筛选当前结果（匹配任意列）").Layout(gtx) }),
 				layout.Rigid(func(gtx context) dimensions {
-					d := material.Button(s.theme, &s.resultFilterClear, "清除").Layout(gtx)
+					d := material.Button(s.theme, &s.resultFilterClear, "清除关键字").Layout(gtx)
 					for s.resultFilterClear.Clicked(gtx) { s.resultFilter.SetText("") }
+					return d
+				}),
+				layout.Rigid(func(gtx context) dimensions {
+					d := material.Button(s.theme, &s.resultColumnFilterClear, "清除列条件").Layout(gtx)
+					for s.resultColumnFilterClear.Clicked(gtx) {
+						for i := range s.resultColumnFilterEditors { s.resultColumnFilterEditors[i].SetText(""); s.resultColumnFilterLast[i] = "" }
+						s.resultList.Position = layout.Position{}
+					}
 					return d
 				}),
 				layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, fmt.Sprintf("显示 %d / %d 行", len(displayRows), len(result.Rows))).Layout(gtx) }),
