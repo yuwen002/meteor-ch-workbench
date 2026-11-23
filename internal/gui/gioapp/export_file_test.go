@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type testWriteCloser struct{}
@@ -49,19 +50,6 @@ func TestRemoveIncompleteExportSkipsNonLocalHandle(t *testing.T) {
 }
 
 
-type shortFailWriter struct {
-	written int
-}
-
-func (w *shortFailWriter) Write(p []byte) (int, error) {
-	if w.written > 0 {
-		return 0, errors.New("write failed")
-	}
-	n := len(p) / 2
-	w.written += n
-	return n, nil
-}
-
 func TestCountingWriterCountsWrittenBytes(t *testing.T) {
 	var output bytes.Buffer
 	writer := &countingWriter{writer: &output}
@@ -94,4 +82,17 @@ type partialErrorWriter struct{}
 
 func (*partialErrorWriter) Write(p []byte) (int, error) {
 	return len(p) / 2, errors.New("partial write")
+}
+
+
+func TestExportStatsHelpers(t *testing.T) {
+	if got := formatExportSize(1024 * 1024); got != "1.00 MiB" {
+		t.Fatalf("formatExportSize() = %q, want 1.00 MiB", got)
+	}
+	if got := exportRowsPerSecond(200, 2*time.Second); got != 100 {
+		t.Fatalf("exportRowsPerSecond() = %v, want 100", got)
+	}
+	if got := exportRowsPerSecond(10, 0); got != 0 {
+		t.Fatalf("exportRowsPerSecond() with zero duration = %v, want 0", got)
+	}
 }
