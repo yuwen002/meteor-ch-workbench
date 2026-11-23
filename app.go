@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-		"strings"
+	"strings"
 
 	appsvc "github.com/yuwen002/meteor-ch-workbench/internal/app"
 	"github.com/yuwen002/meteor-ch-workbench/internal/clickhouse"
@@ -16,9 +16,9 @@ import (
 // 业务用例逐步委托给 internal/app.Service；本结构暂时保留历史 API 签名，
 // 以便原有 Vue 前端在原生 GUI 迁移期间继续工作。
 type App struct {
-	ctx     context.Context         // Wails 注入的应用上下文，随应用生命周期结束而关闭
-	service *appsvc.Service         // 与 GUI 无关的应用服务
-	platform platformport.Platform // 系统对话框与操作系统集成
+	ctx      context.Context          // Wails 注入的应用上下文，随应用生命周期结束而关闭
+	service  *appsvc.Service          // 与 GUI 无关的应用服务
+	platform platformport.Platform  // 系统对话框与操作系统集成
 	files    platformport.FileSystem // 本地文件读写能力
 }
 
@@ -353,7 +353,7 @@ func (a *App) GetClusters(connectionID string) ([]clickhouse.ClusterInfo, error)
 }
 
 // OpenConfigFolder 用系统文件管理器打开配置文件所在目录。
-// 按操作系统选择不同的打开命令：Windows 用 explorer，macOS 用 open，其余用 xdg-open。
+// 具体系统调用由平台适配器负责。
 func (a *App) OpenConfigFolder() error {
 	return a.platform.OpenDirectory(a.service.ConfigDir())
 }
