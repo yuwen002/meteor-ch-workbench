@@ -75,7 +75,7 @@ func TestDeleteRemovesConnection(t *testing.T) {
 func TestTestDoesNotPersistConnection(t *testing.T) {
 	repo, tester := &memoryRepository{}, &fakeTester{}
 	s := newTestService(t, repo, tester)
-	item := validConnection(); item.ID = "test-id"
+	item := validConnection()
 	if err := s.Test(context.Background(), item); err != nil { t.Fatal(err) }
 	if tester.calls != 1 { t.Fatalf("测试调用次数=%d", tester.calls) }
 	if !reflect.DeepEqual(repo.items, []connection.Connection(nil)) { t.Fatal("连通性测试不应保存配置") }
