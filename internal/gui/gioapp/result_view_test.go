@@ -254,3 +254,34 @@ func TestResultValueMatchesColumnConditionPreservesLargeNumberPrecision(t *testi
 		t.Fatal("Decimal comparison should preserve fractional precision")
 	}
 }
+
+
+func TestResultValueMatchesColumnConditionSupportsInclusiveRanges(t *testing.T) {
+	tests := []struct {
+		name string
+		value interface{}
+		expression string
+		want bool
+	}{
+		{"numeric lower boundary", "10", "between:10..20", true},
+		{"numeric upper boundary", "20", "between:10..20", true},
+		{"numeric inside", "15", "between:10..20", true},
+		{"numeric below", "9", "between:10..20", false},
+		{"numeric above", "21", "between:10..20", false},
+		{"decimal precision", "12345678901234567890.0000000001", "between:12345678901234567890.00000000009..12345678901234567890.00000000011", true},
+		{"date inside", "2026-11-15", "between:2026-11-01..2026-11-30", true},
+		{"datetime exact lower", "2026-11-01 00:00:00.000001", "between:2026-11-01..2026-11-30", true},
+		{"RFC3339 offset", "2026-11-15T12:00:00+08:00", "between:2026-11-15T03:00:00Z..2026-11-15T05:00:00Z", true},
+		{"null", nil, "between:1..2", false},
+		{"reversed numeric range", "15", "between:20..10", false},
+		{"invalid range", "15", "between:10", false},
+		{"mixed bounds", "15", "between:10..2026-11-01", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resultValueMatchesColumnCondition(tt.value, tt.expression); got != tt.want {
+				t.Fatalf("resultValueMatchesColumnCondition(%v, %q) = %v, want %v", tt.value, tt.expression, got, tt.want)
+			}
+		})
+	}
+}
