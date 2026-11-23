@@ -45,7 +45,7 @@ func (s *Service) Save(ctx context.Context, item connection.Connection) (connect
 	}
 	if err := item.Validate(); err != nil { return connection.Connection{}, err }
 
-	items, err := s.repository.List(ctx)
+	_, err := s.repository.List(ctx)
 	if err != nil { return connection.Connection{}, fmt.Errorf("读取连接列表: %w", err) }
 	if err := s.repository.Save(ctx, item); err != nil {
 		return connection.Connection{}, fmt.Errorf("保存连接: %w", err)
