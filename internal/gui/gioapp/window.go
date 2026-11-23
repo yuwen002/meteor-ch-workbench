@@ -78,6 +78,8 @@ type screen struct {
 	queryRunning bool
 	queryResult *clickhouse.QueryResult
 	resultList widget.List
+	resultColumnHeader widget.List
+	resultColumnRows map[int]*widget.List
 	connectionSequence uint64
 	databaseSequence uint64
 	databaseNames []string
@@ -114,6 +116,7 @@ func newScreen(window *app.Window, service *appsvc.Service) *screen {
 		schemaResults: make(chan schemaResult, 8),
 		queryResults: make(chan queryResult, 4),
 		databaseNodes: make(map[string]*databaseNode),
+		resultColumnRows: make(map[int]*widget.List),
 		service:     service,
 		theme:       material.NewTheme(),
 		status:      "尚未连接数据库 · 当前为 Gio 界面原型",
@@ -293,6 +296,8 @@ func (s *screen) executeSQL() {
 	queryID := fmt.Sprintf("gio-%d-%d", time.Now().UnixNano(), s.querySequence)
 	sequence, connectionID := s.querySequence, s.selectedConnectionID
 	s.runningQueryID, s.queryRunning, s.queryResult = queryID, true, nil
+	s.resultColumnHeader.Position = layout.Position{}
+	s.resultColumnRows = make(map[int]*widget.List)
 	s.status = "正在执行 SQL…"
 	go func() {
 		result, err := s.service.Query(connectionID, sqlText, queryID)
@@ -347,6 +352,17 @@ func resultColumnWeights(columns []clickhouse.ColumnInfo, rows [][]interface{}) 
 		weights[i] = float32(width)
 	}
 	return weights
+}
+
+// resultColumnWidth 将列宽权重转换为固定 dp 宽度，使所有结果行列对齐并可横向滚动。
+func resultColumnWidth(weight float32) unit.Dp {
+	if weight < 10 {
+		weight = 10
+	}
+	if weight > 32 {
+		weight = 32
+	}
+	return unit.Dp(weight * 8)
 }
 
 // splitDDLLines 将建表语句拆成可独立滚动显示的行，并统一换行符。
@@ -664,6 +680,7 @@ func (s *screen) layoutTableDetails(gtx context) dimensions {
 				if itemCount == 0 {
 					itemCount = 1
 				}
+				s.schemaList.Axis = layout.Vertical
 				return material.List(s.theme, &s.schemaList).Layout(gtx, itemCount, func(gtx context, index int) dimensions {
 					if len(s.selectedSchema) == 0 {
 						return material.Caption(s.theme, "该表没有可见字段").Layout(gtx)
@@ -713,6 +730,7 @@ func (s *screen) layoutTableDetails(gtx context) dimensions {
 					}),
 				)
 				children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+					s.detailsList.Axis = layout.Vertical
 					return material.List(s.theme, &s.detailsList).Layout(gtx, len(s.ddlLines), func(gtx context, index int) dimensions {
 						line := s.ddlLines[index]
 						return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx context) dimensions {
@@ -849,19 +867,37 @@ func (s *screen) layoutResults(gtx context) dimensions {
 			}
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, cells...)
 		}))
+		children = append(children, layout.Rigid(func(gtx context) dimensions {
+			s.resultColumnHeader.Axis = layout.Horizontal
+			return material.List(s.theme, &s.resultColumnHeader).Layout(gtx, len(result.Columns), func(gtx context, index int) dimensions {
+				column := result.Columns[index]
+				width := resultColumnWidth(columnWeights[index])
+				gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
+				return material.Body2(s.theme, column.Name).Layout(gtx)
+			})
+		}))
 		children = append(children, layout.Flexed(1, func(gtx context) dimensions {
+			s.resultList.Axis = layout.Vertical
 			return material.List(s.theme, &s.resultList).Layout(gtx, len(result.Rows), func(gtx context, index int) dimensions {
 				row := result.Rows[index]
-				cells := make([]layout.FlexChild, 0, len(result.Columns))
-				for columnIndex := range result.Columns {
+				rowList := s.resultColumnRows[index]
+				if rowList == nil {
+					rowList = &widget.List{}
+					s.resultColumnRows[index] = rowList
+				}
+				rowList.Axis = layout.Horizontal
+				rowList.Position = s.resultColumnHeader.Position
+				dims := rowList.List.Layout(gtx, len(result.Columns), func(gtx context, columnIndex int) dimensions {
 					cellText := "NULL"
 					if columnIndex < len(row) { cellText = formatResultCell(row[columnIndex]) }
-					weight := columnWeights[columnIndex]
-					cells = append(cells, layout.Flexed(weight, func(gtx context) dimensions {
+					width := resultColumnWidth(columnWeights[columnIndex])
+					gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(width), gtx.Dp(width)
+					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions {
 						return material.Caption(s.theme, cellText).Layout(gtx)
-					}))
-				}
-				return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx context) dimensions { return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, cells...) })
+					})
+				})
+				s.resultColumnHeader.Position = rowList.Position
+				return dims
 			})
 		}))
 		if len(result.Rows) == 0 && result.Error == "" { children = append(children, layout.Rigid(func(gtx context) dimensions { return material.Caption(s.theme, "查询成功，但没有返回数据行").Layout(gtx) })) }
