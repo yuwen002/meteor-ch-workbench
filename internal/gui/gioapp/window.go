@@ -8,7 +8,6 @@ import (
 	"image/color"
 
 	"gioui.org/app"
-	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
@@ -31,8 +30,6 @@ func Run(window *app.Window) error {
 			gtx := app.NewContext(&ops, event)
 			state.layout(gtx)
 			event.Frame(gtx.Ops)
-		case system.StageEvent:
-			// 窗口生命周期事件由 Gio 管理；当前原型无需额外处理。
 		}
 	}
 }
@@ -43,6 +40,7 @@ type screen struct {
 	execute     widget.Clickable
 	connect     widget.Clickable
 	stop        widget.Clickable
+	themeToggle widget.Clickable
 	status      string
 	lightTheme  bool
 	sidebarOpen bool
@@ -118,9 +116,8 @@ func (s *screen) layoutToolbar(gtx context) dimensions {
 				if s.lightTheme {
 					label = "切换深色主题"
 				}
-				var themeButton widget.Clickable
-				dims := material.Button(s.theme, &themeButton, label).Layout(gtx)
-				for themeButton.Clicked(gtx) {
+				dims := material.Button(s.theme, &s.themeToggle, label).Layout(gtx)
+				for s.themeToggle.Clicked(gtx) {
 					s.lightTheme = !s.lightTheme
 					s.applyTheme()
 				}
