@@ -46,7 +46,7 @@ func (s *Service) ExportQueryToWithProgress(conn config.Connection, sqlText, que
 	rows, err := db.QueryContext(ctx, sqlText)
 	if err != nil {
 		if isCanceled(ctx) {
-			return 0, errors.New(errQueryCanceled)
+			return 0, context.Canceled
 		}
 		return 0, err
 	}
