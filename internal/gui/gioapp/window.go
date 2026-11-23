@@ -1245,7 +1245,13 @@ func (s *screen) deleteSavedSQL(id string) {
 		return
 	}
 	if s.savedSQLEditingID == id { s.cancelEditSavedSQL() }
-	s.refreshSavedSQL(false)
+	// 保留当前帧的点击控件切片，避免 Gio 正在布局旧列表快照时索引失效；
+	// 下一次显式刷新或重新打开面板时会重建控件。
+	filtered := s.savedSQLEntries[:0]
+	for _, entry := range s.savedSQLEntries {
+		if entry.ID != id { filtered = append(filtered, entry) }
+	}
+	s.savedSQLEntries = filtered
 	s.status = "已删除一条收藏 SQL"
 }
 
