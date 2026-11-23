@@ -343,6 +343,8 @@ func TestExportResultToMatchesByFormat(t *testing.T) {
 	}{
 		{"csv", []string{"a", "b"}, [][]interface{}{{"x,y", nil}, {1, "z"}}, ""},
 		{"csv", []string{"a"}, nil, ""},
+		{"tsv", []string{"a", "b"}, [][]interface{}{{"x\\ty", "中文"}, {"line\\nbreak", nil}}, ""},
+		{"tsv", []string{"a"}, nil, ""},
 		{"json", []string{"a", "b"}, [][]interface{}{{"x", 1}, {"y", nil}}, ""},
 		{"json", []string{"a"}, nil, ""},
 		{"json", []string{"a", "b", "c"}, [][]interface{}{{1}}, ""},
