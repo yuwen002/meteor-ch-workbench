@@ -19,3 +19,16 @@ func removeIncompleteExport(file io.WriteCloser) (bool, error) {
 	}
 	return true, err
 }
+
+
+// countingWriter 统计成功写入底层目标的字节数，适用于本地与系统文件选择器句柄。
+type countingWriter struct {
+	writer io.Writer
+	bytes  int64
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	w.bytes += int64(n)
+	return n, err
+}
