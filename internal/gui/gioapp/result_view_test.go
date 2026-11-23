@@ -132,3 +132,46 @@ func TestResultColumnFilterSupportsNullAndIgnoresEmptyColumns(t *testing.T) {
 		t.Fatalf("empty first-column filter should be ignored: %#v", got)
 	}
 }
+
+func TestResultValueMatchesColumnOperators(t *testing.T) {
+	tests := []struct {
+		name string
+		value interface{}
+		filter string
+		want bool
+	}{
+		{"contains", "ClickHouse", "house", true},
+		{"not contains", "ClickHouse", "!house", false},
+		{"equals case insensitive", "ClickHouse", "=clickhouse", true},
+		{"not equals", "ClickHouse", "!=PostgreSQL", true},
+		{"numeric greater", 12, ">10", true},
+		{"numeric less", "9", "<10", true},
+		{"numeric greater equal", "10", ">=10", true},
+		{"numeric less equal", "10", "<=9", false},
+		{"numeric equality", "10", "=10.0", true},
+		{"null match", nil, "is:null", true},
+		{"not null match", "x", "is:not-null", true},
+		{"null numeric comparison", nil, ">0", false},
+		{"text numeric comparison", "abc", ">0", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resultValueMatchesColumnCondition(tt.value, tt.filter); got != tt.want {
+				t.Fatalf("resultValueMatchesColumnCondition(%v, %q) = %v, want %v", tt.value, tt.filter, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildResultRowViewCombinesDifferentColumnOperators(t *testing.T) {
+	rows := [][]interface{}{
+		{"ClickHouse", 9},
+		{"ClickHouse", 12},
+		{"PostgreSQL", 15},
+		{"clickhouse", 20},
+	}
+	got := buildResultRowViewWithColumnFilters(rows, "", []string{"=clickhouse", ">=12"}, -1, false)
+	if len(got) != 2 || got[0].Index != 1 || got[1].Index != 3 {
+		t.Fatalf("operator filters = %#v, want rows 1 and 3", got)
+	}
+}
