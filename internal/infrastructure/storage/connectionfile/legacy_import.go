@@ -33,7 +33,13 @@ func (r *Repository) ImportLegacyJSON(ctx context.Context, raw []byte) (int,erro
 	var old legacyFile
 	if err:=json.Unmarshal(raw,&old); err!=nil { return 0,fmt.Errorf("解析旧连接配置: %w",err) }
 	converted:=make([]connection.Connection,0,len(old.Connections))
+	ids:=RandomIDGenerator{}
 	for i,item:=range old.Connections {
+		if strings.TrimSpace(item.ID)=="" {
+			id,err:=ids.NewID()
+			if err!=nil { return 0,fmt.Errorf("旧配置第 %d 条连接生成 ID: %w",i+1,err) }
+			item.ID=id
+		}
 		protocol:=connection.Protocol(strings.TrimSpace(item.Protocol))
 		if protocol=="" {
 			switch item.Port { case 9000,9440: protocol=connection.ProtocolNative; default: protocol=connection.ProtocolHTTP }
