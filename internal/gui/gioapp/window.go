@@ -188,7 +188,9 @@ func (s *screen) startExport(format string) {
 			s.window.Invalidate()
 			return
 		}
-		startedAt := time.Now()\n\t\twriter := &countingWriter{writer: file}\n\t\trows, writeErr := s.service.ExportQueryToWithProgress(writer, connectionID, sqlText, queryID, format, func(count int64) {
+		startedAt := time.Now()
+		writer := &countingWriter{writer: file}
+		rows, writeErr := s.service.ExportQueryToWithProgress(writer, connectionID, sqlText, queryID, format, func(count int64) {
 			select {
 			case s.exportProgress <- count:
 			default:
