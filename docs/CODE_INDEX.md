@@ -2,6 +2,9 @@
 
 ## 新架构（重写中）
 
+### [internal/infrastructure/clickhouse](../internal/infrastructure/clickhouse/)
+新 ClickHouse 驱动基础设施：Native / HTTP / TLS DSN 构建、按连接参数指纹管理的连接池、带 context 超时的连通性测试器。尚未接入 Gio 查询链路。
+
 ### [internal/infrastructure/storage/connectionfile](../internal/infrastructure/storage/connectionfile/)
 新连接配置文件仓库：版本化 JSON、原子写入、受限文件权限、连接列表/保存/删除，以及显式旧配置一次性导入。当前密码仍保存在本地文件中，后续需接入凭据存储；尚未连接 Gio 运行时。
 
@@ -11,7 +14,7 @@
 ### [internal/application/connection](../internal/application/connection/)
 连接管理用例：通过 Repository、Tester、IDGenerator 端口实现列表、保存、删除和连通性测试；测试使用内存仓库与 fake tester，不访问真实网络。
 
-> 当前仅完成连接领域 / 应用用例的第一块，尚未接入 Gio。现有 Gio 窗口和旧服务仍是原型，不能计入迁移完成度。
+> 当前已具备连接领域 / 应用用例、连接文件存储、ClickHouse 连接池与连通性测试基础；尚未接入 Gio。现有 Gio 窗口和旧服务仍是原型，不能计入迁移完成度。
 
 ---
 
