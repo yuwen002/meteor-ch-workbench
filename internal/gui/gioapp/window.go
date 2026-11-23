@@ -434,10 +434,7 @@ func (s *screen) executeSQL() {
 	s.lastExecutedSQL, s.lastExecutedConnectionID = sqlText, connectionID
 	s.runningQueryID, s.runningTabID, s.queryRunning, s.queryResult = queryID, tabID, true, nil
 	s.tabRuntime[tabID] = tabRuntimeState{lastSQL: sqlText, connectionID: connectionID}
-	s.resultColumnHeader.Position = layout.Position{}
-	s.resultColumnRow.Position = layout.Position{}
-	s.resultCellClicks = nil
-	s.resultRowCopyClicks = nil
+	s.resetResultWidgets(nil)
 	s.status = "正在执行 SQL…"
 	go func() {
 		result, err := s.service.Query(connectionID, sqlText, queryID)
@@ -461,7 +458,7 @@ func (s *screen) drainQueryResults() {
 			if result.err != nil {
 				state.result = nil
 				s.tabRuntime[result.tabID] = state
-					if result.tabID == s.activeTabID { s.queryResult = nil; s.status = "查询失败：" + result.err.Error() }
+					if result.tabID == s.activeTabID { s.queryResult = nil; s.resetResultWidgets(nil); s.status = "查询失败：" + result.err.Error() }
 					continue
 			}
 			state.result = result.result
@@ -630,8 +627,8 @@ func (s *screen) connectConnection(connection config.Connection) {
 		s.querySequence++
 		s.queryRunning = false
 		s.runningQueryID = ""
+		s.runningTabID = ""
 	}
-	s.queryResult = nil
 	s.selectedConnectionID = connection.ID
 	s.connectionSequence++
 	sequence := s.connectionSequence
@@ -1164,6 +1161,7 @@ func (s *screen) createTab() {
 	s.lastExecutedSQL = ""
 	s.lastExecutedConnectionID = ""
 	s.tabRuntime[tab.ID] = tabRuntimeState{}
+	s.resetResultWidgets(nil)
 	s.persistTabs()
 	s.status = "已新建空白 SQL 标签"
 }
