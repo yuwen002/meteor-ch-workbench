@@ -123,6 +123,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		objectClicks: make(map[string]*widget.Clickable),
 		databaseList: widget.List{List: layout.List{Axis: layout.Vertical}},
 		objectList: widget.List{List: layout.List{Axis: layout.Vertical}},
+		objectTreeList: widget.List{List: layout.List{Axis: layout.Vertical}},
 		columnList: widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	state.connectionView, err = connectionui.NewView(model, state.reloadConnections, state.selectConnection)
@@ -196,6 +197,7 @@ type workspace struct {
 	tableDetails metadataapp.TableDetails
 	databaseList widget.List
 	objectList widget.List
+	objectTreeList widget.List
 	columnList widget.List
 	selectedID string
 	selectedName string
@@ -393,7 +395,7 @@ func (s *workspace) drainResults() {
 func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 241, G: 244, B: 249, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, colorAppBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(s.layoutTopBar),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -425,22 +427,29 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
-	return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22), Top: unit.Dp(18), Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(material.H6(s.theme, "Meteor CH Workbench").Layout),
-					layout.Rigid(material.Caption(s.theme, "ClickHouse 原生数据工作台").Layout),
-				)
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				label := "未连接"
-				if s.selectedName != "" {
-					label = "当前连接 · " + s.selectedName
-				}
-				return material.Body2(s.theme, label).Layout(gtx)
-			}),
-		)
+	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20), Top: unit.Dp(10), Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(material.H6(s.theme, "Meteor CH Workbench").Layout),
+						layout.Rigid(material.Caption(s.theme, "轻量级 ClickHouse 数据库 IDE").Layout),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(28)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					label := "未连接 · 选择左侧连接开始工作"
+					if s.selectedName != "" { label = "●  " + s.selectedName }
+					return material.Body2(s.theme, label).Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if s.refreshConnection.Clicked(gtx) { s.reloadConnections() }
+					button := material.Button(s.theme, &s.refreshConnection, "刷新连接")
+					button.TextSize = unit.Sp(12)
+					return button.Layout(gtx)
+				}),
+			)
+		})
 	})
 }
 
@@ -695,29 +704,92 @@ func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
 func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimensions {
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, colorSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		}),
 		layout.Stacked(child),
 	)
 }
 
-// layoutExplorer 采用轻量数据库客户端布局：对象导航在左，所选对象结构在右。
+// layoutExplorer 使用单一对象树呈现数据库、表和视图，右侧显示选中对象结构。
 func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-		layout.Flexed(0.40, func(gtx layout.Context) layout.Dimensions {
+		layout.Flexed(0.44, func(gtx layout.Context) layout.Dimensions {
 			return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Flexed(0.42, s.layoutDatabasePanel),
-					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-					layout.Flexed(0.58, s.layoutTablePanel),
-				)
-			})
+				return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(10), Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+								layout.Flexed(1, material.Subtitle1(s.theme, "数据库对象").Layout),
+								layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d 个数据库", len(s.databases))).Layout),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if s.refreshObjects.Clicked(gtx) && s.selectedDatabase != "" { s.selectDatabase(s.selectedDatabase) }
+										b := material.Button(s.theme, &s.refreshObjects, "刷新")
+										b.TextSize = unit.Sp(11)
+										return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, b.Layout)
+								}),
+							)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							if s.selectedID == "" { return material.Body2(s.theme, "选择左侧连接以浏览数据库").Layout(gtx) }
+							if len(s.databases) == 0 && s.loading == "" { return material.Body2(s.theme, "没有数据库，或尚未加载").Layout(gtx) }
+							type treeRow struct { database string; object *structObject; kind string }
+							rows := make([]treeRow, 0, len(s.databases)+len(s.tables)+len(s.views))
+							for _, database := range s.databases {
+								rows = append(rows, treeRow{database: database})
+								if database == s.selectedDatabase {
+									for i := range s.tables { item := s.tables[i]; rows = append(rows, treeRow{database: database, object: &item, kind: "表"}) }
+									for i := range s.views { item := s.views[i]; rows = append(rows, treeRow{database: database, object: &item, kind: "视图"}) }
+								}
+							}
+							return material.List(s.theme, &s.objectTreeList).Layout(gtx, len(rows), func(gtx layout.Context, index int) layout.Dimensions {
+								row := rows[index]
+								if row.object == nil {
+									name := row.database
+									click := s.databaseClicks[name]
+									if click == nil { click = new(widget.Clickable); s.databaseClicks[name] = click }
+									if click.Clicked(gtx) { s.selectDatabase(name) }
+									label := "▸  " + name
+									if name == s.selectedDatabase { label = "▾  " + name }
+									return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return layout.Stack{}.Layout(gtx,
+												layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+													if name == s.selectedDatabase { paint.FillShape(gtx.Ops, colorAccentSoft, clip.Rect{Max: gtx.Constraints.Max}.Op()) }
+													return layout.Dimensions{Size: gtx.Constraints.Max}
+												}),
+												layout.Stacked(layout.Inset{Left: unit.Dp(8), Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, material.Body2(s.theme, label).Layout)),
+											)
+										})
+									})
+								}
+								item := *row.object
+								key := row.database + "." + item.Name
+								click := s.objectClicks[key]
+								if click == nil { click = new(widget.Clickable); s.objectClicks[key] = click }
+								if click.Clicked(gtx) { s.selectedObject = key; s.loadTableSchema(item.Name) }
+								selected := key == s.selectedObject
+								return layout.Inset{Left: unit.Dp(20), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return layout.Stack{}.Layout(gtx,
+											layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+												if selected { paint.FillShape(gtx.Ops, colorAccentSoft, clip.Rect{Max: gtx.Constraints.Max}.Op()) }
+												return layout.Dimensions{Size: gtx.Constraints.Max}
+											}),
+											layout.Stacked(layout.Inset{Left: unit.Dp(8), Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, material.Body2(s.theme, row.kind+"  "+item.Name).Layout)),
+										)
+									})
+								})
+							})
+						})
+					}),
+					)
+				})
+			}),
 		}),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
-		layout.Flexed(0.60, func(gtx layout.Context) layout.Dimensions {
-			return s.panel(gtx, s.layoutSchemaPanel)
-		}),
+		layout.Flexed(0.56, func(gtx layout.Context) layout.Dimensions { return s.panel(gtx, s.layoutSchemaPanel) }),
 	)
 }
 
