@@ -21,7 +21,7 @@
 - Go 版本以 `go.mod` 的 `go` 指令为准（当前 CI 使用 Go 1.26.11）
 - Gio 桌面依赖：
   - Linux：需要 X11 / Wayland、XKB、OpenGL / EGL 等开发库
-  - Windows：需要可用的 C 编译工具链（CGO）
+  - Windows：建议 Windows 10/11 x64；预览构建由 GitHub Actions 提供 `.exe`
   - macOS：需要 Xcode Command Line Tools
 
 Linux（Debian / Ubuntu）安装依赖：
@@ -53,9 +53,10 @@ go build -o dist/meteor-ch-workbench ./cmd/meteor-ch-gio
 1. `go test ./...`
 2. `go vet ./...`
 3. 构建 Gio Linux amd64 预览二进制
-4. 上传名为 `meteor-ch-workbench-linux-amd64` 的 Actions Artifact（保留 7 天）
+4. 在 Windows runner 执行测试、vet 并构建 Gio Windows amd64 `.exe`
+5. 分别上传 `meteor-ch-workbench-linux-amd64` 与 `meteor-ch-workbench-windows-amd64` Actions Artifact（保留 7 天）
 
-在 GitHub 仓库的 **Actions → Go CI → 对应最新提交 → Artifacts** 下载预览包。只有最新 head SHA 的 CI 全部通过并成功上传 Artifact，才视为该提交具备 CI 预览构建。Linux 二进制需要目标机器具备 Gio 运行时图形库；它不是免依赖安装包。
+在 GitHub 仓库的 **Actions → Go CI → 对应最新提交 → Artifacts** 下载预览包。只有最新 head SHA 的 CI 全部通过并成功上传 Artifact，才视为该提交具备 CI 预览构建。Linux 二进制需要目标机器具备 Gio 运行时图形库；它不是免依赖安装包。Windows 用户下载 `meteor-ch-workbench-windows-amd64` 并解压运行 `.exe`，首次启动仍需按 Windows 安全策略确认文件来源。
 
 ## 开发验证
 
