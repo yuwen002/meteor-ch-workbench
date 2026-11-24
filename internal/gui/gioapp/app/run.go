@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"strings"
 	"time"
 
 	gio "gioui.org/app"
@@ -17,6 +18,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
+	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
@@ -40,6 +42,15 @@ type schemaResult struct {
 	columns []metadataapp.Column
 	details metadataapp.TableDetails
 	err error
+}
+
+type queryEvent struct {
+	seq uint64
+	columns []queryapp.Column
+	batch [][]any
+	summary queryapp.Summary
+	err error
+	done bool
 }
 
 type saveResult struct {
@@ -81,6 +92,8 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		saveResults: make(chan saveResult, 2),
 		objectResults: make(chan objectsResult, 8),
 		schemaResults: make(chan schemaResult, 4),
+		queryResults: make(chan queryEvent, 32),
+		queryRows: widget.List{List: layout.List{Axis: layout.Vertical}},
 		databaseClicks: make(map[string]*widget.Clickable),
 		objectClicks: make(map[string]*widget.Clickable),
 		databaseList: widget.List{List: layout.List{Axis: layout.Vertical}},
@@ -92,6 +105,8 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		return err
 	}
 	state.connectionView.SetOnSave(state.saveConnection)
+	state.queryEditor.SingleLine = false
+	state.queryEditor.Wrap = true
 	go state.reloadConnections()
 
 	var ops op.Ops
@@ -122,6 +137,17 @@ type workspace struct {
 	saveResults chan saveResult
 	objectResults chan objectsResult
 	schemaResults chan schemaResult
+	queryResults chan queryEvent
+	queryEditor widget.Editor
+	queryRows widget.List
+	queryRun widget.Clickable
+	queryCancel widget.Clickable
+	querySeq uint64
+	queryCancelFunc context.CancelFunc
+	queryColumns []queryapp.Column
+	queryData [][]any
+	queryStatus string
+	queryRunning bool
 	databaseClicks map[string]*widget.Clickable
 	objectClicks map[string]*widget.Clickable
 	refreshObjects widget.Clickable
@@ -267,6 +293,18 @@ func (s *workspace) drainResults() {
 			}
 			s.tables, s.views = result.tables, result.views
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
+		case result := <-s.queryResults:
+			if result.seq != s.querySeq { continue }
+			if len(result.columns) > 0 { s.queryColumns = result.columns; s.queryData = nil }
+			if len(result.batch) > 0 { s.queryData = append(s.queryData, result.batch...) }
+			if result.done {
+				s.queryRunning = false
+				s.queryCancelFunc = nil
+				if result.err != nil { s.queryStatus = "执行失败：" + result.err.Error()
+				} else if result.summary.Truncated { s.queryStatus = fmt.Sprintf("已返回 %d 行（达到结果上限）· %s", result.summary.RowCount, result.summary.Elapsed.Round(time.Millisecond))
+				} else if len(s.queryColumns) > 0 { s.queryStatus = fmt.Sprintf("查询完成 · %d 行 · %s", result.summary.RowCount, result.summary.Elapsed.Round(time.Millisecond))
+				} else { s.queryStatus = fmt.Sprintf("执行完成 · 影响 %d 行 · %s", result.summary.RowsAffected, result.summary.Elapsed.Round(time.Millisecond)) }
+			}
 		case result := <-s.schemaResults:
 			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase || result.table != s.selectedTable {
 				continue
@@ -298,7 +336,9 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 								return s.connectionView.Layout(gtx, s.theme)
 							}),
 							layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
-							layout.Flexed(1, s.layoutExplorer),
+							layout.Flexed(0.56, s.layoutExplorer),
+							layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+							layout.Flexed(0.44, s.layoutQueryWorkspace),
 						)
 					})
 				}),
@@ -328,6 +368,91 @@ func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
 				return material.Body2(s.theme, label).Layout(gtx)
 			}),
 		)
+	})
+}
+
+
+func (s *workspace) executeQuery() {
+	if s.selectedID == "" { s.queryStatus = "请先选择一个 ClickHouse 连接"; return }
+	sqlText := strings.TrimSpace(s.queryEditor.Text())
+	if sqlText == "" { s.queryStatus = "请输入 SQL 语句"; return }
+	if s.queryCancelFunc != nil { s.queryCancelFunc() }
+	s.querySeq++
+	seq := s.querySeq
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	s.queryCancelFunc = cancel
+	s.queryRunning = true
+	s.queryColumns, s.queryData = nil, nil
+	s.queryStatus = "正在执行 SQL…"
+	request := queryapp.Request{ConnectionID:s.selectedID, SQL:sqlText, Mode:queryapp.ModeRows, MaxRows:10000, BatchSize:128, Timeout:30*time.Second}
+	go func() {
+		defer cancel()
+		summary, err := s.services.Queries.Execute(ctx, request,
+			func(columns []queryapp.Column) error {
+				select { case s.queryResults <- queryEvent{seq:seq, columns:columns}: return nil; case <-ctx.Done(): return ctx.Err() }
+			},
+			func(rows [][]any) error {
+				batch := make([][]any,len(rows))
+				for i := range rows { batch[i] = append([]any(nil),rows[i]...) }
+				select { case s.queryResults <- queryEvent{seq:seq,batch:batch}: return nil; case <-ctx.Done(): return ctx.Err() }
+			},
+		)
+		select { case s.queryResults <- queryEvent{seq:seq,summary:summary,err:err,done:true}: case <-ctx.Done(): }
+		s.window.Invalidate()
+	}()
+}
+
+func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
+	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top:unit.Dp(8),Bottom:unit.Dp(8),Left:unit.Dp(12),Right:unit.Dp(12)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis:layout.Horizontal,Alignment:layout.Middle}.Layout(gtx,
+						layout.Flexed(1,material.Subtitle1(s.theme,"SQL 查询").Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if s.queryRun.Clicked(gtx) && !s.queryRunning { s.executeQuery() }
+							button:=material.Button(s.theme,&s.queryRun,"执行 SQL"); button.TextSize=unit.Sp(13)
+							return layout.Inset{Right:unit.Dp(8)}.Layout(gtx,button.Layout)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if s.queryCancel.Clicked(gtx) && s.queryCancelFunc!=nil { s.queryCancelFunc(); s.queryStatus="正在取消…" }
+							button:=material.Button(s.theme,&s.queryCancel,"停止"); button.TextSize=unit.Sp(13)
+							return button.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
+				layout.Flexed(0.42,func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{All:unit.Dp(8)}.Layout(gtx,material.Editor(s.theme,&s.queryEditor,"输入 SQL，例如 SELECT 1").Layout)
+				}),
+				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					message:=s.queryStatus; if message=="" { message="结果将在这里显示" }
+					return material.Caption(s.theme,message).Layout(gtx)
+				}),
+				layout.Flexed(0.58,func(gtx layout.Context) layout.Dimensions {
+					if len(s.queryColumns)==0 { return material.Body2(s.theme,"暂无查询结果").Layout(gtx) }
+					return material.List(s.theme,&s.queryRows).Layout(gtx,len(s.queryData)+1,func(gtx layout.Context,index int) layout.Dimensions {
+						if index==0 {
+							return layout.Inset{Top:unit.Dp(4),Bottom:unit.Dp(6)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+								children:=make([]layout.FlexChild,0,len(s.queryColumns))
+								for _,col:=range s.queryColumns { name:=col.Name; children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions { return material.Body2(s.theme,name).Layout(gtx) })) }
+								return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
+							})
+						}
+						row:=s.queryData[index-1]
+						return layout.Inset{Top:unit.Dp(3),Bottom:unit.Dp(3)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+							children:=make([]layout.FlexChild,0,len(s.queryColumns))
+							for i:=range s.queryColumns {
+								value:=""; if i<len(row) { value=fmt.Sprint(row[i]) }; if len(value)>80 { value=value[:77]+"…" }
+								children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions { return material.Caption(s.theme,value).Layout(gtx) }))
+							}
+							return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
+						})
+					})
+				}),
+			)
+		})
 	})
 }
 
