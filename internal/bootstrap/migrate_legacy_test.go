@@ -73,6 +73,27 @@ func TestMigrateLegacyConnectionsRestoresLegacyWhenNewConfigIsEmpty(t *testing.T
 	}
 }
 
+func TestMigrateLegacyConnectionsRestoresVersionedHistoryWhenNewConfigIsEmpty(t *testing.T) {
+	root := t.TempDir()
+	newDir := filepath.Join(root, "meteor-ch-workbench")
+	legacyPath := filepath.Join(root, "MeteorCHWorkbench", "connections.json")
+	if err := os.MkdirAll(newDir, 0o700); err != nil { t.Fatal(err) }
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil { t.Fatal(err) }
+
+	newConfig := `{"version":1,"folders":[],"connections":[]}`
+	if err := os.WriteFile(filepath.Join(newDir, "connections.json"), []byte(newConfig), 0o600); err != nil { t.Fatal(err) }
+	previous := `{"version":1,"folders":[{"id":"prod","name":"生产环境"}],"connections":[{"id":"cluster-1","folder_id":"prod","name":"生产集群","host":"db.example.com","port":9000,"protocol":"native","user":"admin","password":"keep-this-secret"}]}`
+	if err := os.WriteFile(legacyPath, []byte(previous), 0o600); err != nil { t.Fatal(err) }
+
+	if err := migrateLegacyConnections(newDir, legacyPath); err != nil { t.Fatal(err) }
+	got, err := os.ReadFile(filepath.Join(newDir, "connections.json"))
+	if err != nil { t.Fatal(err) }
+	for _, want := range []string{"prod", "生产环境", "cluster-1", "生产集群", "db.example.com", "keep-this-secret"} {
+		if !strings.Contains(string(got), want) { t.Fatalf("历史版本化配置恢复结果缺少 %q: %s", want, got) }
+	}
+	if _, err := os.Stat(legacyPath); err != nil { t.Fatalf("历史配置不应被删除: %v", err) }
+}
+
 func TestMigrateLegacyConnectionsDoesNotOverwriteNonEmptyNewConfig(t *testing.T) {
 	root := t.TempDir()
 	newDir := filepath.Join(root, "MeteorCHWorkbench")
