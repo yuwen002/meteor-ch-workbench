@@ -46,11 +46,19 @@ type schemaResult struct {
 
 type queryEvent struct {
 	seq uint64
+	tab int
 	columns []queryapp.Column
 	batch [][]any
 	summary queryapp.Summary
 	err error
 	done bool
+}
+
+type sqlTabState struct {
+	Text string
+	Columns []queryapp.Column
+	Data [][]any
+	Status string
 }
 
 type saveResult struct {
@@ -95,6 +103,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		queryResults: make(chan queryEvent, 128),
 		sqlTabs: []string{"查询 1"},
 		sqlTabTexts: make(map[int]string),
+		sqlTabStates: map[int]sqlTabState{0: {}},
 		queryRows: widget.List{List: layout.List{Axis: layout.Vertical}},
 		databaseClicks: make(map[string]*widget.Clickable),
 		objectClicks: make(map[string]*widget.Clickable),
@@ -142,6 +151,7 @@ type workspace struct {
 	queryEditor widget.Editor
 	sqlTabs []string
 	sqlTabTexts map[int]string
+	sqlTabStates map[int]sqlTabState
 	sqlTabClicks []*widget.Clickable
 	sqlNewTab widget.Clickable
 	activeSQLTab int
@@ -301,6 +311,14 @@ func (s *workspace) drainResults() {
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
 		case result := <-s.queryResults:
 			if result.seq != s.querySeq { continue }
+			if result.tab != s.activeSQLTab {
+				state := s.sqlTabStates[result.tab]
+				if len(result.columns) > 0 { state.Columns = result.columns; state.Data = nil }
+				if len(result.batch) > 0 { state.Data = append(state.Data, result.batch...) }
+				if result.done { state.Status = queryResultStatus(result, state.Columns) }
+				s.sqlTabStates[result.tab] = state
+				continue
+			}
 			if len(result.columns) > 0 { s.queryColumns = result.columns; s.queryData = nil }
 			if len(result.batch) > 0 { s.queryData = append(s.queryData, result.batch...) }
 			if result.done {
@@ -382,6 +400,12 @@ func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
 }
 
 
+func queryResultStatus(result queryEvent, columns []queryapp.Column) string {
+	if result.err != nil { return "执行失败：" + result.err.Error() }
+	if result.summary.Truncated { return fmt.Sprintf("已返回 %d 行（达到结果上限）· %s", result.summary.RowCount, result.summary.Elapsed.Round(time.Millisecond)) }
+	if len(columns) > 0 { return fmt.Sprintf("查询完成 · %d 行 · %s", result.summary.RowCount, result.summary.Elapsed.Round(time.Millisecond)) }
+	return fmt.Sprintf("执行完成 · 影响 %d 行 · %s", result.summary.RowsAffected, result.summary.Elapsed.Round(time.Millisecond))
+}
 func (s *workspace) executeQuery() {
 	if s.selectedID == "" { s.queryStatus = "请先选择一个 ClickHouse 连接"; return }
 	sqlText := strings.TrimSpace(s.queryEditor.Text())
@@ -389,6 +413,7 @@ func (s *workspace) executeQuery() {
 	if s.queryCancelFunc != nil { s.queryCancelFunc() }
 	s.querySeq++
 	seq := s.querySeq
+	tab := s.activeSQLTab
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	s.queryCancelFunc = cancel
 	s.queryRunning = true
@@ -399,15 +424,15 @@ func (s *workspace) executeQuery() {
 		defer cancel()
 		summary, err := s.services.Queries.Execute(ctx, request,
 			func(columns []queryapp.Column) error {
-				select { case s.queryResults <- queryEvent{seq:seq, columns:columns}: return nil; case <-ctx.Done(): return ctx.Err() }
+				select { case s.queryResults <- queryEvent{seq:seq, tab:tab, columns:columns}: return nil; case <-ctx.Done(): return ctx.Err() }
 			},
 			func(rows [][]any) error {
 				batch := make([][]any,len(rows))
 				for i := range rows { batch[i] = append([]any(nil),rows[i]...) }
-				select { case s.queryResults <- queryEvent{seq:seq,batch:batch}: return nil; case <-ctx.Done(): return ctx.Err() }
+				select { case s.queryResults <- queryEvent{seq:seq,tab:tab,batch:batch}: return nil; case <-ctx.Done(): return ctx.Err() }
 			},
 		)
-		s.queryResults <- queryEvent{seq:seq,summary:summary,err:err,done:true}
+		s.queryResults <- queryEvent{seq:seq,tab:tab,summary:summary,err:err,done:true}
 		s.window.Invalidate()
 	}()
 }
