@@ -114,7 +114,6 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		sqlTabs:         []string{"查询 1"},
 		sqlTabIDs:       []workspaceui.TabID{1},
 		nextSQLTabID:    1,
-		sqlTabTexts:     make(map[int]string),
 		sqlTabStates:    map[int]sqlTabState{0: {}},
 		queryRows:       widget.List{List: layout.List{Axis: layout.Vertical}},
 		queryHorizontal: widget.List{List: layout.List{Axis: layout.Horizontal}},
@@ -170,7 +169,6 @@ type workspace struct {
 	sqlTabs           []string
 	sqlTabIDs         []workspaceui.TabID
 	nextSQLTabID      workspaceui.TabID
-	sqlTabTexts       map[int]string
 	sqlTabStates      map[int]sqlTabState
 	sqlTabClicks      []*widget.Clickable
 	sqlTabCloseClicks []*widget.Clickable
@@ -788,7 +786,6 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 										current.Text = s.queryEditor.Text()
 										current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
 										s.sqlTabStates[s.activeSQLTab] = current
-										s.sqlTabTexts[s.activeSQLTab] = current.Text
 										s.activeSQLTab = index
 										next := s.sqlTabStates[index]
 										s.queryEditor.SetText(next.Text)
@@ -831,7 +828,6 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								current.Text = s.queryEditor.Text()
 								current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
 								s.sqlTabStates[s.activeSQLTab] = current
-								s.sqlTabTexts[s.activeSQLTab] = current.Text
 								s.nextSQLTabID++
 								s.sqlTabIDs = append(s.sqlTabIDs, s.nextSQLTabID)
 								s.sqlTabs = append(s.sqlTabs, fmt.Sprintf("查询 %d", len(s.sqlTabs)+1))
