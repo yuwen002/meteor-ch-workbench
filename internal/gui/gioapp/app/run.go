@@ -15,6 +15,7 @@ import (
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
+	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
 )
 
@@ -49,8 +50,8 @@ type objectsResult struct {
 	seq uint64
 	connectionID string
 	database string
-	tables []structObject
-	views []structObject
+	tables []metadataapp.Object
+	views []metadataapp.Object
 	err error
 }
 
@@ -125,8 +126,8 @@ type workspace struct {
 	selectedName string
 	databases []string
 	selectedDatabase string
-	tables []structObject
-	views []structObject
+	tables []metadataapp.Object
+	views []metadataapp.Object
 	loading string
 	status string
 	requestSeq uint64
