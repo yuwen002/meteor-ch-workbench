@@ -87,12 +87,17 @@ func mergeLegacyConnections(target, legacyPath string) error {
 	if err != nil {
 		return fmt.Errorf("读取历史连接配置: %w", err)
 	}
-	isLegacy, err := isLegacyConnectionFile(raw)
-	if err != nil {
+	// 历史目录中的文件可能已经是版本化格式（version=1），不能只接受最早期
+	// 没有 version 字段的 JSON。ImportLegacyJSON 能按 ID 合并两种格式，
+	// 并且不会覆盖目标文件中已有的连接和分组。
+	var header struct {
+		Version *int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
 		return fmt.Errorf("检查历史连接配置: %w", err)
 	}
-	if !isLegacy {
-		return nil
+	if header.Version != nil && *header.Version != 1 {
+		return fmt.Errorf("历史连接配置版本不受支持: %d", *header.Version)
 	}
 	repository, err := connectionfile.New(target)
 	if err != nil {
