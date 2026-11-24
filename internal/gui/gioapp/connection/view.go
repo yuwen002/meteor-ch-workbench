@@ -44,14 +44,23 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 	if model == nil {
 		return nil, fmt.Errorf("连接状态模型不能为空")
 	}
-	return &View{
+	view := &View{
 		model: model,
 		list: widget.List{List: layout.List{Axis: layout.Vertical}},
 		rows: make(map[string]*widget.Clickable),
 		onRefresh: onRefresh,
 		onSelect: onSelect,
 		protocol: domain.ProtocolNative,
-	}, nil
+	}
+	view.port.SetText("9000")
+	view.user.SetText("default")
+	view.name.SingleLine = true
+	view.host.SingleLine = true
+	view.port.SingleLine = true
+	view.user.SingleLine = true
+	view.password.SingleLine = true
+	view.database.SingleLine = true
+	return view, nil
 }
 
 
