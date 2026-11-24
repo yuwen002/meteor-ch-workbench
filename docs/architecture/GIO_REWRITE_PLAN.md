@@ -228,3 +228,36 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 密码输入使用遮蔽显示。当前连接表单仅覆盖新增，编辑、删除、分组和排序仍待实现。
 - 连接密码当前仍随本地连接 JSON 持久化；文件权限为 0600，尚未迁移到系统钥匙串 / 独立凭据存储。
 - Go CI 已增加 Linux Gio 原生依赖安装、模块预下载、全量测试、vet 和桌面二进制构建；当前以最新 head 的运行结果作为验收依据。
+
+
+## 7. 最新迁移进度（2026-11-25，按全量重写口径）
+
+本节覆盖并修正此前「旧功能迁移」口径。只统计新架构和新 Gio 入口，不把旧 Vue / 旧服务 / 旧单体窗口已有功能计入完成。
+
+| 阶段 | 权重 | 当前完成度 | 已有证据 | 主要剩余项 |
+|---|---:|---:|---|---|
+| A. 新架构骨架 | 15% | 80% | domain/connection、application/connection/query/metadata/folder、bootstrap 已建立；Gio 入口已改用 bootstrap | 统一错误与分页/流式契约；为全部用例补齐 fake 测试；继续拆分 GUI presenter |
+| B. 连接与配置 | 20% | 65% | 新连接领域模型、版本化连接 JSON 仓库、原子写入、旧 JSON 显式导入；新 Gio 已接连接新增/编辑/删除、测试、分组与连接归组 | 系统钥匙串/凭据隔离；设置和工作区独立存储；连接排序持久化、损坏文件恢复与备份 |
+| C. 查询与元数据 | 20% | 50% | 新 query executor 支持 QueryContext/ExecContext、批次回调、超时/取消/行数上限；新 metadata 支持库/表/视图/字段/DDL；新 Gio 已接入对象浏览和表详情 | 查询历史/收藏/设置的新存储与用例；真实 ClickHouse 集成测试；批次到 UI 的有界背压与资源释放验收 |
+| D. Gio 工作区重写 | 25% | 30% | 新 Gio 入口和连接/分组侧栏已接新 application；数据库对象与表详情已接新 metadata；新窗口已开始承载 SQL 工作区 | app/run.go 仍约 51 KB，状态/布局/事件仍耦合；需拆 workspace/editor/result/explorer/history/snippets；补窄窗口、主题和交互回归 |
+| E. 删除旧程序 | 10% | 0% | Wails 根入口、绑定门面和配置已删除 | 旧 internal/app、internal/clickhouse、internal/config、旧 gioapp/window.go、frontend Vue 及相关依赖仍在；需等替代验收后删除 |
+| F. 完整质量验收 | 10% | 40% | 当前 head 的 Windows 与 Linux CI 已完成 go test、go vet、构建并上传预览产物 | macOS CI、真实桌面交互、真实 ClickHouse 集成、凭据迁移、安装包和性能基准仍缺 |
+
+按上述阶段权重计算：15%×80% + 20%×65% + 20%×50% + 25%×30% + 10%×0% + 10%×40% = **46.5%，约 47%**。
+
+这代表「新架构全量重写」的进度，不是旧功能可用率。若只看新 Gio 用户可见功能，连接新增/编辑/删除/分组、数据库对象浏览和表详情已有新入口；完整 SQL 编辑、结果、历史/收藏、设置及 ClickHouse 管理功能仍未全部完成，因此不宜把旧原型功能算作已迁移。
+
+### 当前 head 验收记录
+
+- 分支：`feat/native-gui-foundation`
+- head：`8db7fe4089a535535ea7a01e9cfe1aabb8c4f18b`
+- CI Run：`45436110042`，Windows preview 与 Linux Test and build 均为 success；两端均执行测试、vet 和构建。
+- PR #1：Open / Draft / 未合并，base 为 main；分支比 main ahead 554、behind 1。
+- CI 通过不等于桌面交互验收；本轮没有真实 Windows/macOS/Linux 桌面运行和 ClickHouse 服务端集成验证。
+
+### 下一阶段执行顺序
+
+1. **先拆出 workspace 状态与 SQL 标签生命周期**：将标签集合、活动标签、关闭/重命名/排序、未保存判断和查询运行态归档从 app/run.go 提取为独立 workspace 包，补纯逻辑测试；避免继续向 51 KB 窗口文件堆功能。
+2. 再拆 editor 与 result：编辑器状态、执行控制、结果批次有界队列、筛选排序和导出分别独立。
+3. 新建 history / snippets / settings 的 domain、application、storage 和 Gio 组件，不能复用旧 config manager。
+4. 新组件全部接入并验收后，才删除旧业务包和 Vue frontend。
