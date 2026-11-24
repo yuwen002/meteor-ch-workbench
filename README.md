@@ -1,150 +1,96 @@
 # Meteor CH Workbench
 
-> 跨平台 ClickHouse GUI 工作台 / A cross-platform ClickHouse GUI workbench
+面向 ClickHouse 的轻量级原生桌面工作台。项目正在从旧 Wails/Vue 实现全量重写为 **Go + Gio 原生 GUI**；当前分支提供可启动的 Gio 预览版，功能仍在迁移中。
 
-一个基于 **Wails v3 + Vue 3 + TypeScript + Tailwind CSS + Monaco Editor** 构建的轻量级 ClickHouse 图形化客户端，支持 Windows / macOS / Linux。
+> 当前状态：开发预览（Preview），不是功能完整的正式发行版。旧版功能列表仅作迁移参考，不能视为当前版本均已可用。
 
----
+## 当前预览版已接入
 
-## ✨ 特性
+- Gio 原生桌面入口：`cmd/meteor-ch-gio`
+- 本地连接配置读取、连接列表、新增连接表单和连通性测试
+- ClickHouse Native / HTTP 连接及 TLS 配置基础支持
+- 数据库、表和视图浏览
+- 表字段结构、主键 / 默认值标记、引擎、分区键、排序键和 TTL 信息
+- 新的 domain / application / infrastructure 分层
+- 查询执行应用服务与 ClickHouse 执行器已建立，但 SQL 编辑器和查询结果 UI 尚未接入新工作区
 
-- 🌐 **中英文双语** — 自动检测系统语言，一键切换，偏好持久化
-- 🗂️ **多连接管理** — 连接分组、重命名、拖拽分组，一目了然
-- ⚡ **SQL 编辑器** — Monaco Editor，语法高亮，Ctrl/Cmd + Enter 快捷执行
-- 🗂️ **多标签页** — 同时开多个查询标签，各自独立结果，重启自动恢复
-- 🕘 **查询历史** — 自动记录最近 200 条 SQL，点击回填编辑器
-- 📊 **实时查询结果** — 表格渲染、耗时统计、行数统计，错误即时提示
-- 🛡️ **大结果保护** — 单次查询上限 5 万行，超限截断并提示，避免界面卡死
-- 💾 **结果导出** — 查询结果一键导出 CSV / JSON
-- 📦 **配置导入导出** — 支持 JSON / YAML / CSV / DSN / DBeaver 五种导出，JSON / YAML / CSV / DSN 四种导入，可脱敏、可合并
-- 🗄️ **数据库 / 表 / 视图浏览** — 侧边栏树状结构，单击直接预览数据，视图单独分区
-- ➕ **可视化建表** — 表单化定义列、引擎、ORDER BY，实时 SQL 预览
-- ✏️ **可视化编辑表** — 修改列类型 / 默认值 / 注释、重命名、新增、删除
-- 🗑️ **表删除** — 右键一键删除带确认弹窗
-- 🌩️ **集群信息面板** — 一键查看 cluster、shard、replica、UUID，点击插入 SQL
-- ↔️ **可拖拽侧边栏** — 宽度自由调整，记忆上次状态
-- 🔌 **连接测试** — 创建前验证连通性
-- 🔐 **TLS / LZ4 压缩** — 支持加密传输与 Native Protocol 压缩
+## 预览运行
 
-## 架构
+### 环境要求
 
-```
-┌──────────────────────────────────────────────┐
-│                  Wails v3                     │
-│  ┌─────────────┐        ┌─────────────────┐  │
-│  │  Vue 3 SPA  │  Call  │  Go Backend     │  │
-│  │  Monaco Ed. │ ─────► │  main.App       │  │
-│  │  i18n zh/en │        │  clickhouse-driver │
-│  └─────────────┘        └─────────────────┘  │
-└──────────────────────────────────────────────┘
-```
+- Go 版本以 `go.mod` 的 `go` 指令为准（当前 CI 使用 Go 1.26.11）
+- Gio 桌面依赖：
+  - Linux：需要 X11 / Wayland、XKB、OpenGL / EGL 等开发库
+  - Windows：需要可用的 C 编译工具链（CGO）
+  - macOS：需要 Xcode Command Line Tools
 
-## 快速开始
-
-### 前置依赖
-
-- Go >= 1.22
-- Node.js >= 18
-- [Wails CLI](https://wails.io/docs/gettingstarted/installation) v3
-
-### 开发模式
+Linux（Debian / Ubuntu）安装依赖：
 
 ```bash
-wails dev
+sudo apt-get update
+sudo apt-get install -y build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev
 ```
 
-### 构建生产版本
+### 启动开发预览
 
 ```bash
-wails build
+go run ./cmd/meteor-ch-gio
 ```
 
-前端单独构建（可选）：
+### 构建本地可执行文件
 
 ```bash
-cd frontend
-npm install
-npm run dev      # Vite dev server
-npm run build    # 产物输出到 frontend/dist
+mkdir -p dist
+go build -o dist/meteor-ch-workbench ./cmd/meteor-ch-gio
 ```
 
-## 配置文件位置
+启动后从左侧连接栏新增 ClickHouse 连接，再选择连接加载数据库和表 / 视图。当前连接配置存储在用户配置目录下的 `meteor-ch-workbench/connections.json`；配置文件权限按平台能力限制。密码当前仍保存在本地连接 JSON 中，请勿在共享或不可信设备上保存生产凭据。
 
-连接信息保存在用户配置目录下的 `connections.json`：
+## 下载 CI 预览构建
 
-| 系统 | 路径 |
-|------|------|
-| Windows | `%AppData%\meteor-ch-workbench\connections.json` |
-| macOS | `~/Library/Application Support/meteor-ch-workbench/connections.json` |
-| Linux | `~/.config/meteor-ch-workbench/connections.json` |
+每次分支 push / PR 更新后，GitHub Actions 会执行：
 
-## 目录结构
+1. `go test ./...`
+2. `go vet ./...`
+3. 构建 Gio Linux amd64 预览二进制
+4. 上传名为 `meteor-ch-workbench-linux-amd64` 的 Actions Artifact（保留 7 天）
 
-```
-.
-├── app.go                      # Wails App 服务，暴露给前端调用的所有方法
-├── main.go                     # 入口，注册 Wails Service
-├── wails.json                  # Wails 项目配置
-├── internal/
-│   ├── clickhouse/service.go   # ClickHouse 连接、查询、集群、表/视图元数据
-│   └── config/manager.go       # JSON 配置读写、Folder/Connection 管理
-├── docs/
-│   ├── API.md                  # 前后端接口文档（Go 方法 → TS 封装）
-│   └── FEATURES.md             # 详细功能说明与操作指南
-└── frontend/
-    ├── src/
-    │   ├── App.vue             # 主框架：侧边栏 + 语言切换 + 拖拽分屏
-    │   ├── main.ts
-    │   ├── i18n.ts             # vue-i18n 初始化
-    │   ├── api.ts              # 所有 Wails Call.ByName 封装
-    │   ├── types.ts            # 共享类型定义
-    │   ├── stores/app.ts       # Pinia 全局状态
-    │   ├── utils/ddl.ts        # CREATE/ALTER/DROP TABLE SQL 构建工具
-    │   ├── locales/            # 语言包
-    │   │   ├── zh.ts
-    │   │   └── en.ts
-    │   ├── components/
-    │   │   ├── ConnectionModal.vue   # 新建/编辑连接
-    │   │   ├── FolderModal.vue       # 新建/编辑分组
-    │   │   ├── CreateTableModal.vue  # 可视化建表
-    │   │   └── EditTableModal.vue    # 可视化编辑表结构
-    │   └── views/
-    │       └── QueryEditor.vue       # SQL 编辑器 + 数据库/集群面板 + 结果表
-    ├── vite.config.ts
-    ├── tailwind.config.js
-    └── package.json
+在 GitHub 仓库的 **Actions → Go CI → 对应最新提交 → Artifacts** 下载预览包。只有最新 head SHA 的 CI 全部通过并成功上传 Artifact，才视为该提交具备 CI 预览构建。Linux 二进制需要目标机器具备 Gio 运行时图形库；它不是免依赖安装包。
+
+## 开发验证
+
+```bash
+gofmt -w ./cmd ./internal
+go test ./...
+go vet ./...
+go build ./cmd/meteor-ch-gio
 ```
 
-## 后端 ↔ 前端 调用约定
+本地运行与 CI 构建需要桌面平台依赖。无图形环境的容器只能执行不依赖 Gio 原生图形库的测试，不能代替桌面启动验收。
 
-Wails v3 自动绑定规则：前端通过 `Call.ByName("<包名>.<Service类型>.<方法名>", ...)` 调用。
+## 当前尚未完成
 
-本项目中 Go 入口为 `package main`，注册的 Service 类型为 `App`，因此调用格式为：
+- 连接编辑 / 删除 / 分组，以及保存成功 / 失败的完整交互反馈
+- SQL 编辑器、多标签、执行 / 取消按钮
+- 查询结果表格、列宽 / 排序 / 筛选、复制和导出
+- 查询历史、SQL 收藏、设置、主题与布局持久化
+- 凭据独立安全存储、旧配置导入界面
+- Windows / macOS 正式构建和实际窗口验收
+- 旧 Gio 单体窗口、旧业务层和 Vue 前端清理
 
-```ts
-import { Call } from '@wailsio/runtime'
-await Call.ByName('main.App.GetAll')
-await Call.ByName('main.App.Query', connectionID, sql)
+## 架构方向
+
+```text
+cmd/meteor-ch-gio
+  └── internal/gui/gioapp
+        └── internal/application
+              ├── internal/domain
+              └── internal/infrastructure
+                    ├── clickhouse
+                    └── storage
 ```
 
-已在 `frontend/src/api.ts` 中统一封装，组件层直接 `import { api } from '../api'` 使用。
-
-## 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 桌面框架 | [Wails v3](https://wails.io/) |
-| 后端 | Go 1.22+，[clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go) |
-| 前端 | Vue 3 `<script setup>` + TypeScript |
-| UI | Tailwind CSS |
-| 编辑器 | Monaco Editor |
-| 状态 | Pinia |
-| 国际化 | vue-i18n@9 |
-| 构建 | Vite |
-
-## 详细功能文档
-
-参见 [docs/FEATURES.md](./docs/FEATURES.md)。
+详细重写范围和验收标准见 [Gio 重写计划](docs/architecture/GIO_REWRITE_PLAN.md) 与 [代码索引](docs/CODE_INDEX.md)。
 
 ## License
 
