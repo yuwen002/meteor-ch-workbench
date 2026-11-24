@@ -387,7 +387,7 @@ func (s *workspace) executeQuery() {
 	s.queryRunning = true
 	s.queryColumns, s.queryData = nil, nil
 	s.queryStatus = "正在执行 SQL…"
-	request := queryapp.Request{ConnectionID:s.selectedID, SQL:sqlText, Mode:queryapp.ModeRows, MaxRows:10000, BatchSize:128, Timeout:30*time.Second}
+	request := queryapp.Request{ConnectionID:s.selectedID, SQL:sqlText, Mode:classifySQLMode(sqlText), MaxRows:10000, BatchSize:128, Timeout:30*time.Second}
 	go func() {
 		defer cancel()
 		summary, err := s.services.Queries.Execute(ctx, request,
