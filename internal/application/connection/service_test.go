@@ -10,6 +10,12 @@ import (
 )
 
 type memoryRepository struct { items []connection.Connection; saveErr, deleteErr error }
+func (r *memoryRepository) Get(_ context.Context, id string) (connection.Connection, error) {
+	for _, item := range r.items {
+		if item.ID == id { return item, nil }
+	}
+	return connection.Connection{}, ErrNotFound
+}
 func (r *memoryRepository) List(context.Context) ([]connection.Connection, error) {
 	return append([]connection.Connection(nil), r.items...), nil
 }
@@ -36,6 +42,20 @@ func newTestService(t *testing.T, repo *memoryRepository, tester *fakeTester) *S
 }
 func validConnection() connection.Connection {
 	return connection.Connection{ID:"", Name:"  analytics ", Host:"  127.0.0.1 ", Port:9000, Protocol:connection.ProtocolNative, User:" default "}
+}
+
+func TestGetReturnsConnectionByID(t *testing.T) {
+	want := connection.Connection{ID:"c1", Name:"analytics"}
+	s := newTestService(t, &memoryRepository{items:[]connection.Connection{want}}, &fakeTester{})
+	got, err := s.Get(context.Background(), " c1 ")
+	if err != nil { t.Fatal(err) }
+	if !reflect.DeepEqual(got, want) { t.Fatalf("读取连接=%+v，期望 %+v", got, want) }
+}
+func TestGetRejectsEmptyID(t *testing.T) {
+	s := newTestService(t, &memoryRepository{}, &fakeTester{})
+	if _, err := s.Get(context.Background(), " "); !errors.Is(err, connection.ErrMissingID) {
+		t.Fatalf("期望连接 ID 校验错误，得到 %v", err)
+	}
 }
 
 func TestSaveGeneratesIDAndNormalizesInput(t *testing.T) {
