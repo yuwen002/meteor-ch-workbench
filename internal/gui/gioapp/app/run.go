@@ -589,7 +589,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 							}),
 						)
 					})
-				}),),
+				}),
 			)
 		})
 	})
