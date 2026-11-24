@@ -37,7 +37,7 @@ func (metadataConn) QueryContext(_ context.Context, statement string, args []dri
 	case strings.Contains(statement,"system.tables") && strings.Contains(statement,"LIKE"):
 		return &metadataRows{columns:[]string{"name","engine","comment"},values:[][]driver.Value{{"active_users","View","active users"}}},nil
 	case strings.HasPrefix(statement,"DESCRIBE TABLE"):
-		return &metadataRows{columns:[]string{"name","type","default_type","comment","primary_key"},values:[][]driver.Value{{"id","UInt64","","identifier",uint8(1)},{"created_at","DateTime","DEFAULT","",uint8(0)}}},nil
+		return &metadataRows{columns:[]string{"name","type","default_kind","comment","is_in_primary_key"},values:[][]driver.Value{{"id","UInt64","","identifier",uint8(1)},{"created_at","DateTime","DEFAULT","",uint8(0)}}},nil
 	case strings.Contains(statement,"create_table_query"):
 		return &metadataRows{columns:[]string{"engine","comment","create_table_query","partition_key","sorting_key","primary_key"},values:[][]driver.Value{{"MergeTree","events","CREATE TABLE events (created_at DateTime) ENGINE = MergeTree ORDER BY created_at TTL created_at + INTERVAL 7 DAY SETTINGS index_granularity = 8192","","created_at","created_at"}}},nil
 	default:
