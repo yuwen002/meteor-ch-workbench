@@ -360,7 +360,12 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 				if v.rowTest[item.ID] == nil { v.rowTest[item.ID] = new(widget.Clickable) }
 				if v.rowEdit[item.ID] == nil { v.rowEdit[item.ID] = new(widget.Clickable) }
 				if v.rowDelete[item.ID] == nil { v.rowDelete[item.ID] = new(widget.Clickable) }
-				return layout.Inset{Top:unit.Dp(5),Bottom:unit.Dp(5),Left:unit.Dp(8),Right:unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				selected := item.ID == v.selectedConnectionID
+				return layout.Inset{Top:unit.Dp(4),Bottom:unit.Dp(4),Left:unit.Dp(5),Right:unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					if selected {
+						paint.FillShape(gtx.Ops, color.NRGBA{R:235,G:242,B:253,A:255}, clip.Rect{Max:gtx.Constraints.Max}.Op())
+					}
+					return layout.Inset{Left:unit.Dp(7),Right:unit.Dp(5),Top:unit.Dp(4),Bottom:unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if click.Clicked(gtx) { v.model.Select(item.ID); if v.onSelect != nil { v.onSelect(item) } }
@@ -410,6 +415,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 							)
 						}),
 					)
+					})
 				})
 			})
 		}),
