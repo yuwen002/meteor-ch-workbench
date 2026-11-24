@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,16 +31,9 @@ func migrateLegacyConnections(dataDir string, legacyPath string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := repository.ImportLegacyJSON(nilContext{}, raw); err != nil {
+	if _, err := repository.ImportLegacyJSON(context.Background(), raw); err != nil {
 		return fmt.Errorf("迁移旧版连接配置: %w", err)
 	}
 	return nil
 }
 
-// nilContext 避免迁移过程依赖 GUI 生命周期；迁移是启动阶段的同步本地文件操作。
-type nilContext struct{}
-
-func (nilContext) Deadline() (deadline time.Time, ok bool) { return time.Time{}, false }
-func (nilContext) Done() <-chan struct{} { return nil }
-func (nilContext) Err() error { return nil }
-func (nilContext) Value(any) any { return nil }
