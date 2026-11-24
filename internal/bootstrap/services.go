@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	connectionapp "github.com/yuwen002/meteor-ch-workbench/internal/application/connection"
+	folderapp "github.com/yuwen002/meteor-ch-workbench/internal/application/folder"
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	chinfra "github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/clickhouse"
@@ -17,6 +18,7 @@ import (
 // Services 是新架构的应用服务容器。GUI 只需依赖这些应用层服务，不直接创建基础设施对象。
 type Services struct {
 	Connections *connectionapp.Service
+	Folders *folderapp.Service
 	Queries     *queryapp.Service
 	Metadata    *metadataapp.Service
 	pools       *chinfra.PoolManager
@@ -39,10 +41,13 @@ func New(dataDir string) (*Services, error) {
 		return nil, err
 	}
 
-	connections, err := connectionapp.NewService(repository, chinfra.NewTester(0), connectionfile.RandomIDGenerator{})
+	ids := connectionfile.RandomIDGenerator{}
+	connections, err := connectionapp.NewService(repository, chinfra.NewTester(0), ids)
 	if err != nil {
 		return fail(err)
 	}
+	folders, err := folderapp.NewService(repository, ids)
+	if err != nil { return fail(err) }
 	executor, err := chinfra.NewQueryExecutor(pools)
 	if err != nil {
 		return fail(err)
@@ -62,6 +67,7 @@ func New(dataDir string) (*Services, error) {
 
 	return &Services{
 		Connections: connections,
+		Folders: folders,
 		Queries: queries,
 		Metadata: metadata,
 		pools: pools,
