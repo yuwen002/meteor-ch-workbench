@@ -1,0 +1,14 @@
+internal/gui/gioapp/app/run.go
+  h_a3f313f3d96276 7,24-25,401-407,448-451,462-467,469-471,477,484-486,488-491,548,743-744,858-864,866-867,879-880,888-889,904-915
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "ae2d4cdd1291adaddf6575d9b43d93c0eb6bbdd9",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
