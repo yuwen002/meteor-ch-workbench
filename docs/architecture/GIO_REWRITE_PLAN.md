@@ -171,3 +171,11 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 新增服务装配测试和连接按 ID 读取测试。
 - 当前 Gio 仍使用旧 `internal/app.Service`，本次只建立新架构组合根，下一步将创建独立 Gio 应用状态 / presenter，逐步替换旧窗口调用；不把旧服务作为新架构兼容层。
 - 尚未运行本地 gofmt / go test / go vet / build；装配测试仅已编写。
+
+
+### 新 Gio 连接管理状态模型（2026-11-24）
+
+- 新增 `internal/gui/gioapp/connection` 状态模型，依赖新连接应用服务接口，不再引用旧 `internal/app.Service`、旧配置管理器或旧 ClickHouse 业务模型。
+- 提供连接列表快照、选中连接、加载 / 保存 / 测试状态、错误状态，以及 Reload / Select / Save / Delete / Test 操作；耗时服务调用在状态锁外执行，列表刷新通过序号避免较早请求覆盖较新结果。
+- 增加纯逻辑测试，覆盖列表加载、选择校验、保存与删除后的状态更新、错误传播。
+- 这是新 GUI 的连接功能状态层，尚未接入 Gio 布局与事件循环；旧单体 `window.go` 仍为当前运行界面，不能计为连接管理 GUI 重写完成。
