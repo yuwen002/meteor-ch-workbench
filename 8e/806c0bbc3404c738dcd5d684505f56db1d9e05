@@ -1,0 +1,24 @@
+internal/gui/gioapp/connection/view.go
+  h_a3f313f3d96276 329-332,334,339-342,347-350,357,364,367,378,387,394-398,403-412,414-415,417-418,420-422,424-443,445-452,454-460,462-469,471-472,475,478-549,552-554,556-557,559,562-615,617-618,621,625
+internal/gui/gioapp/connection/style.go
+  h_a3f313f3d96276 1-118
+cmd/meteor-ch-gio/main.go
+  h_a3f313f3d96276 13-19,35
+internal/gui/gioapp/app/run.go
+  h_a3f313f3d96276 448,499,503-513,515,518,520,526,528,530-531,533-539,546-547,550-553,561-562,565-579,582,584,586-587,590-591,595,597,599,605-607,910-911,919-923,928,930-941,944-945,947-953
+internal/gui/gioapp/app/style.go
+  h_a3f313f3d96276 1-110
+internal/gui/gioapp/app/theme.go
+  h_a3f313f3d96276 14,17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "8e806c0bbc3404c738dcd5d684505f56db1d9e05",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
