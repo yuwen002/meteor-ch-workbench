@@ -9,6 +9,12 @@ import (
 	domain "github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 )
 
+type FolderService interface {
+	List(context.Context) ([]domain.Folder, error)
+	Save(context.Context, domain.Folder) (domain.Folder, error)
+	Delete(context.Context, string) error
+}
+
 type Service interface {
 	List(context.Context) ([]domain.Connection, error)
 	Save(context.Context, domain.Connection) (domain.Connection, error)
@@ -18,6 +24,7 @@ type Service interface {
 
 type Snapshot struct {
 	Items      []domain.Connection
+	Folders    []domain.Folder
 	SelectedID string
 	Loading    bool
 	Saving     bool
@@ -29,6 +36,8 @@ type Snapshot struct {
 type Model struct {
 	mu         sync.RWMutex
 	service    Service
+	folderService FolderService
+	folders []domain.Folder
 	items      []domain.Connection
 	selectedID string
 	loading    bool
@@ -39,11 +48,12 @@ type Model struct {
 	testSeq    uint64
 }
 
-func NewModel(service Service) (*Model, error) {
+func NewModel(service Service, folders FolderService) (*Model, error) {
 	if service == nil {
 		return nil, errors.New("连接应用服务不能为空")
 	}
-	return &Model{service: service, items: make([]domain.Connection, 0)}, nil
+	if folders == nil { return nil, errors.New("分组应用服务不能为空") }
+	return &Model{service: service, folderService: folders, items: make([]domain.Connection, 0), folders: make([]domain.Folder, 0)}, nil
 }
 
 func (m *Model) Snapshot() Snapshot {
@@ -51,6 +61,7 @@ func (m *Model) Snapshot() Snapshot {
 	defer m.mu.RUnlock()
 	return Snapshot{
 		Items: append([]domain.Connection(nil), m.items...),
+		Folders: append([]domain.Folder(nil), m.folders...),
 		SelectedID: m.selectedID,
 		Loading: m.loading,
 		Saving: m.saving,
@@ -68,6 +79,8 @@ func (m *Model) Reload(ctx context.Context) error {
 	m.mu.Unlock()
 
 	items, err := m.service.List(ctx)
+	var folders []domain.Folder
+	if err == nil { folders, err = m.folderService.List(ctx) }
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if seq != m.loadSeq {
@@ -79,9 +92,33 @@ func (m *Model) Reload(ctx context.Context) error {
 		return err
 	}
 	m.items = append([]domain.Connection(nil), items...)
+	m.folders = append([]domain.Folder(nil), folders...)
 	if !containsID(m.items, m.selectedID) {
 		m.selectedID = ""
 	}
+	return nil
+}
+
+func (m *Model) SaveFolder(ctx context.Context, item domain.Folder) (domain.Folder, error) {
+	folder, err := m.folderService.Save(ctx, item)
+	if err != nil { m.setError(err); return domain.Folder{}, err }
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.folders { if m.folders[i].ID == folder.ID { m.folders[i] = folder; return folder, nil } }
+	m.folders = append(m.folders, folder)
+	m.err = ""
+	return folder, nil
+}
+
+func (m *Model) DeleteFolder(ctx context.Context, id string) error {
+	if err := m.folderService.Delete(ctx, id); err != nil { m.setError(err); return err }
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	folders := make([]domain.Folder, 0, len(m.folders))
+	for _, item := range m.folders { if item.ID != id { folders = append(folders, item) } }
+	m.folders = folders
+	for i := range m.items { if m.items[i].FolderID == id { m.items[i].FolderID = "" } }
+	m.err = ""
 	return nil
 }
 
