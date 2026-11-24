@@ -74,7 +74,12 @@ func NewDefault() (*Services, error) {
 	if err != nil {
 		return nil, err
 	}
-	return New(filepath.Join(configDir, "MeteorCHWorkbench"))
+	dataDir := filepath.Join(configDir, "MeteorCHWorkbench")
+	legacyPath := filepath.Join(configDir, "meteor-ch-workbench", "connections.json")
+	if err := migrateLegacyConnections(dataDir, legacyPath); err != nil {
+		return nil, err
+	}
+	return New(dataDir)
 }
 
 // Close 释放所有由服务容器创建的 ClickHouse 连接池。
