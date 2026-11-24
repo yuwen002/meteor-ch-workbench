@@ -73,3 +73,45 @@ func TestMigrateLegacyConnectionsSkipsMissingLegacyFile(t *testing.T) {
 		t.Fatalf("旧配置不存在时应正常启动: %v", err)
 	}
 }
+
+func TestMigrateLegacyConnectionsUpgradesLegacyFileAtNewPath(t *testing.T) {
+	dataDir := t.TempDir()
+	target := filepath.Join(dataDir, "connections.json")
+	legacy := `{"folders":[],"connections":[{"id":"old-existing","name":"旧版生产连接","host":"127.0.0.1","port":9000,"protocol":"native","user":"default","password":"keep-me","database":"analytics","secure":false,"use_compress":true}]}`
+	if err := os.WriteFile(target, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 模拟 Windows：新旧路径大小写不同，但解析到同一个配置文件。
+	if err := migrateLegacyConnections(dataDir, filepath.Join(dataDir, "METEOR-CH-WORKBENCH", "connections.json")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"version": 1`, "old-existing", "旧版生产连接", "keep-me", "analytics"} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("升级后的配置缺少 %q: %s", want, got)
+		}
+	}
+}
+
+func TestMigrateLegacyConnectionsKeepsOriginalWhenLegacyDataInvalid(t *testing.T) {
+	dataDir := t.TempDir()
+	target := filepath.Join(dataDir, "connections.json")
+	legacy := `{"connections":[{"id":"broken","name":"","host":"","port":0}]}`
+	if err := os.WriteFile(target, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateLegacyConnections(dataDir, filepath.Join(dataDir, "old", "connections.json")); err == nil {
+		t.Fatal("无效旧配置应返回迁移错误")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("原始配置不应丢失: %v", err)
+	}
+	if string(got) != legacy {
+		t.Fatalf("原始配置被修改: %s", got)
+	}
+}
