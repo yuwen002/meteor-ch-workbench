@@ -112,6 +112,8 @@ type View struct {
 	rowEdit map[string]*widget.Clickable
 	rowDelete map[string]*widget.Clickable
 	rowTest map[string]*widget.Clickable
+	rowMore map[string]*widget.Clickable
+	rowActionsOpen map[string]bool
 	editingConnectionID string
 	formFolderID string
 	folderPick widget.Clickable
@@ -142,6 +144,8 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		rowEdit: make(map[string]*widget.Clickable),
 		rowDelete: make(map[string]*widget.Clickable),
 		rowTest: make(map[string]*widget.Clickable),
+		rowMore: make(map[string]*widget.Clickable),
+		rowActionsOpen: make(map[string]bool),
 		folderPickOptions: make(map[string]*widget.Clickable),
 		onRefresh: onRefresh,
 		onSelect: onSelect,
@@ -361,6 +365,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 				if click == nil { click = new(widget.Clickable); v.rows[item.ID] = click }
 				if v.folderMove[item.ID] == nil { v.folderMove[item.ID] = new(widget.Clickable) }
 				if v.rowTest[item.ID] == nil { v.rowTest[item.ID] = new(widget.Clickable) }
+				if v.rowMore[item.ID] == nil { v.rowMore[item.ID] = new(widget.Clickable) }
 				if v.rowEdit[item.ID] == nil { v.rowEdit[item.ID] = new(widget.Clickable) }
 				if v.rowDelete[item.ID] == nil { v.rowDelete[item.ID] = new(widget.Clickable) }
 				selected := item.ID == v.selectedConnectionID
@@ -371,51 +376,45 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					return layout.Inset{Left:unit.Dp(7),Right:unit.Dp(5),Top:unit.Dp(4),Bottom:unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if click.Clicked(gtx) { v.model.Select(item.ID); if v.onSelect != nil { v.onSelect(item) } }
-							return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								label:=item.Name
-							if item.ID==v.selectedConnectionID { label="› "+label }
-							state := "未连接"
-							if item.ID == v.connectingConnectionID { state = "连接中…" }
-							if item.ID == v.connectedConnectionID { state = "● 已连接" }
-							return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
-								layout.Rigid(material.Body1(theme,label).Layout),
+							return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
-										layout.Flexed(1, material.Caption(theme,fmt.Sprintf("%s:%d · %s",item.Host,item.Port,item.Protocol)).Layout),
-										layout.Rigid(material.Caption(theme,state).Layout),
-									)
+									button := material.Button(theme, v.rowMore[item.ID], func() string { if v.rowActionsOpen[item.ID] { return "收起" }; return "更多" }())
+									button.TextSize = unit.Sp(11)
+									if v.rowMore[item.ID].Clicked(gtx) { v.rowActionsOpen[item.ID] = !v.rowActionsOpen[item.ID] }
+									return button.Layout(gtx)
 								}),
 							)
-							})
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									button:=material.Button(theme,v.rowTest[item.ID],"连接")
-									button.TextSize=unit.Sp(11)
-									if v.rowTest[item.ID].Clicked(gtx) && v.onSelect != nil { v.onSelect(item) }
-									return button.Layout(gtx)
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									button:=material.Button(theme,v.rowEdit[item.ID],"编辑")
-									button.TextSize=unit.Sp(11)
-									if v.rowEdit[item.ID].Clicked(gtx) { v.loadConnectionForm(item) }
-									return button.Layout(gtx)
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									button:=material.Button(theme,v.folderMove[item.ID],"分组")
-									button.TextSize=unit.Sp(11)
-									if v.folderMove[item.ID].Clicked(gtx) { v.folderPickTargetID = item.ID; v.formFolderID = item.FolderID; v.folderPickerOpen = true }
-									return button.Layout(gtx)
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									button:=material.Button(theme,v.rowDelete[item.ID],"删除")
-									button.TextSize=unit.Sp(11)
-									if v.rowDelete[item.ID].Clicked(gtx) { v.deleteConfirmID = item.ID }
-									return button.Layout(gtx)
-								}),
-							)
+							if !v.rowActionsOpen[item.ID] { return layout.Dimensions{} }
+						return layout.Inset{Top:unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										button:=material.Button(theme,v.rowTest[item.ID],"测试")
+										button.TextSize=unit.Sp(11)
+										if v.rowTest[item.ID].Clicked(gtx) && v.onSelect != nil { v.onSelect(item) }
+										return button.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										button:=material.Button(theme,v.rowEdit[item.ID],"编辑")
+										button.TextSize=unit.Sp(11)
+										if v.rowEdit[item.ID].Clicked(gtx) { v.loadConnectionForm(item) }
+										return button.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										button:=material.Button(theme,v.folderMove[item.ID],"分组")
+										button.TextSize=unit.Sp(11)
+										if v.folderMove[item.ID].Clicked(gtx) { v.folderPickTargetID = item.ID; v.formFolderID = item.FolderID; v.folderPickerOpen = true }
+										return button.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										button:=material.Button(theme,v.rowDelete[item.ID],"删除")
+										button.TextSize=unit.Sp(11)
+										if v.rowDelete[item.ID].Clicked(gtx) { v.deleteConfirmID = item.ID }
+										return button.Layout(gtx)
+									}),
+								)
+							})
 						}),
 					)
 					})
