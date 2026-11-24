@@ -59,12 +59,12 @@ func TestStreamSQLRowsToTSV(t *testing.T) {
 	if output.String() != want { t.Fatalf("TSV mismatch:\n got: %q\nwant: %q", output.String(), want) }
 }
 
-type failingWriter struct{}
-func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+type streamFailingWriter struct{}
+func (streamFailingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
 
 func TestStreamSQLRowsToPropagatesWriterError(t *testing.T) {
 	rows := &fakeSQLRows{columns: []string{"id"}, rows: [][]interface{}{{1}}}
-	_, err := streamSQLRowsTo(context.Background(), rows, failingWriter{}, "tsv")
+	_, err := streamSQLRowsTo(context.Background(), rows, streamFailingWriter{}, "tsv")
 	if err == nil || !strings.Contains(err.Error(), "disk full") { t.Fatalf("expected disk error, got %v", err) }
 }
 
