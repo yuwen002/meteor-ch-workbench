@@ -15,7 +15,7 @@ func TestMigrateLegacyConnectionsImportsSavedConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacyPath := filepath.Join(legacyDir, "connections.json")
-	raw := `{"folders":[],"connections":[{"id":"existing-1","name":"生产集群","host":"db.example.com","port":9000,"protocol":"native","user":"admin","password":"secret","database":"default","secure":true,"use_compress":true}]}`
+	raw := `{"folders":[{"id":"folder-prod","name":"生产环境"}],"connections":[{"id":"existing-1","folder_id":"folder-prod","name":"生产集群","host":"db.example.com","port":9000,"protocol":"native","user":"admin","password":"secret","database":"default","secure":true,"use_compress":true}]}`
 	if err := os.WriteFile(legacyPath, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestMigrateLegacyConnectionsImportsSavedConnections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"existing-1", "db.example.com", "secret", "native", "true"} {
+	for _, want := range []string{"existing-1", "folder-prod", "生产环境", "folder_id", "db.example.com", "secret", "native", "true"} {
 		if !strings.Contains(string(migrated), want) {
 			t.Fatalf("迁移结果缺少 %q: %s", want, migrated)
 		}
@@ -77,7 +77,7 @@ func TestMigrateLegacyConnectionsSkipsMissingLegacyFile(t *testing.T) {
 func TestMigrateLegacyConnectionsUpgradesLegacyFileAtNewPath(t *testing.T) {
 	dataDir := t.TempDir()
 	target := filepath.Join(dataDir, "connections.json")
-	legacy := `{"folders":[],"connections":[{"id":"old-existing","name":"旧版生产连接","host":"127.0.0.1","port":9000,"protocol":"native","user":"default","password":"keep-me","database":"analytics","secure":false,"use_compress":true}]}`
+	legacy := `{"folders":[{"id":"legacy-folder","name":"旧版分组"}],"connections":[{"id":"old-existing","folder_id":"legacy-folder","name":"旧版生产连接","host":"127.0.0.1","port":9000,"protocol":"native","user":"default","password":"keep-me","database":"analytics","secure":false,"use_compress":true}]}`
 	if err := os.WriteFile(target, []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestMigrateLegacyConnectionsUpgradesLegacyFileAtNewPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"version": 1`, "old-existing", "旧版生产连接", "keep-me", "analytics"} {
+	for _, want := range []string{`"version": 1`, "legacy-folder", "旧版分组", "old-existing", "旧版生产连接", "keep-me", "analytics"} {
 		if !strings.Contains(string(got), want) {
 			t.Fatalf("升级后的配置缺少 %q: %s", want, got)
 		}
