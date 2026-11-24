@@ -79,6 +79,9 @@ type View struct {
 	rows      map[string]*widget.Clickable
 	onRefresh func()
 	onSelect  func(domain.Connection)
+	selectedConnectionID string
+	connectedConnectionID string
+	connectingConnectionID string
 	onSave func(domain.Connection)
 	add widget.Clickable
 	save widget.Clickable
@@ -158,6 +161,14 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 
 
 func (v *View) SetOnDelete(onDelete func(string)) { v.onDelete = onDelete }
+
+// SetConnectionStatus 区分列表选中、正在连接和已建立连接，避免把选中状态误显示为在线。
+func (v *View) SetConnectionStatus(selectedID, connectedID, connectingID string) {
+	v.selectedConnectionID = selectedID
+	v.connectedConnectionID = connectedID
+	v.connectingConnectionID = connectingID
+}
+
 
 func (v *View) SetOnSave(onSave func(domain.Connection)) {
 	v.onSave = onSave
@@ -355,10 +366,18 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 							if click.Clicked(gtx) { v.model.Select(item.ID); if v.onSelect != nil { v.onSelect(item) } }
 							return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								label:=item.Name
-							if item.ID==snapshot.SelectedID { label="● "+label }
+							if item.ID==v.selectedConnectionID { label="› "+label }
+							state := "未连接"
+							if item.ID == v.connectingConnectionID { state = "连接中…" }
+							if item.ID == v.connectedConnectionID { state = "● 已连接" }
 							return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
 								layout.Rigid(material.Body1(theme,label).Layout),
-								layout.Rigid(material.Caption(theme,fmt.Sprintf("%s:%d · %s",item.Host,item.Port,item.Protocol)).Layout),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+										layout.Flexed(1, material.Caption(theme,fmt.Sprintf("%s:%d · %s",item.Host,item.Port,item.Protocol)).Layout),
+										layout.Rigid(material.Caption(theme,state).Layout),
+									)
+								}),
 							)
 							})
 						}),
