@@ -49,7 +49,7 @@ func formatResultCell(value any) string {
 		return "NULL"
 	}
 	text := fmt.Sprint(value)
-	text = strings.NewReplacer("\\r\\n", " ↵ ", "\\n", " ↵ ", "\\r", " ↵ ", "\\t", " ⇥ ").Replace(text)
+	text = strings.NewReplacer("\r\n", " ↵ ", "\n", " ↵ ", "\r", " ↵ ", "\t", " ⇥ ").Replace(text)
 	if utf8.RuneCountInString(text) <= maxResultCellRunes {
 		return text
 	}
