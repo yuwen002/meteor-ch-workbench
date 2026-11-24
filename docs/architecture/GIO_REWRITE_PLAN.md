@@ -154,3 +154,10 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - DESCRIBE 结果按列名匹配字段，不依赖 ClickHouse 版本间返回列的固定顺序；主键与默认值标志兼容多种驱动值类型。
 - 新增应用服务测试、元数据 SQL 测试和 TTL / 标识符解析测试。
 - **尚未完成**：未运行本地 gofmt / go test / go vet / build；仓库无 GitHub Actions workflow；尚无真实 ClickHouse 集成测试，尚未接入 Gio GUI。
+
+### 元数据字段标记兼容修正（2026-11-24）
+
+- `GetTableSchema` 同时识别 `is_in_primary_key` 与 `primary_key`，兼容不同 ClickHouse / 驱动返回的字段标记名称。
+- 默认值标记同时识别 `default_type`、`default_kind` 和 `default_expression`，并采用 OR 合并，避免返回列顺序或字段版本差异导致标记被覆盖。
+- fake driver 测试切换为 `is_in_primary_key` + `default_kind` 组合，验证新版字段元数据路径。
+- 尚未运行本地 gofmt / go test；仍需使用目标 ClickHouse 22.5 实例验证真实 DESCRIBE 输出。
