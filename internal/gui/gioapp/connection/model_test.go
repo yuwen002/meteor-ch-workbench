@@ -10,12 +10,14 @@ import (
 
 type serviceStub struct {
 	items []domain.Connection
+	listErr error
 	saveErr error
 	deleteErr error
 	testErr error
 }
 
 func (s *serviceStub) List(context.Context) ([]domain.Connection, error) {
+	if s.listErr != nil { return nil, s.listErr }
 	return append([]domain.Connection(nil), s.items...), nil
 }
 func (s *serviceStub) Save(_ context.Context, item domain.Connection) (domain.Connection, error) {
@@ -177,5 +179,22 @@ func TestBuildSidebarRowsKeepsConnectionsWhenAllFoldersAreMissing(t *testing.T) 
 	}
 	if visible != len(items) {
 		t.Fatalf("应展示全部连接，实际展示 %d / %d", visible, len(items))
+	}
+}
+
+func TestModelReloadFailureKeepsPreviouslyLoadedConnections(t *testing.T) {
+	want := domain.Connection{ID: "saved", Name: "历史连接"}
+	service := &serviceStub{items: []domain.Connection{want}}
+	model := newTestModel(t, service)
+	if err := model.Reload(context.Background()); err != nil { t.Fatal(err) }
+
+	service.listErr = errors.New("配置文件不可读")
+	if err := model.Reload(context.Background()); err == nil { t.Fatal("配置读取失败应返回错误") }
+
+	state := model.Snapshot()
+	if state.Loading { t.Fatal("加载失败后 Loading 应恢复为 false") }
+	if state.Error == "" { t.Fatal("加载失败原因应保留在状态中") }
+	if len(state.Items) != 1 || state.Items[0].ID != want.ID {
+		t.Fatalf("读取失败不应清空已加载连接: %+v", state.Items)
 	}
 }
