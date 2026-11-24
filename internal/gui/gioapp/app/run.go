@@ -145,6 +145,10 @@ func (s *workspace) selectConnection(item connection.Connection) {
 	s.selectedID = item.ID
 	s.selectedName = item.Name
 	s.selectedDatabase = ""
+	s.selectedTable = ""
+	s.selectedObject = ""
+	s.columns = nil
+	s.tableDetails = metadataapp.TableDetails{}
 	s.databases = nil
 	s.tables, s.views = nil, nil
 	s.loading = "正在测试连接并读取数据库…"
