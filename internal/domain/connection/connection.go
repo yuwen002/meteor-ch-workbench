@@ -20,6 +20,8 @@ var (
 	ErrMissingHost = errors.New("主机地址不能为空")
 	ErrInvalidPort = errors.New("端口必须在 1 到 65535 之间")
 	ErrInvalidProtocol = errors.New("连接协议必须是 native 或 http")
+	ErrMissingFolderID = errors.New("分组 ID 不能为空")
+	ErrMissingFolderName = errors.New("分组名称不能为空")
 )
 
 // Connection 是与 GUI、JSON 文件和 ClickHouse 驱动无关的连接定义。
@@ -66,4 +68,22 @@ func (c Connection) ValidateForTest() error {
 // Endpoint 返回不含用户名、密码和数据库名的安全网络端点描述。
 func (c Connection) Endpoint() string {
 	return fmt.Sprintf("%s:%d", strings.TrimSpace(c.Host), c.Port)
+}
+
+
+// Folder 表示连接侧栏中的用户分组。
+type Folder struct {
+	ID   string
+	Name string
+}
+
+// Validate 检查分组的持久化字段。
+func (f Folder) Validate() error {
+	if strings.TrimSpace(f.ID) == "" {
+		return ErrMissingFolderID
+	}
+	if strings.TrimSpace(f.Name) == "" {
+		return ErrMissingFolderName
+	}
+	return nil
 }
