@@ -702,13 +702,22 @@ func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimens
 	)
 }
 
+// layoutExplorer 采用轻量数据库客户端布局：对象导航在左，所选对象结构在右。
 func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-		layout.Flexed(0.24, func(gtx layout.Context) layout.Dimensions { return s.panel(gtx, s.layoutDatabasePanel) }),
+		layout.Flexed(0.40, func(gtx layout.Context) layout.Dimensions {
+			return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Flexed(0.42, s.layoutDatabasePanel),
+					layout.Rigid(layout.Divider{Color: color.NRGBA{R: 226, G: 231, B: 239, A: 255}, Thickness: unit.Dp(1)}.Layout),
+					layout.Flexed(0.58, s.layoutTablePanel),
+				)
+			})
+		}),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
-		layout.Flexed(0.34, func(gtx layout.Context) layout.Dimensions { return s.panel(gtx, s.layoutTablePanel) }),
-		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
-		layout.Flexed(0.42, func(gtx layout.Context) layout.Dimensions { return s.panel(gtx, s.layoutSchemaPanel) }),
+		layout.Flexed(0.60, func(gtx layout.Context) layout.Dimensions {
+			return s.panel(gtx, s.layoutSchemaPanel)
+		}),
 	)
 }
 
