@@ -48,7 +48,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						button := material.Button(theme, &v.refresh, "刷新")
 						button.TextSize = unit.Sp(12)
-						if v.refresh.Clicked() && v.onRefresh != nil {
+						if v.refresh.Clicked(gtx) && v.onRefresh != nil {
 							v.onRefresh()
 						}
 						return button.Layout(gtx)
@@ -73,7 +73,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					click = new(widget.Clickable)
 					v.rows[item.ID] = click
 				}
-				if click.Clicked() {
+				if click.Clicked(gtx) {
 					v.model.Select(item.ID)
 					if v.onSelect != nil {
 						v.onSelect(item)
