@@ -187,3 +187,14 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 提供连接列表快照、选中连接、加载 / 保存 / 测试状态、错误状态，以及 Reload / Select / Save / Delete / Test 操作；耗时服务调用在状态锁外执行，列表刷新通过序号避免较早请求覆盖较新结果。
 - 增加纯逻辑测试，覆盖列表加载、选择校验、保存与删除后的状态更新、错误传播。
 - 这是新 GUI 的连接功能状态层，尚未接入 Gio 布局与事件循环；旧单体 `window.go` 仍为当前运行界面，不能计为连接管理 GUI 重写完成。
+
+
+### 新 Gio 入口与连接 / 数据库浏览接线（2026-11-24）
+
+- cmd/meteor-ch-gio 已从旧 internal/app.NewDefaultService 切换为 internal/bootstrap.NewDefault，窗口改为调用独立的新架构 internal/gui/gioapp/app.Run；退出时统一关闭新连接池。
+- 新 Gio 工作区已挂载连接侧栏状态模型与视图，支持加载本地连接、选择连接、连通性测试、读取数据库列表，以及读取指定数据库的表 / 视图列表。
+- 连接和数据库加载使用请求序号校验，旧请求即使在相同连接 / 数据库重复选择场景下返回，也不会覆盖当前界面状态。
+- 切换连接或数据库时取消前一个请求；结果队列满时丢弃已失效结果，避免后台 goroutine 因窗口退出而永久阻塞。
+- 本次只接通连接与数据库对象浏览基础流程；连接编辑表单、表字段 / DDL 详情、SQL 编辑器与结果集仍未接入新工作区。
+- 旧 internal/gui/gioapp/window.go 仍保留为旧实现代码，但新桌面入口不再调用旧 internal/app.Service；后续应按模块补齐新界面，再删除旧窗口与旧业务运行时代码。
+- 当前环境仍未执行本地 gofmt、go test ./...、go vet ./... 或 go build ./cmd/meteor-ch-gio；需要本地完整编译验证 Gio API 和包间类型兼容性。
