@@ -39,6 +39,11 @@ type schemaResult struct {
 	err error
 }
 
+type saveResult struct {
+	item connection.Connection
+	err error
+}
+
 type connectionCheck struct {
 	seq uint64
 	id string
@@ -70,6 +75,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		connections: model,
 		theme: material.NewTheme(),
 		checkResults: make(chan connectionCheck, 4),
+		saveResults: make(chan saveResult, 2),
 		objectResults: make(chan objectsResult, 8),
 		schemaResults: make(chan schemaResult, 4),
 		databaseClicks: make(map[string]*widget.Clickable),
@@ -82,6 +88,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 	if err != nil {
 		return err
 	}
+	state.connectionView.SetOnSave(state.saveConnection)
 	go state.reloadConnections()
 
 	var ops op.Ops
@@ -109,6 +116,7 @@ type workspace struct {
 	connectionView *connectionui.View
 	theme *material.Theme
 	checkResults chan connectionCheck
+	saveResults chan saveResult
 	objectResults chan objectsResult
 	schemaResults chan schemaResult
 	databaseClicks map[string]*widget.Clickable
@@ -132,6 +140,20 @@ type workspace struct {
 	status string
 	requestSeq uint64
 	cancelRequest context.CancelFunc
+}
+
+func (s *workspace) saveConnection(item connection.Connection) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		saved, err := s.connections.Save(ctx, item)
+		result := saveResult{item: saved, err: err}
+		select {
+		case s.saveResults <- result:
+		default:
+		}
+		s.window.Invalidate()
+	}()
 }
 
 func (s *workspace) reloadConnections() {
@@ -212,6 +234,13 @@ func (s *workspace) selectDatabase(name string) {
 func (s *workspace) drainResults() {
 	for {
 		select {
+		case result := <-s.saveResults:
+			if result.err != nil {
+				s.status = "保存连接失败：" + result.err.Error()
+				continue
+			}
+			s.status = "连接已保存，正在测试连接…"
+			s.selectConnection(result.item)
 		case result := <-s.checkResults:
 			if result.seq != s.requestSeq || result.id != s.selectedID {
 				continue
