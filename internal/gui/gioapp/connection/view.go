@@ -313,6 +313,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 				click := v.rows[item.ID]
 				if click == nil { click = new(widget.Clickable); v.rows[item.ID] = click }
 				if v.folderMove[item.ID] == nil { v.folderMove[item.ID] = new(widget.Clickable) }
+				if v.rowTest[item.ID] == nil { v.rowTest[item.ID] = new(widget.Clickable) }
 				if v.rowEdit[item.ID] == nil { v.rowEdit[item.ID] = new(widget.Clickable) }
 				if v.rowDelete[item.ID] == nil { v.rowDelete[item.ID] = new(widget.Clickable) }
 				return layout.Inset{Top:unit.Dp(2),Bottom:unit.Dp(2),Left:unit.Dp(6),Right:unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
