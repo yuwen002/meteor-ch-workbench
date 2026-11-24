@@ -4,11 +4,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"image/color"
 	"strings"
 	"time"
 
 	gio "gioui.org/app"
+	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -175,6 +177,7 @@ type workspace struct {
 	queryCellClicks map[string]*widget.Clickable
 	selectedQueryCell *queryCellSelection
 	queryDetailClose widget.Clickable
+	queryDetailCopy widget.Clickable
 	queryRun widget.Clickable
 	queryCancel widget.Clickable
 	querySeq uint64
@@ -483,12 +486,21 @@ func (s *workspace) layoutQueryCellDetail(gtx layout.Context) layout.Dimensions 
 	selection := s.selectedQueryCell
 	if selection == nil { return layout.Dimensions{} }
 	if s.queryDetailClose.Clicked(gtx) { s.clearQueryCellSelection(); return layout.Dimensions{} }
+	if s.queryDetailCopy.Clicked(gtx) {
+		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(selection.value))})
+		s.queryStatus = "已请求复制完整单元格内容"
+	}
 	lines := strings.Split(selection.value, "\n")
 	return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, material.Body2(s.theme, fmt.Sprintf("完整值 · 第 %d 行 · %s · %s", selection.row, selection.column.Name, selection.column.DatabaseType)).Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						button := material.Button(s.theme, &s.queryDetailCopy, "复制完整值")
+						button.TextSize = unit.Sp(12)
+						return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, button.Layout)
+					}),
 					layout.Rigid(material.Button(s.theme, &s.queryDetailClose, "关闭").Layout),
 				)
 			}),
