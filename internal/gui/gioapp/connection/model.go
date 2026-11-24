@@ -36,6 +36,7 @@ type Model struct {
 	testingID  string
 	err        string
 	loadSeq    uint64
+	testSeq    uint64
 }
 
 func NewModel(service Service) (*Model, error) {
@@ -150,10 +151,8 @@ func (m *Model) Delete(ctx context.Context, id string) error {
 
 func (m *Model) Test(ctx context.Context, item domain.Connection) error {
 	m.mu.Lock()
-	if m.testingID != "" {
-		m.mu.Unlock()
-		return errors.New("已有连接测试正在进行")
-	}
+	m.testSeq++
+	seq := m.testSeq
 	m.testingID = item.ID
 	m.err = ""
 	m.mu.Unlock()
@@ -161,9 +160,11 @@ func (m *Model) Test(ctx context.Context, item domain.Connection) error {
 	err := m.service.Test(ctx, item)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.testingID = ""
-	if err != nil {
-		m.err = err.Error()
+	if seq == m.testSeq {
+		m.testingID = ""
+		if err != nil {
+			m.err = err.Error()
+		}
 	}
 	return err
 }
