@@ -2,6 +2,8 @@ package app
 
 import (
 	"testing"
+	"strings"
+	"unicode/utf8"
 
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 )
@@ -57,5 +59,25 @@ func TestResultColumnFlexWeightsHandlesMissingCellsAndEmptyRows(t *testing.T) {
 	}
 	if got[0] < 10 || got[1] < 10 {
 		t.Fatalf("weights should respect minimum width: %#v", got)
+	}
+}
+
+func TestFormatResultCellHandlesNullAndMultilineValues(t *testing.T) {
+	if got := formatResultCell(nil); got != "NULL" {
+		t.Fatalf("NULL cell = %q, want NULL", got)
+	}
+	if got := formatResultCell("first\\nsecond"); got != "first ↵ second" {
+		t.Fatalf("multiline cell = %q, want visible line break marker", got)
+	}
+}
+
+func TestFormatResultCellTruncatesByUnicodeRunes(t *testing.T) {
+	value := strings.Repeat("界", maxResultCellRunes+10)
+	got := formatResultCell(value)
+	if utf8.RuneCountInString(got) != maxResultCellRunes {
+		t.Fatalf("formatted rune count = %d, want %d", utf8.RuneCountInString(got), maxResultCellRunes)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("truncated cell should end with ellipsis: %q", got)
 	}
 }
