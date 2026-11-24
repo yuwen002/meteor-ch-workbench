@@ -4,6 +4,7 @@ package app
 import (
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	"gioui.org/widget"
+	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
 
 type sqlTabState struct {
@@ -51,6 +52,7 @@ func (s *workspace) closeSQLTab(index int) {
 
 	oldActive := s.activeSQLTab
 	s.sqlTabs = append(s.sqlTabs[:index], s.sqlTabs[index+1:]...)
+	s.sqlTabIDs, _ = workspaceui.RemoveAt(s.sqlTabIDs, index)
 	s.sqlTabClicks = append(s.sqlTabClicks[:index], s.sqlTabClicks[index+1:]...)
 	s.sqlTabCloseClicks = append(s.sqlTabCloseClicks[:index], s.sqlTabCloseClicks[index+1:]...)
 
