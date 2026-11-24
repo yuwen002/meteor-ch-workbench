@@ -584,6 +584,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(0.58,func(gtx layout.Context) layout.Dimensions {
 					if len(s.queryColumns)==0 { return material.Body2(s.theme,"暂无查询结果").Layout(gtx) }
 					columnWeights := resultColumnFlexWeights(s.queryColumns, s.queryData, 40)
+					if len(s.queryCellClicks) > 4096 { s.queryCellClicks = make(map[string]*widget.Clickable) }
 					columnWidths := make([]int, len(columnWeights))
 					totalWidth := 0
 					for i, weight := range columnWeights {
@@ -615,8 +616,9 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								if s.selectedQueryCell == nil { return layout.Dimensions{} }
-								return s.layoutQueryCellDetail(gtx)
-							}),
+							gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(112)), gtx.Dp(unit.Dp(112))
+							return s.layoutQueryCellDetail(gtx)
+						}),
 							layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
 								return material.List(s.theme,&s.queryRows).Layout(gtx,len(s.queryData),func(gtx layout.Context,index int) layout.Dimensions {
 									row:=s.queryData[index]
