@@ -72,35 +72,44 @@ func (r *MetadataReader) listObjects(ctx context.Context, item connection.Connec
 
 func (r *MetadataReader) GetTableSchema(ctx context.Context, item connection.Connection, database, table string) ([]appmetadata.Column, error) {
 	db, err := r.db(item)
-	if err != nil { return nil, err }
-	statement := "DESCRIBE TABLE " + quoteIdentifier(database) + "." + quoteIdentifier(table)
-	rows, err := db.QueryContext(ctx, statement)
-	if err != nil { return nil, fmt.Errorf("读取表 %s.%s 结构: %w", database, table, err) }
+	if err != nil {
+		return nil, err
+	}
+
+	// ClickHouse 22.5 的 DESCRIBE TABLE 不保证返回主键标记；
+	// system.columns 同时提供字段默认值、注释和 is_in_primary_key。
+	const statement = "SELECT name, type, default_kind, default_expression, comment, is_in_primary_key FROM system.columns WHERE database = ? AND table = ? ORDER BY position"
+	rows, err := db.QueryContext(ctx, statement, database, table)
+	if err != nil {
+		return nil, fmt.Errorf("读取表 %s.%s 结构: %w", database, table, err)
+	}
 	defer rows.Close()
-	names, err := rows.Columns()
-	if err != nil { return nil, fmt.Errorf("读取表结构列信息: %w", err) }
+
 	result := make([]appmetadata.Column, 0)
 	for rows.Next() {
-		if err := ctx.Err(); err != nil { return nil, err }
-		values := make([]any, len(names))
-		destinations := make([]any, len(names))
-		for i := range values { destinations[i] = &values[i] }
-		if err := rows.Scan(destinations...); err != nil { return nil, fmt.Errorf("读取字段定义: %w", err) }
-		column := appmetadata.Column{}
-		for i, name := range names {
-			switch name {
-			case "name": column.Name = metadataString(values[i])
-			case "type": column.Type = metadataString(values[i])
-			case "comment": column.Comment = metadataString(values[i])
-			case "is_in_primary_key", "primary_key":
-				column.IsPrimary = column.IsPrimary || metadataTruthy(values[i])
-			case "default_type", "default_kind", "default_expression":
-				column.HasDefault = column.HasDefault || metadataString(values[i]) != ""
-			}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
+		var column appmetadata.Column
+		var defaultKind, defaultExpression string
+		var isPrimary any
+		if err := rows.Scan(
+			&column.Name,
+			&column.Type,
+			&defaultKind,
+			&defaultExpression,
+			&column.Comment,
+			&isPrimary,
+		); err != nil {
+			return nil, fmt.Errorf("读取字段定义: %w", err)
+		}
+		column.HasDefault = defaultKind != "" || defaultExpression != ""
+		column.IsPrimary = metadataTruthy(isPrimary)
 		result = append(result, column)
 	}
-	if err := rows.Err(); err != nil { return nil, fmt.Errorf("遍历字段定义: %w", err) }
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历字段定义: %w", err)
+	}
 	return result, nil
 }
 
