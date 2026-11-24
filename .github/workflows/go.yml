@@ -20,11 +20,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Gio Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev libxrandr-dev libxcursor-dev libxinerama-dev libxi-dev libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Download Go modules
+        run: |
+          go mod download all
+          grep '^gioui.org/x ' go.sum || true
 
       - name: Run tests
         run: go test ./...
