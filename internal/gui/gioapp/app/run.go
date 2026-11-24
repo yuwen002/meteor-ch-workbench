@@ -468,9 +468,17 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								children=append(children,layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									click:=s.sqlTabClicks[index]
 									if click.Clicked(gtx) && index!=s.activeSQLTab {
-										s.sqlTabTexts[s.activeSQLTab]=s.queryEditor.Text()
+										current := s.sqlTabStates[s.activeSQLTab]
+										current.Text = s.queryEditor.Text()
+										current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
+										s.sqlTabStates[s.activeSQLTab] = current
+										s.sqlTabTexts[s.activeSQLTab] = current.Text
 										s.activeSQLTab=index
-										s.queryEditor.SetText(s.sqlTabTexts[index])
+										next := s.sqlTabStates[index]
+										s.queryEditor.SetText(next.Text)
+										s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
+										s.queryRunning = false
+										s.queryCancelFunc = nil
 									}
 									if index==s.activeSQLTab { label="● "+name }
 									button:=material.Button(s.theme,click,label); button.TextSize=unit.Sp(12)
@@ -481,10 +489,16 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if s.sqlNewTab.Clicked(gtx) {
-								s.sqlTabTexts[s.activeSQLTab]=s.queryEditor.Text()
+								current := s.sqlTabStates[s.activeSQLTab]
+								current.Text = s.queryEditor.Text()
+								current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
+								s.sqlTabStates[s.activeSQLTab] = current
+								s.sqlTabTexts[s.activeSQLTab] = current.Text
 								s.sqlTabs=append(s.sqlTabs,fmt.Sprintf("查询 %d",len(s.sqlTabs)+1))
 								s.activeSQLTab=len(s.sqlTabs)-1
+								s.sqlTabStates[s.activeSQLTab] = sqlTabState{Status:"新查询标签页已创建"}
 								s.queryEditor.SetText("")
+								s.queryColumns, s.queryData = nil, nil
 								s.queryStatus="新查询标签页已创建"
 							}
 							button:=material.Button(s.theme,&s.sqlNewTab,"＋"); button.TextSize=unit.Sp(12)
