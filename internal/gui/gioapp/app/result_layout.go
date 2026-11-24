@@ -43,6 +43,19 @@ func resultColumnFlexWeights(columns []queryapp.Column, rows [][]any, sampleRows
 
 const maxResultCellRunes = 80
 
+// resultCellRawValue 返回单元格的完整值，不进行截断或换行替换。
+func resultCellRawValue(value any) string {
+	if value == nil { return "NULL" }
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
 // formatResultCell 将数据库值转换为紧凑、可读的单元格文本。
 func formatResultCell(value any) string {
 	if value == nil {
