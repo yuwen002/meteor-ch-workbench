@@ -4,8 +4,9 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
+	"image"
 	"image/color"
+	"io"
 	"strings"
 	"time"
 
