@@ -282,22 +282,29 @@ func (s *workspace) drainResults() {
 }
 
 func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(s.layoutTopBar),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14), Top: unit.Dp(12), Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints.Min.X = gtx.Dp(unit.Dp(250))
-						gtx.Constraints.Max.X = gtx.Dp(unit.Dp(290))
-						return s.connectionView.Layout(gtx, s.theme)
-					}),
-					layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
-					layout.Flexed(1, s.layoutExplorer),
-				)
-			})
+	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(s.layoutTopBar),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14), Top: unit.Dp(12), Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								gtx.Constraints.Min.X = gtx.Dp(unit.Dp(250))
+								gtx.Constraints.Max.X = gtx.Dp(unit.Dp(290))
+								return s.connectionView.Layout(gtx, s.theme)
+							}),
+							layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
+							layout.Flexed(1, s.layoutExplorer),
+						)
+					})
+				}),
+				layout.Rigid(s.layoutStatusBar),
+			)
 		}),
-		layout.Rigid(s.layoutStatusBar),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return s.connectionView.Modal(gtx, s.theme)
+		}),
 	)
 }
 
