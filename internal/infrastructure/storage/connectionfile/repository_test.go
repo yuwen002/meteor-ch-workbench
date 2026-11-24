@@ -82,13 +82,16 @@ func TestRepositoryRejectsDuplicateIDs(t *testing.T) {
 
 func TestImportLegacyJSON(t *testing.T) {
 	repo, _ := testRepository(t)
-	raw := []byte(`{"folders":[],"connections":[{"id":"old-1","name":"Legacy","host":"db.local","port":9000,"user":"default","password":"secret"}]}`)
+	raw := []byte(`{"folders":[{"id":"folder-old","name":"生产环境"}],"connections":[{"id":"old-1","folder_id":"folder-old","name":"Legacy","host":"db.local","port":9000,"user":"default","password":"secret"}]}`)
 	count, err := repo.ImportLegacyJSON(context.Background(), raw)
 	if err != nil { t.Fatal(err) }
 	if count != 1 { t.Fatalf("导入数量=%d", count) }
 	items, err := repo.List(context.Background())
 	if err != nil { t.Fatal(err) }
-	if len(items) != 1 || items[0].Protocol != connection.ProtocolNative || items[0].Password != "secret" { t.Fatalf("迁移结果不正确: %+v", items) }
+	if len(items) != 1 || items[0].Protocol != connection.ProtocolNative || items[0].Password != "secret" || items[0].FolderID != "folder-old" { t.Fatalf("迁移结果不正确: %+v", items) }
+	folders, err := repo.ListFolders(context.Background())
+	if err != nil { t.Fatal(err) }
+	if len(folders) != 1 || folders[0] != (connection.Folder{ID:"folder-old", Name:"生产环境"}) { t.Fatalf("旧分组未完整迁移: %+v", folders) }
 }
 
 func TestImportLegacyJSONIsAtomicOnInvalidEntry(t *testing.T) {
@@ -107,4 +110,31 @@ func TestRandomIDGenerator(t *testing.T) {
 	second, err := g.NewID()
 	if err != nil { t.Fatal(err) }
 	if len(first) != 32 || first == second { t.Fatalf("随机 ID 不符合预期: %q %q", first, second) }
+}
+
+
+func TestRepositorySaveListAndDeleteFolder(t *testing.T) {
+	repo, _ := testRepository(t)
+	ctx := context.Background()
+	folder := connection.Folder{ID:"folder-1", Name:"生产环境"}
+	if err := repo.SaveFolder(ctx, folder); err != nil { t.Fatal(err) }
+	item := sampleConnection("conn-1")
+	item.FolderID = folder.ID
+	if err := repo.Save(ctx, item); err != nil { t.Fatal(err) }
+	folder.Name = "分析环境"
+	if err := repo.SaveFolder(ctx, folder); err != nil { t.Fatal(err) }
+	folders, err := repo.ListFolders(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(folders) != 1 || folders[0] != folder { t.Fatalf("分组保存或重命名失败: %+v", folders) }
+	if err := repo.DeleteFolder(ctx, folder.ID); err != nil { t.Fatal(err) }
+	folders, err = repo.ListFolders(ctx)
+	if err != nil { t.Fatal(err) }
+	items, err := repo.List(ctx)
+	if err != nil { t.Fatal(err) }
+	if len(folders) != 0 || len(items) != 1 || items[0].FolderID != "" {
+		t.Fatalf("删除分组后应保留连接并移回根级，folders=%+v connections=%+v", folders, items)
+	}
+	if err := repo.DeleteFolder(ctx, "missing"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("删除不存在分组应返回 os.ErrNotExist，得到 %v", err)
+	}
 }
