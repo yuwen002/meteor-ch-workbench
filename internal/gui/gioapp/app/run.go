@@ -61,6 +61,8 @@ type sqlTabState struct {
 	Status string
 }
 
+type deleteResult struct { id string; err error }
+
 type saveResult struct {
 	item connection.Connection
 	err error
@@ -98,6 +100,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		theme: material.NewTheme(),
 		checkResults: make(chan connectionCheck, 4),
 		saveResults: make(chan saveResult, 2),
+		deleteResults: make(chan deleteResult, 4),
 		objectResults: make(chan objectsResult, 8),
 		schemaResults: make(chan schemaResult, 4),
 		queryResults: make(chan queryEvent, 128),
@@ -116,6 +119,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		return err
 	}
 	state.connectionView.SetOnSave(state.saveConnection)
+	state.connectionView.SetOnDelete(state.deleteConnection)
 	state.queryEditor.SingleLine = false
 	go state.reloadConnections()
 
@@ -145,6 +149,7 @@ type workspace struct {
 	theme *material.Theme
 	checkResults chan connectionCheck
 	saveResults chan saveResult
+	deleteResults chan deleteResult
 	objectResults chan objectsResult
 	schemaResults chan schemaResult
 	queryResults chan queryEvent
@@ -197,6 +202,16 @@ func (s *workspace) saveConnection(item connection.Connection) {
 		case s.saveResults <- result:
 		default:
 		}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *workspace) deleteConnection(id string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err := s.connections.Delete(ctx, id)
+		select { case s.deleteResults <- deleteResult{id:id,err:err}: default: }
 		s.window.Invalidate()
 	}()
 }
@@ -286,6 +301,11 @@ func (s *workspace) drainResults() {
 			}
 			s.status = "连接已保存，正在测试连接…"
 			s.selectConnection(result.item)
+		case result := <-s.deleteResults:
+			if result.err != nil { s.status = "删除连接失败：" + result.err.Error() } else {
+				if s.selectedID == result.id { s.selectedID = ""; s.selectedName = ""; s.databases=nil; s.tables=nil; s.views=nil; s.columns=nil }
+				s.status = "连接已删除"
+			}
 		case result := <-s.checkResults:
 			if result.seq != s.requestSeq || result.id != s.selectedID {
 				continue
