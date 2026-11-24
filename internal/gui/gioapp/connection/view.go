@@ -324,6 +324,15 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			rows, orphanedCount := buildSidebarRows(snapshot.Items, snapshot.Folders, v.folderCollapsed)
+			if len(rows) == 0 {
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(material.Body1(theme, "暂无已保存连接").Layout),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+						layout.Rigid(material.Caption(theme, "点击上方“新增连接”添加 ClickHouse 数据库").Layout),
+					)
+				})
+			}
 			return material.List(theme, &v.list).Layout(gtx, len(rows), func(gtx layout.Context, index int) layout.Dimensions {
 				row := rows[index]
 				if row.folder != nil {
