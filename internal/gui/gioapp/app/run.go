@@ -74,6 +74,9 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		event := window.Event()
 		switch e := event.(type) {
 		case gio.DestroyEvent:
+			if state.cancelRequest != nil {
+				state.cancelRequest()
+			}
 			return e.Err
 		case gio.FrameEvent:
 			gtx := gio.NewContext(&ops, e)
@@ -104,14 +107,13 @@ type workspace struct {
 	loading string
 	status string
 	requestSeq uint64
+	cancelRequest context.CancelFunc
 }
 
 func (s *workspace) reloadConnections() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.connections.Reload(ctx); err != nil {
-		s.status = "读取连接列表失败：" + err.Error()
-	}
+	_ = s.connections.Reload(ctx)
 	s.window.Invalidate()
 }
 
@@ -122,10 +124,14 @@ func (s *workspace) selectConnection(item connection.Connection) {
 	s.databases = nil
 	s.tables, s.views = nil, nil
 	s.loading = "正在测试连接并读取数据库…"
+	if s.cancelRequest != nil {
+		s.cancelRequest()
+	}
 	s.requestSeq++
 	seq := s.requestSeq
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	s.cancelRequest = cancel
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		err := s.connections.Test(ctx, item)
 		var databases []string
@@ -149,10 +155,14 @@ func (s *workspace) selectDatabase(name string) {
 	s.selectedDatabase = name
 	s.tables, s.views = nil, nil
 	s.loading = "正在读取表和视图…"
+	if s.cancelRequest != nil {
+		s.cancelRequest()
+	}
 	s.requestSeq++
 	seq, connectionID := s.requestSeq, s.selectedID
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	s.cancelRequest = cancel
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		tables, err := s.services.Metadata.ListTables(ctx, connectionID, name)
 		var views []structObject
