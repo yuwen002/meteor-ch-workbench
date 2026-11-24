@@ -36,8 +36,8 @@ func (metadataConn) QueryContext(_ context.Context, statement string, args []dri
 		return &metadataRows{columns:[]string{"name","engine","comment"},values:[][]driver.Value{{"events","MergeTree","event data"}}},nil
 	case strings.Contains(statement,"system.tables") && strings.Contains(statement,"LIKE"):
 		return &metadataRows{columns:[]string{"name","engine","comment"},values:[][]driver.Value{{"active_users","View","active users"}}},nil
-	case strings.HasPrefix(statement,"DESCRIBE TABLE"):
-		return &metadataRows{columns:[]string{"name","type","default_kind","comment","is_in_primary_key"},values:[][]driver.Value{{"id","UInt64","","identifier",uint8(1)},{"created_at","DateTime","DEFAULT","",uint8(0)}}},nil
+	case strings.Contains(statement, "system.columns"):
+		return &metadataRows{columns:[]string{"name","type","default_kind","default_expression","comment","is_in_primary_key"},values:[][]driver.Value{{"id","UInt64","","","identifier",uint8(1)},{"created_at","DateTime","DEFAULT","now()","",uint8(0)}}},nil
 	case strings.Contains(statement,"create_table_query"):
 		return &metadataRows{columns:[]string{"engine","comment","create_table_query","partition_key","sorting_key","primary_key"},values:[][]driver.Value{{"MergeTree","events","CREATE TABLE events (created_at DateTime) ENGINE = MergeTree ORDER BY created_at TTL created_at + INTERVAL 7 DAY SETTINGS index_granularity = 8192","","created_at","created_at"}}},nil
 	default:
@@ -87,7 +87,12 @@ func TestMetadataReaderGetsSchemaByColumnName(t *testing.T) {
 	got,err:=reader.GetTableSchema(context.Background(),metadataConnection(),"analytics","events")
 	if err!=nil {t.Fatal(err)}
 	if len(got)!=2 || got[0].Name!="id" || got[0].Type!="UInt64" || !got[0].IsPrimary || !got[1].HasDefault {t.Fatalf("字段结构=%+v",got)}
-	if !strings.Contains(metadataLastQuery,"`analytics`.`events`") {t.Fatalf("表名没有正确引用: %s",metadataLastQuery)}
+	if !strings.Contains(metadataLastQuery, "system.columns") {
+		t.Fatalf("字段结构应从 system.columns 读取: %s", metadataLastQuery)
+	}
+	if len(metadataLastArgs) != 2 || metadataLastArgs[0].Value != "analytics" || metadataLastArgs[1].Value != "events" {
+		t.Fatalf("数据库和表名应使用参数绑定: %+v", metadataLastArgs)
+	}
 }
 
 func TestMetadataReaderGetsTableDetails(t *testing.T) {
