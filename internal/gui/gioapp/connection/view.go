@@ -125,7 +125,7 @@ func (v *View) layoutEditor(gtx layout.Context, theme *material.Theme) layout.Di
 		layout.Rigid(layout.Spacer{Height: unit.Dp(14)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, layout.Spacer{Width: unit.Dp(0)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)} }),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					button := material.Button(theme, &v.cancel, "取消")
 					button.TextSize = unit.Sp(13)
