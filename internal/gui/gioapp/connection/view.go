@@ -345,18 +345,21 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 								layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
 									button:=material.Button(theme,v.rowEdit[item.ID],"编辑")
 									button.TextSize=unit.Sp(10)
+									if v.rowEdit[item.ID].Clicked(gtx) { v.loadConnectionForm(item) }
 									return button.Layout(gtx)
 								}),
 								layout.Rigid(layout.Spacer{Width:unit.Dp(4)}.Layout),
 								layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
 									button:=material.Button(theme,v.rowDelete[item.ID],"删除")
 									button.TextSize=unit.Sp(10)
+									if v.rowDelete[item.ID].Clicked(gtx) { v.deleteConfirmID = item.ID }
 									return button.Layout(gtx)
 								}),
 								layout.Rigid(layout.Spacer{Width:unit.Dp(4)}.Layout),
 								layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
 									button:=material.Button(theme,v.folderMove[item.ID],"移动")
 									button.TextSize=unit.Sp(10)
+									if v.folderMove[item.ID].Clicked(gtx) { v.folderPickTargetID = item.ID; v.formFolderID = item.FolderID; v.folderPickerOpen = true }
 									return button.Layout(gtx)
 								}),
 								layout.Rigid(layout.Spacer{Width:unit.Dp(4)}.Layout),
@@ -365,10 +368,10 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 									if snapshot.TestingID == item.ID { label = "测试中" }
 									button := material.Button(theme, v.rowTest[item.ID], label)
 									button.TextSize = unit.Sp(10)
+									if v.rowTest[item.ID].Clicked(gtx) && v.onSelect != nil { v.onSelect(item) }
 									return button.Layout(gtx)
 								}),
 							)
-						}),
 					)
 				})
 			})
