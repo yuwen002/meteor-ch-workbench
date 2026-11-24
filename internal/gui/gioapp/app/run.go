@@ -62,6 +62,9 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		checkResults: make(chan connectionCheck, 4),
 		objectResults: make(chan objectsResult, 8),
 		databaseClicks: make(map[string]*widget.Clickable),
+		objectClicks: make(map[string]*widget.Clickable),
+		databaseList: widget.List{List: layout.List{Axis: layout.Vertical}},
+		objectList: widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	state.connectionView, err = connectionui.NewView(model, state.reloadConnections, state.selectConnection)
 	if err != nil {
@@ -96,6 +99,10 @@ type workspace struct {
 	checkResults chan connectionCheck
 	objectResults chan objectsResult
 	databaseClicks map[string]*widget.Clickable
+	objectClicks map[string]*widget.Clickable
+	refreshObjects widget.Clickable
+	refreshConnection widget.Clickable
+	selectedObject string
 	databaseList widget.List
 	objectList widget.List
 	selectedID string
@@ -212,100 +219,198 @@ func (s *workspace) drainResults() {
 
 func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(s.layoutTopBar),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14), Top: unit.Dp(12), Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints.Min.X = gtx.Dp(unit.Dp(250))
+						gtx.Constraints.Max.X = gtx.Dp(unit.Dp(290))
+						return s.connectionView.Layout(gtx, s.theme)
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
+					layout.Flexed(1, s.layoutExplorer),
+				)
+			})
+		}),
+		layout.Rigid(s.layoutStatusBar),
+	)
+}
+
+func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20), Top: unit.Dp(14), Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(material.H6(s.theme, "Meteor CH Workbench").Layout),
+					layout.Rigid(material.Caption(s.theme, "ClickHouse 原生数据工作台").Layout),
+				)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				label := "未连接"
+				if s.selectedName != "" {
+					label = "当前连接 · " + s.selectedName
+				}
+				return material.Body2(s.theme, label).Layout(gtx)
+			}),
+		)
+	})
+}
+
+func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(18), Right: unit.Dp(18), Top: unit.Dp(8), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		message := s.status
+		if s.loading != "" {
+			message = s.loading
+		}
+		if message == "" {
+			message = "就绪 · 选择连接并打开数据库"
+		}
+		return material.Caption(s.theme, message).Layout(gtx)
+	})
+}
+
+func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: 16, Right: 16, Top: 12, Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return material.H6(s.theme, "Meteor CH Workbench").Layout(gtx)
+			return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						title := "数据库浏览"
+						if s.selectedName != "" {
+							title = s.selectedName
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(material.H6(s.theme, title).Layout),
+							layout.Rigid(material.Caption(s.theme, "选择数据库后查看表、视图及对象信息").Layout),
+						)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if s.refreshConnection.Clicked() && s.selectedID != "" {
+							for _, item := range s.connections.Snapshot().Items {
+								if item.ID == s.selectedID {
+									s.selectConnection(item)
+									break
+								}
+							}
+						}
+						button := material.OutlinedButton(s.theme, &s.refreshConnection, "刷新连接")
+						button.TextSize = unit.Sp(12)
+						return button.Layout(gtx)
+					}),
+				)
 			})
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: 12, Right: 12, Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layout.Constrain(gtx, func(gtx layout.Context) layout.Dimensions {
-							gtx.Constraints.Min.X = gtx.Dp(unit.Dp(260))
-							gtx.Constraints.Max.X = gtx.Dp(unit.Dp(320))
-							return s.connectionView.Layout(gtx, s.theme)
-						})
-					})
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Spacer{Width: unit.Dp(1)}.Layout(gtx)
-				}),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: 20, Right: 20, Top: 12, Bottom: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(material.Subtitle1(s.theme, "数据库浏览").Layout),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								label := "选择左侧连接以浏览数据库"
-								if s.selectedName != "" {
-									label = "连接：" + s.selectedName
-								}
-								return material.Body2(s.theme, label).Layout(gtx)
-							}),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if s.loading != "" {
-									return material.Caption(s.theme, s.loading).Layout(gtx)
-								}
-								return layout.Dimensions{}
-							}),
-							layout.Flexed(1, s.layoutDatabaseAndObjects),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return material.Caption(s.theme, s.status).Layout(gtx)
-							}),
-						)
-					})
-				}),
+				layout.Flexed(0.34, s.layoutDatabasePanel),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
+				layout.Flexed(0.66, s.layoutObjectsPanel),
 			)
 		}),
 	)
 }
 
-func (s *workspace) layoutDatabaseAndObjects(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-		layout.Flexed(0.38, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(material.Body1(s.theme, "数据库").Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return material.List(s.theme, &s.databaseList).Layout(gtx, len(s.databases), func(gtx layout.Context, index int) layout.Dimensions {
-						name := s.databases[index]
-						click := s.databaseClicks[name]
-						if click == nil {
-							click = new(widget.Clickable)
-							s.databaseClicks[name] = click
-						}
-						if click.Clicked(gtx) {
-							s.selectDatabase(name)
-						}
-						return layout.Inset{Top: 3, Bottom: 3, Left: 4, Right: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								label := name
-								if name == s.selectedDatabase {
-									label = "● " + label
-								}
-								return material.Body2(s.theme, label).Layout(gtx)
-							})
+func (s *workspace) layoutDatabasePanel(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, material.Subtitle1(s.theme, "数据库").Layout),
+					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d", len(s.databases))).Layout),
+				)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				if s.selectedID == "" {
+					return material.Body2(s.theme, "先从左侧选择一个连接").Layout(gtx)
+				}
+				if len(s.databases) == 0 && s.loading == "" {
+					return material.Body2(s.theme, "没有数据库，或尚未加载").Layout(gtx)
+				}
+				return material.List(s.theme, &s.databaseList).Layout(gtx, len(s.databases), func(gtx layout.Context, index int) layout.Dimensions {
+					name := s.databases[index]
+					click := s.databaseClicks[name]
+					if click == nil {
+						click = new(widget.Clickable)
+						s.databaseClicks[name] = click
+					}
+					if click.Clicked(gtx) {
+						s.selectDatabase(name)
+					}
+					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							label := "▸  " + name
+							if name == s.selectedDatabase {
+								label = "▾  " + name
+							}
+							return material.Body2(s.theme, label).Layout(gtx)
 						})
 					})
-				}),
-			)
-		}),
-		layout.Rigid(layout.Spacer{Width: unit.Dp(16)}.Layout),
-		layout.Flexed(0.62, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(material.Body1(s.theme, "表与视图").Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					items := make([]string, 0, len(s.tables)+len(s.views))
-					for _, item := range s.tables {
-						items = append(items, "表  ·  "+item.Name+"  ("+item.Engine+")")
+				})
+			}),
+		)
+	})
+}
+
+func (s *workspace) layoutObjectsPanel(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, material.Subtitle1(s.theme, "表与视图").Layout),
+					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d 张表 · %d 个视图", len(s.tables), len(s.views))).Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if s.refreshObjects.Clicked() && s.selectedDatabase != "" {
+							s.selectDatabase(s.selectedDatabase)
+						}
+						button := material.OutlinedButton(s.theme, &s.refreshObjects, "刷新")
+						button.TextSize = unit.Sp(12)
+						return button.Layout(gtx)
+					}),
+				)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				if s.selectedDatabase == "" {
+					return material.Body2(s.theme, "选择左侧数据库以加载对象").Layout(gtx)
+				}
+				items := make([]structObject, 0, len(s.tables)+len(s.views))
+				items = append(items, s.tables...)
+				items = append(items, s.views...)
+				if len(items) == 0 && s.loading == "" {
+					return material.Body2(s.theme, "该数据库没有可显示的表或视图").Layout(gtx)
+				}
+				return material.List(s.theme, &s.objectList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
+					item := items[index]
+					key := s.selectedDatabase + "." + item.Name
+					click := s.objectClicks[key]
+					if click == nil {
+						click = new(widget.Clickable)
+						s.objectClicks[key] = click
 					}
-					for _, item := range s.views {
-						items = append(items, "视图  ·  "+item.Name)
+					if click.Clicked(gtx) {
+						s.selectedObject = key
+						s.status = "已选择对象：" + item.Name
 					}
-					return material.List(s.theme, &s.objectList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
-						return layout.Inset{Top: 4, Bottom: 4}.Layout(gtx, material.Body2(s.theme, items[index]).Layout)
+					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							kind := "表"
+							if index >= len(s.tables) {
+								kind = "视图"
+							}
+							title := item.Name
+							if key == s.selectedObject {
+								title = "● " + title
+							}
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(material.Body1(s.theme, title).Layout),
+								layout.Rigid(material.Caption(s.theme, kind+" · "+item.Engine).Layout),
+							)
+						})
 					})
-				}),
-			)
-		}),
-	)
+				})
+			}),
+		)
+	})
 }
