@@ -141,9 +141,8 @@ func (s *workspace) selectConnection(item connection.Connection) {
 		select {
 		case s.checkResults <- connectionCheck{seq: seq, id: item.ID, databases: databases, err: err}:
 		default:
-			s.checkResults <- connectionCheck{seq: seq, id: item.ID, databases: databases, err: err}
+			// 新请求会使旧结果失效；队列满时丢弃即可，避免窗口退出后阻塞后台 goroutine。
 		}
-		_ = seq
 		s.window.Invalidate()
 	}()
 }
@@ -173,9 +172,8 @@ func (s *workspace) selectDatabase(name string) {
 		select {
 		case s.objectResults <- result:
 		default:
-			s.objectResults <- result
+			// 数据库切换时旧结果已失效，队列满时不阻塞后台请求。
 		}
-		_ = seq
 		s.window.Invalidate()
 	}()
 }
