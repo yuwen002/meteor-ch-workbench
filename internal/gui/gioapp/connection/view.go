@@ -31,6 +31,7 @@ func nextFolderID(folders []domain.Folder, current string) string {
 type View struct {
 	model     *Model
 	list      widget.List
+	folderPickerList widget.List
 	refresh   widget.Clickable
 	rows      map[string]*widget.Clickable
 	onRefresh func()
@@ -85,6 +86,7 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 	view := &View{
 		model: model,
 		list: widget.List{List: layout.List{Axis: layout.Vertical}},
+		folderPickerList: widget.List{List: layout.List{Axis: layout.Vertical}},
 		rows: make(map[string]*widget.Clickable),
 		folderCollapsed: make(map[string]bool),
 		folderRename: make(map[string]*widget.Clickable),
@@ -444,7 +446,7 @@ func (v *View) folderPickerModal(gtx layout.Context, theme *material.Theme) layo
      layout.Rigid(material.H6(theme,"选择所属分组").Layout),
      layout.Rigid(layout.Spacer{Height:unit.Dp(8)}.Layout),
      layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
-      return material.List(theme,&widget.List{List:layout.List{Axis:layout.Vertical}}).Layout(gtx,len(snapshot.Folders)+1,func(gtx layout.Context,index int) layout.Dimensions {
+      return material.List(theme,&v.folderPickerList).Layout(gtx,len(snapshot.Folders)+1,func(gtx layout.Context,index int) layout.Dimensions {
        key,label:="","未分组"
        if index>0 { folder:=snapshot.Folders[index-1]; key=folder.ID; label=folder.Name }
        if v.folderPickOptions[key]==nil { v.folderPickOptions[key]=new(widget.Clickable) }
