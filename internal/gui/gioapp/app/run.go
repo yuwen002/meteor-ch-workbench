@@ -507,7 +507,6 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 					)
 				}),
 				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
-				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
 				layout.Flexed(0.42,func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top:unit.Dp(8), Bottom:unit.Dp(8), Left:unit.Dp(8), Right:unit.Dp(8)}.Layout(gtx,material.Editor(s.theme,&s.queryEditor,"输入 SQL，例如 SELECT 1").Layout)
 				}),
@@ -518,24 +517,37 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Flexed(0.58,func(gtx layout.Context) layout.Dimensions {
 					if len(s.queryColumns)==0 { return material.Body2(s.theme,"暂无查询结果").Layout(gtx) }
-					return material.List(s.theme,&s.queryRows).Layout(gtx,len(s.queryData)+1,func(gtx layout.Context,index int) layout.Dimensions {
-						if index==0 {
+					return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top:unit.Dp(4),Bottom:unit.Dp(6)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
 								children:=make([]layout.FlexChild,0,len(s.queryColumns))
-								for _,col:=range s.queryColumns { name:=col.Name; children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions { return material.Body2(s.theme,name).Layout(gtx) })) }
+								for _,col:=range s.queryColumns {
+									name:=col.Name
+									children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
+										return material.Body2(s.theme,name).Layout(gtx)
+									}))
+								}
 								return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
 							})
-						}
-						row:=s.queryData[index-1]
-						return layout.Inset{Top:unit.Dp(3),Bottom:unit.Dp(3)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
-							children:=make([]layout.FlexChild,0,len(s.queryColumns))
-							for i:=range s.queryColumns {
-								value:=""; if i<len(row) { value=fmt.Sprint(row[i]) }; if len(value)>80 { value=value[:77]+"…" }
-								children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions { return material.Caption(s.theme,value).Layout(gtx) }))
-							}
-							return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
-						})
-					})
+						}),
+						layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
+							return material.List(s.theme,&s.queryRows).Layout(gtx,len(s.queryData),func(gtx layout.Context,index int) layout.Dimensions {
+								row:=s.queryData[index]
+								return layout.Inset{Top:unit.Dp(3),Bottom:unit.Dp(3)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+									children:=make([]layout.FlexChild,0,len(s.queryColumns))
+									for i:=range s.queryColumns {
+										value:=""
+										if i<len(row) { value=fmt.Sprint(row[i]) }
+										if len(value)>80 { value=value[:77]+"…" }
+										children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
+											return material.Caption(s.theme,value).Layout(gtx)
+										}))
+									}
+									return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
+								})
+							})
+						}),
+					)
 				}),
 			)
 		})
