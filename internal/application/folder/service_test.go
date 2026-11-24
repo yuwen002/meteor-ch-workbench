@@ -1,0 +1,52 @@
+package folder
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+
+	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
+)
+
+type memoryRepository struct { items []connection.Folder; deleteErr error }
+func (r *memoryRepository) ListFolders(context.Context) ([]connection.Folder, error) {
+	return append([]connection.Folder(nil), r.items...), nil
+}
+func (r *memoryRepository) SaveFolder(_ context.Context, item connection.Folder) error {
+	for i := range r.items { if r.items[i].ID == item.ID { r.items[i] = item; return nil } }
+	r.items = append(r.items, item)
+	return nil
+}
+func (r *memoryRepository) DeleteFolder(_ context.Context, id string) error {
+	if r.deleteErr != nil { return r.deleteErr }
+	for i := range r.items { if r.items[i].ID == id { r.items = append(r.items[:i], r.items[i+1:]...); return nil } }
+	return errors.New("not found")
+}
+type fixedIDs struct { id string; err error }
+func (f fixedIDs) NewID() (string, error) { return f.id, f.err }
+
+func TestSaveCreatesAndRenamesFolder(t *testing.T) {
+	repo := &memoryRepository{}
+	s, err := NewService(repo, fixedIDs{id:"folder-1"})
+	if err != nil { t.Fatal(err) }
+	created, err := s.Save(context.Background(), connection.Folder{Name:"  Production "})
+	if err != nil { t.Fatal(err) }
+	if created.ID != "folder-1" || created.Name != "Production" { t.Fatalf("新建分组不正确: %+v", created) }
+	created.Name = "Analytics"
+	updated, err := s.Save(context.Background(), created)
+	if err != nil { t.Fatal(err) }
+	if updated.Name != "Analytics" || !reflect.DeepEqual(repo.items, []connection.Folder{updated}) { t.Fatalf("重命名结果不正确: %+v", repo.items) }
+}
+
+func TestSaveRejectsEmptyName(t *testing.T) {
+	s, err := NewService(&memoryRepository{}, fixedIDs{id:"folder-1"})
+	if err != nil { t.Fatal(err) }
+	if _, err := s.Save(context.Background(), connection.Folder{Name:" "}); !errors.Is(err, connection.ErrMissingFolderName) { t.Fatalf("期望分组名称校验错误，得到 %v", err) }
+}
+
+func TestDeleteRequiresID(t *testing.T) {
+	s, err := NewService(&memoryRepository{}, fixedIDs{id:"folder-1"})
+	if err != nil { t.Fatal(err) }
+	if err := s.Delete(context.Background(), " "); !errors.Is(err, connection.ErrMissingFolderID) { t.Fatalf("期望分组 ID 校验错误，得到 %v", err) }
+}
