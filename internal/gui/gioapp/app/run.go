@@ -30,12 +30,14 @@ type structObject = struct {
 }
 
 type connectionCheck struct {
+	seq uint64
 	id string
 	databases []string
 	err error
 }
 
 type objectsResult struct {
+	seq uint64
 	connectionID string
 	database string
 	tables []structObject
@@ -131,9 +133,9 @@ func (s *workspace) selectConnection(item connection.Connection) {
 			databases, err = s.services.Metadata.ListDatabases(ctx, item.ID)
 		}
 		select {
-		case s.checkResults <- connectionCheck{id: item.ID, databases: databases, err: err}:
+		case s.checkResults <- connectionCheck{seq: seq, id: item.ID, databases: databases, err: err}:
 		default:
-			s.checkResults <- connectionCheck{id: item.ID, databases: databases, err: err}
+			s.checkResults <- connectionCheck{seq: seq, id: item.ID, databases: databases, err: err}
 		}
 		_ = seq
 		s.window.Invalidate()
@@ -157,7 +159,7 @@ func (s *workspace) selectDatabase(name string) {
 		if err == nil {
 			views, err = s.services.Metadata.ListViews(ctx, connectionID, name)
 		}
-		result := objectsResult{connectionID: connectionID, database: name, tables: tables, views: views, err: err}
+		result := objectsResult{seq: seq, connectionID: connectionID, database: name, tables: tables, views: views, err: err}
 		select {
 		case s.objectResults <- result:
 		default:
@@ -172,7 +174,7 @@ func (s *workspace) drainResults() {
 	for {
 		select {
 		case result := <-s.checkResults:
-			if result.id != s.selectedID {
+			if result.seq != s.requestSeq || result.id != s.selectedID {
 				continue
 			}
 			s.loading = ""
@@ -184,7 +186,7 @@ func (s *workspace) drainResults() {
 				s.status = fmt.Sprintf("连接成功 · %d 个数据库", len(result.databases))
 			}
 		case result := <-s.objectResults:
-			if result.connectionID != s.selectedID || result.database != s.selectedDatabase {
+			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase {
 				continue
 			}
 			s.loading = ""
