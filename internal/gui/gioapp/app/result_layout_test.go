@@ -84,3 +84,23 @@ func TestFormatResultCellTruncatesByUnicodeRunes(t *testing.T) {
 		t.Fatalf("truncated cell should end with ellipsis: %q", got)
 	}
 }
+
+func TestResultCellRawValuePreservesOriginalContent(t *testing.T) {
+	cases := []struct {
+		name string
+		value any
+		want string
+	}{
+		{name: "null", value: nil, want: "NULL"},
+		{name: "multiline string", value: "first\nsecond\tthird", want: "first\nsecond\tthird"},
+		{name: "bytes", value: []byte("json:{\"ok\":true}"), want: "json:{\"ok\":true}"},
+		{name: "integer", value: int64(42), want: "42"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resultCellRawValue(tc.value); got != tc.want {
+				t.Fatalf("resultCellRawValue() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
