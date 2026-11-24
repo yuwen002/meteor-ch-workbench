@@ -173,6 +173,14 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 尚未运行本地 gofmt / go test / go vet / build；装配测试仅已编写。
 
 
+### 元数据字段来源修正与连接侧栏首个 UI 组件（2026-11-24）
+
+- 将表字段读取从 `DESCRIBE TABLE` 改为查询 `system.columns`，显式读取 `name`、`type`、`default_kind`、`default_expression`、`comment` 和 `is_in_primary_key`。
+- 该调整避免把 `DESCRIBE TABLE` 的字段集误当作包含主键标记；同时数据库名、表名改为查询参数，避免拼接用户输入。
+- fake driver 测试同步改为模拟 `system.columns` 返回，并检查数据库 / 表参数绑定以及主键、默认值标记。
+- 新增 `internal/gui/gioapp/connection/view.go`：独立 Gio 连接侧栏，展示连接名称、地址、协议和选中状态，提供刷新回调与错误 / 加载状态；点击连接更新 Model 选择并通知窗口层。
+- 侧栏目前尚未挂载到主窗口，未替换旧连接 UI；主窗口仍依赖旧服务。新视图代码和测试尚未在本地执行，仍需 gofmt、go test 和实际 Gio 窗口验收。
+
 ### 新 Gio 连接管理状态模型（2026-11-24）
 
 - 新增 `internal/gui/gioapp/connection` 状态模型，依赖新连接应用服务接口，不再引用旧 `internal/app.Service`、旧配置管理器或旧 ClickHouse 业务模型。
