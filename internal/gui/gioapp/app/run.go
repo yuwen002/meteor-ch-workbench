@@ -485,7 +485,9 @@ func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(layout.Spacer{Width: unit.Dp(28)}.Layout),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					label := "未连接 · 选择左侧连接开始工作"
-					if s.selectedName != "" { label = "●  " + s.selectedName }
+					if s.selectedName != "" && s.loading != "" { label = "◌  正在连接 · " + s.selectedName }
+					if s.connected { label = "●  已连接 · " + s.selectedName }
+					if s.selectedName != "" && s.loading == "" && !s.connected { label = "连接失败 · " + s.selectedName }
 					return material.Body2(s.theme, label).Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
