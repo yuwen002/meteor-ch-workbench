@@ -93,6 +93,8 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		objectResults: make(chan objectsResult, 8),
 		schemaResults: make(chan schemaResult, 4),
 		queryResults: make(chan queryEvent, 128),
+		sqlTabs: []string{"查询 1"},
+		sqlTabTexts: make(map[int]string),
 		queryRows: widget.List{List: layout.List{Axis: layout.Vertical}},
 		databaseClicks: make(map[string]*widget.Clickable),
 		objectClicks: make(map[string]*widget.Clickable),
@@ -138,6 +140,11 @@ type workspace struct {
 	schemaResults chan schemaResult
 	queryResults chan queryEvent
 	queryEditor widget.Editor
+	sqlTabs []string
+	sqlTabTexts map[int]string
+	sqlTabClicks []*widget.Clickable
+	sqlNewTab widget.Clickable
+	activeSQLTab int
 	queryRows widget.List
 	queryRun widget.Clickable
 	queryCancel widget.Clickable
@@ -424,6 +431,43 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 						}),
 					)
 				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+						layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
+							if len(s.sqlTabClicks)<len(s.sqlTabs) {
+								for len(s.sqlTabClicks)<len(s.sqlTabs) { s.sqlTabClicks=append(s.sqlTabClicks,new(widget.Clickable)) }
+							}
+							children:=make([]layout.FlexChild,0,len(s.sqlTabs))
+							for i,name:=range s.sqlTabs {
+								index,label:=i,name
+								children=append(children,layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									click:=s.sqlTabClicks[index]
+									if click.Clicked(gtx) && index!=s.activeSQLTab {
+										s.sqlTabTexts[s.activeSQLTab]=s.queryEditor.Text()
+										s.activeSQLTab=index
+										s.queryEditor.SetText(s.sqlTabTexts[index])
+									}
+									if index==s.activeSQLTab { label="● "+name }
+									button:=material.Button(s.theme,click,label); button.TextSize=unit.Sp(12)
+									return layout.Inset{Right:unit.Dp(6)}.Layout(gtx,button.Layout)
+								}))
+							}
+							return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if s.sqlNewTab.Clicked(gtx) {
+								s.sqlTabTexts[s.activeSQLTab]=s.queryEditor.Text()
+								s.sqlTabs=append(s.sqlTabs,fmt.Sprintf("查询 %d",len(s.sqlTabs)+1))
+								s.activeSQLTab=len(s.sqlTabs)-1
+								s.queryEditor.SetText("")
+								s.queryStatus="新查询标签页已创建"
+							}
+							button:=material.Button(s.theme,&s.sqlNewTab,"＋"); button.TextSize=unit.Sp(12)
+							return button.Layout
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
 				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
 				layout.Flexed(0.42,func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top:unit.Dp(8), Bottom:unit.Dp(8), Left:unit.Dp(8), Right:unit.Dp(8)}.Layout(gtx,material.Editor(s.theme,&s.queryEditor,"输入 SQL，例如 SELECT 1").Layout)
