@@ -4,7 +4,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"image"
 	"image/color"
 	"io"
 	"strings"
@@ -419,8 +418,9 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 									width = gtx.Dp(unit.Dp(232))
 								}
 								if width > availableWidth { width = availableWidth }
-								height := gtx.Constraints.Max.Y
-								gtx.Constraints = layout.Exact(image.Pt(width, height))
+								gtx.Constraints.Min.X = width
+								gtx.Constraints.Max.X = width
+								gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
 								return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return s.connectionView.Layout(gtx, s.theme)
