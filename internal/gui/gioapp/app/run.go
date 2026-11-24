@@ -108,6 +108,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		sqlTabTexts: make(map[int]string),
 		sqlTabStates: map[int]sqlTabState{0: {}},
 		queryRows: widget.List{List: layout.List{Axis: layout.Vertical}},
+		queryHorizontal: widget.List{List: layout.List{Axis: layout.Horizontal}},
 		databaseClicks: make(map[string]*widget.Clickable),
 		objectClicks: make(map[string]*widget.Clickable),
 		databaseList: widget.List{List: layout.List{Axis: layout.Vertical}},
@@ -161,6 +162,7 @@ type workspace struct {
 	sqlNewTab widget.Clickable
 	activeSQLTab int
 	queryRows widget.List
+	queryHorizontal widget.List
 	queryRun widget.Clickable
 	queryCancel widget.Clickable
 	querySeq uint64
@@ -538,41 +540,56 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(0.58,func(gtx layout.Context) layout.Dimensions {
 					if len(s.queryColumns)==0 { return material.Body2(s.theme,"暂无查询结果").Layout(gtx) }
 					columnWeights := resultColumnFlexWeights(s.queryColumns, s.queryData, 40)
-					return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top:unit.Dp(4),Bottom:unit.Dp(6)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
-								children:=make([]layout.FlexChild,0,len(s.queryColumns))
-								for _,col:=range s.queryColumns {
-									name, databaseType := col.Name, col.DatabaseType
-									children=append(children,layout.Flexed(columnWeights[len(children)],func(gtx layout.Context) layout.Dimensions {
-										return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
-											layout.Rigid(material.Body2(s.theme,name).Layout),
-											layout.Rigid(material.Caption(s.theme,databaseType).Layout),
-										)
-									}))
-								}
-								return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
-							})
-						}),
-						layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
-							return material.List(s.theme,&s.queryRows).Layout(gtx,len(s.queryData),func(gtx layout.Context,index int) layout.Dimensions {
-								row:=s.queryData[index]
-								return layout.Inset{Top:unit.Dp(3),Bottom:unit.Dp(3)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+					columnWidths := make([]int, len(columnWeights))
+					totalWidth := 0
+					for i, weight := range columnWeights {
+						width := int(weight * 9)
+						if width < 112 { width = 112 }
+						if width > 320 { width = 320 }
+						columnWidths[i] = gtx.Dp(unit.Dp(width))
+						totalWidth += columnWidths[i]
+					}
+					return material.List(s.theme,&s.queryHorizontal).Layout(gtx,1,func(gtx layout.Context,_ int) layout.Dimensions {
+						gtx.Constraints.Min.X = totalWidth
+						gtx.Constraints.Max.X = totalWidth
+						return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Inset{Top:unit.Dp(4),Bottom:unit.Dp(6)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
 									children:=make([]layout.FlexChild,0,len(s.queryColumns))
-									for i:=range s.queryColumns {
+									for i,col:=range s.queryColumns {
+										name,databaseType,width:=col.Name,col.DatabaseType,columnWidths[i]
+										children=append(children,layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											gtx.Constraints.Min.X,gtx.Constraints.Max.X=width,width
+											return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+												layout.Rigid(material.Body2(s.theme,name).Layout),
+												layout.Rigid(material.Caption(s.theme,databaseType).Layout),
+											)
+										}))
+									}
+									return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
+								})
+							}),
+							layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
+								return material.List(s.theme,&s.queryRows).Layout(gtx,len(s.queryData),func(gtx layout.Context,index int) layout.Dimensions {
+									row:=s.queryData[index]
+									return layout.Inset{Top:unit.Dp(3),Bottom:unit.Dp(3)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+										children:=make([]layout.FlexChild,0,len(s.queryColumns))
+										for i:=range s.queryColumns {
 										var cell any
 										if i<len(row) { cell=row[i] }
-										value:=formatResultCell(cell)
-										children=append(children,layout.Flexed(columnWeights[len(children)],func(gtx layout.Context) layout.Dimensions {
+										value,width:=formatResultCell(cell),columnWidths[i]
+										children=append(children,layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											gtx.Constraints.Min.X,gtx.Constraints.Max.X=width,width
 											return material.Caption(s.theme,value).Layout(gtx)
 										}))
 									}
 									return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
 								})
-							})
-						}),
-					)
-				}),
+								})
+							}),
+						)
+					})
+				}),),
 			)
 		})
 	})
