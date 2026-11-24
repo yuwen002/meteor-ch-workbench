@@ -174,6 +174,7 @@ type workspace struct {
 	sqlTabTexts       map[int]string
 	sqlTabStates      map[int]sqlTabState
 	sqlTabClicks      []*widget.Clickable
+	sqlTabCloseClicks []*widget.Clickable
 	sqlNewTab         widget.Clickable
 	activeSQLTab      int
 	queryRows         widget.List
@@ -736,6 +737,93 @@ func (s *workspace) layoutQueryCellDetail(gtx layout.Context) layout.Dimensions 
 	})
 }
 
+
+// closeSQLTab 关闭指定 SQL 标签；最后一个标签关闭时重置为空白查询页。
+func (s *workspace) closeSQLTab(index int) {
+	if index < 0 || index >= len(s.sqlTabs) {
+		return
+	}
+	if len(s.sqlTabClicks) < len(s.sqlTabs) {
+		for len(s.sqlTabClicks) < len(s.sqlTabs) {
+			s.sqlTabClicks = append(s.sqlTabClicks, new(widget.Clickable))
+		}
+	}
+	if len(s.sqlTabCloseClicks) < len(s.sqlTabs) {
+		for len(s.sqlTabCloseClicks) < len(s.sqlTabs) {
+			s.sqlTabCloseClicks = append(s.sqlTabCloseClicks, new(widget.Clickable))
+		}
+	}
+
+	if index == s.activeSQLTab {
+		s.cancelActiveQuery("查询已取消（关闭标签页）")
+		current := s.sqlTabStates[index]
+		current.Text = s.queryEditor.Text()
+		current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
+		s.sqlTabStates[index] = current
+		s.sqlTabTexts[index] = current.Text
+	}
+
+	if len(s.sqlTabs) == 1 {
+		s.sqlTabs[0] = "查询 1"
+		s.sqlTabTexts = map[int]string{0: ""}
+		s.sqlTabStates = map[int]sqlTabState{0: {Status: "已重置查询标签页"}}
+		s.activeSQLTab = 0
+		s.queryEditor.SetText("")
+		s.queryColumns, s.queryData = nil, nil
+		s.queryStatus = "已重置查询标签页"
+		s.clearQueryCellSelection()
+		return
+	}
+
+	oldActive := s.activeSQLTab
+	s.sqlTabs = append(s.sqlTabs[:index], s.sqlTabs[index+1:]...)
+	s.sqlTabClicks = append(s.sqlTabClicks[:index], s.sqlTabClicks[index+1:]...)
+	s.sqlTabCloseClicks = append(s.sqlTabCloseClicks[:index], s.sqlTabCloseClicks[index+1:]...)
+
+	remap := func(source map[int]sqlTabState) map[int]sqlTabState {
+		result := make(map[int]sqlTabState, len(source))
+		for oldIndex, state := range source {
+			if oldIndex == index {
+				continue
+			}
+			newIndex := oldIndex
+			if oldIndex > index {
+				newIndex--
+			}
+			result[newIndex] = state
+		}
+		return result
+	}
+	s.sqlTabStates = remap(s.sqlTabStates)
+	texts := make(map[int]string, len(s.sqlTabTexts))
+	for oldIndex, value := range s.sqlTabTexts {
+		if oldIndex == index {
+			continue
+		}
+		newIndex := oldIndex
+		if oldIndex > index {
+			newIndex--
+		}
+		texts[newIndex] = value
+	}
+	s.sqlTabTexts = texts
+
+	if oldActive > index {
+		s.activeSQLTab = oldActive - 1
+	} else if oldActive == index {
+		s.activeSQLTab = index
+		if s.activeSQLTab >= len(s.sqlTabs) {
+			s.activeSQLTab = len(s.sqlTabs) - 1
+		}
+	}
+	if oldActive == index {
+		next := s.sqlTabStates[s.activeSQLTab]
+		s.queryEditor.SetText(next.Text)
+		s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
+		s.clearQueryCellSelection()
+	}
+}
+
 func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: unit.Dp(14), Bottom: unit.Dp(12), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -765,10 +853,11 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							if len(s.sqlTabClicks) < len(s.sqlTabs) {
-								for len(s.sqlTabClicks) < len(s.sqlTabs) {
-									s.sqlTabClicks = append(s.sqlTabClicks, new(widget.Clickable))
-								}
+							for len(s.sqlTabClicks) < len(s.sqlTabs) {
+								s.sqlTabClicks = append(s.sqlTabClicks, new(widget.Clickable))
+							}
+							for len(s.sqlTabCloseClicks) < len(s.sqlTabs) {
+								s.sqlTabCloseClicks = append(s.sqlTabCloseClicks, new(widget.Clickable))
 							}
 							children := make([]layout.FlexChild, 0, len(s.sqlTabs))
 							for i, name := range s.sqlTabs {
@@ -786,22 +875,39 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 										next := s.sqlTabStates[index]
 										s.queryEditor.SetText(next.Text)
 										s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
-										s.queryRunning = false
 										s.clearQueryCellSelection()
-										s.queryCancelFunc = nil
 									}
 									if index == s.activeSQLTab {
 										label = "● " + name
 									}
-									button := material.Button(s.theme, click, label)
-									button.TextSize = unit.Sp(12)
-									return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, button.Layout)
+									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											button := material.Button(s.theme, click, label)
+											button.TextSize = unit.Sp(12)
+											return button.Layout(gtx)
+										}),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											closeClick := s.sqlTabCloseClicks[index]
+											if closeClick.Clicked(gtx) {
+												s.closeSQLTab(index)
+											}
+											closeButton := material.Button(s.theme, closeClick, "×")
+											closeButton.TextSize = unit.Sp(11)
+											closeButton.Inset = layout.Inset{Left: unit.Dp(5), Right: unit.Dp(5), Top: unit.Dp(4), Bottom: unit.Dp(4)}
+											return closeButton.Layout(gtx)
+										}),
+										layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+									)
 								}))
 							}
 							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if s.sqlNewTab.Clicked(gtx) {
+								if len(s.sqlTabs) >= 12 {
+									s.queryStatus = "查询标签页最多支持 12 个"
+									return material.Button(s.theme, &s.sqlNewTab, "＋").Layout(gtx)
+								}
 								s.cancelActiveQuery("查询已取消（新建标签页）")
 								current := s.sqlTabStates[s.activeSQLTab]
 								current.Text = s.queryEditor.Text()
