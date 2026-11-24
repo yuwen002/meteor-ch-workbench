@@ -76,7 +76,7 @@ type objectsResult struct {
 
 // Run 使用新架构服务启动 Gio 窗口，不再依赖旧 internal/app.Service。
 func Run(window *gio.Window, services *bootstrap.Services) error {
-	if services == nil || services.Connections == nil || services.Metadata == nil {
+	if services == nil || services.Connections == nil || services.Metadata == nil || services.Queries == nil {
 		return fmt.Errorf("新架构应用服务未初始化")
 	}
 	model, err := connectionui.NewModel(services.Connections)
@@ -92,7 +92,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		saveResults: make(chan saveResult, 2),
 		objectResults: make(chan objectsResult, 8),
 		schemaResults: make(chan schemaResult, 4),
-		queryResults: make(chan queryEvent, 32),
+		queryResults: make(chan queryEvent, 128),
 		queryRows: widget.List{List: layout.List{Axis: layout.Vertical}},
 		databaseClicks: make(map[string]*widget.Clickable),
 		objectClicks: make(map[string]*widget.Clickable),
@@ -106,7 +106,6 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 	}
 	state.connectionView.SetOnSave(state.saveConnection)
 	state.queryEditor.SingleLine = false
-	state.queryEditor.Wrap = true
 	go state.reloadConnections()
 
 	var ops op.Ops
@@ -397,7 +396,7 @@ func (s *workspace) executeQuery() {
 				select { case s.queryResults <- queryEvent{seq:seq,batch:batch}: return nil; case <-ctx.Done(): return ctx.Err() }
 			},
 		)
-		select { case s.queryResults <- queryEvent{seq:seq,summary:summary,err:err,done:true}: case <-ctx.Done(): }
+		s.queryResults <- queryEvent{seq:seq,summary:summary,err:err,done:true}
 		s.window.Invalidate()
 	}()
 }
