@@ -37,7 +37,7 @@ func TestMigrateLegacyConnectionsImportsSavedConnections(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacyConnectionsDoesNotOverwriteNewConfig(t *testing.T) {
+func TestMigrateLegacyConnectionsRestoresLegacyWhenNewConfigIsEmpty(t *testing.T) {
 	root := t.TempDir()
 	newDir := filepath.Join(root, "MeteorCHWorkbench")
 	legacyPath := filepath.Join(root, "meteor-ch-workbench", "connections.json")
@@ -47,7 +47,43 @@ func TestMigrateLegacyConnectionsDoesNotOverwriteNewConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	newConfig := `{"version":1,"connections":[]}`
+	newConfig := `{"version":1,"folders":[],"connections":[]}`
+	if err := os.WriteFile(filepath.Join(newDir, "connections.json"), []byte(newConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"folders":[{"id":"legacy-folder","name":"旧分组"}],"connections":[{"id":"legacy","folder_id":"legacy-folder","name":"旧连接","host":"localhost","port":9000,"protocol":"native"}]}`
+	if err := os.WriteFile(legacyPath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateLegacyConnections(newDir, legacyPath); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(newDir, "connections.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"version": 1`, "legacy-folder", "旧分组", "legacy", "旧连接"} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("恢复结果缺少 %q: %s", want, got)
+		}
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("历史配置不应被删除: %v", err)
+	}
+}
+
+func TestMigrateLegacyConnectionsDoesNotOverwriteNonEmptyNewConfig(t *testing.T) {
+	root := t.TempDir()
+	newDir := filepath.Join(root, "MeteorCHWorkbench")
+	legacyPath := filepath.Join(root, "meteor-ch-workbench", "connections.json")
+	if err := os.MkdirAll(newDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newConfig := `{"version":1,"folders":[],"connections":[{"id":"current","name":"当前连接","host":"127.0.0.1","port":9000,"protocol":"native"}]}`
 	if err := os.WriteFile(filepath.Join(newDir, "connections.json"), []byte(newConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +100,7 @@ func TestMigrateLegacyConnectionsDoesNotOverwriteNewConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(got) != newConfig {
-		t.Fatalf("新配置被覆盖: %s", got)
+		t.Fatalf("非空新配置被覆盖: %s", got)
 	}
 }
 
