@@ -335,9 +335,13 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 								return s.connectionView.Layout(gtx, s.theme)
 							}),
 							layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
-							layout.Flexed(0.56, s.layoutExplorer),
-							layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-							layout.Flexed(0.44, s.layoutQueryWorkspace),
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+									layout.Flexed(0.48, s.layoutExplorer),
+									layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+									layout.Flexed(0.52, s.layoutQueryWorkspace),
+								)
+							}),
 						)
 					})
 				}),
@@ -422,7 +426,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
 				layout.Flexed(0.42,func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{All:unit.Dp(8)}.Layout(gtx,material.Editor(s.theme,&s.queryEditor,"输入 SQL，例如 SELECT 1").Layout)
+					return layout.Inset{Top:unit.Dp(8), Bottom:unit.Dp(8), Left:unit.Dp(8), Right:unit.Dp(8)}.Layout(gtx,material.Editor(s.theme,&s.queryEditor,"输入 SQL，例如 SELECT 1").Layout)
 				}),
 				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
