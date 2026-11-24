@@ -220,39 +220,32 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-							layout.Flexed(1, material.Subtitle1(theme, "连接").Layout),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								button := material.Button(theme, &v.refresh, "刷新")
-							button.TextSize = unit.Sp(12)
-							if v.refresh.Clicked(gtx) && v.onRefresh != nil { v.onRefresh() }
-							return button.Layout(gtx)
-						}),
-						)
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return material.Subtitle1(theme, "连接").Layout(gtx)
 					}),
-					layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								button := material.Button(theme, &v.add, "＋ 新增连接")
-							button.TextSize = unit.Sp(12)
-							if v.add.Clicked(gtx) { v.resetForm(); v.formOpen = true }
-							return button.Layout(gtx)
-							}),
-							layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								button := material.Button(theme, &v.folderAdd, "新建分组")
-							button.TextSize = unit.Sp(12)
-							if v.folderAdd.Clicked(gtx) {
-								v.editingFolderID = ""
-								v.folderName.SetText("")
-								v.folderErrors = ""
-								v.folderOpen = true
-							}
-							return button.Layout(gtx)
-							}),
+						button := material.Button(theme, &v.refresh, "刷新")
+						addButton := material.Button(theme, &v.add, "新增连接")
+						folderButton := material.Button(theme, &v.folderAdd, "新建分组")
+						button.TextSize = unit.Sp(12)
+						if v.refresh.Clicked(gtx) && v.onRefresh != nil {
+							v.onRefresh()
+						}
+						if v.add.Clicked(gtx) {
+							v.resetForm()
+							v.formOpen = true
+						}
+						if v.folderAdd.Clicked(gtx) {
+							v.editingFolderID = ""
+							v.folderName.SetText("")
+							v.folderErrors = ""
+							v.folderOpen = true
+						}
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							layout.Rigid(button.Layout),
+							layout.Rigid(addButton.Layout),
+							layout.Rigid(folderButton.Layout),
 						)
 					}),
 				)
@@ -322,56 +315,41 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 				if v.folderMove[item.ID] == nil { v.folderMove[item.ID] = new(widget.Clickable) }
 				if v.rowEdit[item.ID] == nil { v.rowEdit[item.ID] = new(widget.Clickable) }
 				if v.rowDelete[item.ID] == nil { v.rowDelete[item.ID] = new(widget.Clickable) }
-				if v.rowTest[item.ID] == nil { v.rowTest[item.ID] = new(widget.Clickable) }
-				return layout.Inset{Top:unit.Dp(5),Bottom:unit.Dp(5),Left:unit.Dp(6),Right:unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top:unit.Dp(2),Bottom:unit.Dp(2),Left:unit.Dp(6),Right:unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							if click.Clicked(gtx) { v.model.Select(item.ID); if v.onSelect != nil { v.onSelect(item) } }
 							return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								label:=item.Name; if item.ID==snapshot.SelectedID { label="● "+label }
-								return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
-									layout.Rigid(material.Body1(theme,label).Layout),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										info := fmt.Sprintf("%s:%d · %s", item.Host, item.Port, item.Protocol)
-										if snapshot.TestingID == item.ID { info += " · 测试中…" }
-										return material.Caption(theme, info).Layout(gtx)
-									}),
-								)
+							return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+								layout.Rigid(material.Body1(theme,label).Layout),
+								layout.Rigid(material.Caption(theme,fmt.Sprintf("%s:%d · %s",item.Host,item.Port,item.Protocol)).Layout),
+							)
 							})
 						}),
-						layout.Rigid(layout.Spacer{Height:unit.Dp(3)}.Layout),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Axis:layout.Horizontal,Alignment:layout.Middle}.Layout(gtx,
-								layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
-									button:=material.Button(theme,v.rowEdit[item.ID],"编辑")
-									button.TextSize=unit.Sp(10)
-									if v.rowEdit[item.ID].Clicked(gtx) { v.loadConnectionForm(item) }
-									return button.Layout(gtx)
-								}),
-								layout.Rigid(layout.Spacer{Width:unit.Dp(4)}.Layout),
-								layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
-									button:=material.Button(theme,v.rowDelete[item.ID],"删除")
-									button.TextSize=unit.Sp(10)
-									if v.rowDelete[item.ID].Clicked(gtx) { v.deleteConfirmID = item.ID }
-									return button.Layout(gtx)
-								}),
-								layout.Rigid(layout.Spacer{Width:unit.Dp(4)}.Layout),
-								layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
-									button:=material.Button(theme,v.folderMove[item.ID],"移动")
-									button.TextSize=unit.Sp(10)
-									if v.folderMove[item.ID].Clicked(gtx) { v.folderPickTargetID = item.ID; v.formFolderID = item.FolderID; v.folderPickerOpen = true }
-									return button.Layout(gtx)
-								}),
-								layout.Rigid(layout.Spacer{Width:unit.Dp(4)}.Layout),
-								layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
-									label := "测试"
-									if snapshot.TestingID == item.ID { label = "测试中" }
-									button := material.Button(theme, v.rowTest[item.ID], label)
-									button.TextSize = unit.Sp(10)
-									if v.rowTest[item.ID].Clicked(gtx) && v.onSelect != nil { v.onSelect(item) }
-									return button.Layout(gtx)
-								}),
-							)
+							button:=material.Button(theme,v.rowEdit[item.ID],"编辑")
+							button.TextSize=unit.Sp(10)
+							if v.rowEdit[item.ID].Clicked(gtx) { v.loadConnectionForm(item) }
+							return button.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button:=material.Button(theme,v.rowDelete[item.ID],"删除")
+							button.TextSize=unit.Sp(10)
+							if v.rowDelete[item.ID].Clicked(gtx) { v.deleteConfirmID = item.ID }
+							return button.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button:=material.Button(theme,v.folderMove[item.ID],"移动")
+							button.TextSize=unit.Sp(10)
+							if v.folderMove[item.ID].Clicked(gtx) { v.folderPickTargetID = item.ID; v.formFolderID = item.FolderID; v.folderPickerOpen = true }
+							return button.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button:=material.Button(theme,v.rowTest[item.ID],"测试")
+							button.TextSize=unit.Sp(10)
+							if v.rowTest[item.ID].Clicked(gtx) && v.onSelect != nil { v.onSelect(item) }
+							return button.Layout(gtx)
 						}),
 					)
 				})
