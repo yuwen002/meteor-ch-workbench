@@ -71,19 +71,6 @@ func (s *workspace) closeSQLTab(index int) {
 		return result
 	}
 	s.sqlTabStates = remap(s.sqlTabStates)
-	texts := make(map[int]string, len(s.sqlTabTexts))
-	for oldIndex, value := range s.sqlTabTexts {
-		if oldIndex == index {
-			continue
-		}
-		newIndex := oldIndex
-		if oldIndex > index {
-			newIndex--
-		}
-		texts[newIndex] = value
-	}
-	s.sqlTabTexts = texts
-
 	if oldActive > index {
 		s.activeSQLTab = oldActive - 1
 	} else if oldActive == index {
