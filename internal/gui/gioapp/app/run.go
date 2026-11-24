@@ -13,20 +13,29 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
+	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
 )
 
 type metadataService interface {
 	ListDatabases(context.Context, string) ([]string, error)
-	ListTables(context.Context, string, string) ([]structObject, error)
-	ListViews(context.Context, string, string) ([]structObject, error)
+	ListTables(context.Context, string, string) ([]metadataapp.Object, error)
+	ListViews(context.Context, string, string) ([]metadataapp.Object, error)
+	GetTableSchema(context.Context, string, string, string) ([]metadataapp.Column, error)
+	GetTableDetails(context.Context, string, string, string) (metadataapp.TableDetails, error)
 }
 
-type structObject = struct {
-	Name string
-	Engine string
-	Comment string
+type structObject = metadataapp.Object
+
+type schemaResult struct {
+	seq uint64
+	connectionID string
+	database string
+	table string
+	columns []metadataapp.Column
+	details metadataapp.TableDetails
+	err error
 }
 
 type connectionCheck struct {
@@ -61,10 +70,12 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		theme: material.NewTheme(),
 		checkResults: make(chan connectionCheck, 4),
 		objectResults: make(chan objectsResult, 8),
+		schemaResults: make(chan schemaResult, 4),
 		databaseClicks: make(map[string]*widget.Clickable),
 		objectClicks: make(map[string]*widget.Clickable),
 		databaseList: widget.List{List: layout.List{Axis: layout.Vertical}},
 		objectList: widget.List{List: layout.List{Axis: layout.Vertical}},
+		columnList: widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	state.connectionView, err = connectionui.NewView(model, state.reloadConnections, state.selectConnection)
 	if err != nil {
@@ -98,13 +109,18 @@ type workspace struct {
 	theme *material.Theme
 	checkResults chan connectionCheck
 	objectResults chan objectsResult
+	schemaResults chan schemaResult
 	databaseClicks map[string]*widget.Clickable
 	objectClicks map[string]*widget.Clickable
 	refreshObjects widget.Clickable
 	refreshConnection widget.Clickable
 	selectedObject string
+	selectedTable string
+	columns []metadataapp.Column
+	tableDetails metadataapp.TableDetails
 	databaseList widget.List
 	objectList widget.List
+	columnList widget.List
 	selectedID string
 	selectedName string
 	databases []string
@@ -159,6 +175,9 @@ func (s *workspace) selectDatabase(name string) {
 		return
 	}
 	s.selectedDatabase = name
+	s.selectedTable = ""
+	s.columns = nil
+	s.tableDetails = metadataapp.TableDetails{}
 	s.tables, s.views = nil, nil
 	s.loading = "正在读取表和视图…"
 	if s.cancelRequest != nil {
@@ -211,6 +230,17 @@ func (s *workspace) drainResults() {
 			}
 			s.tables, s.views = result.tables, result.views
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
+		case result := <-s.schemaResults:
+			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase || result.table != s.selectedTable {
+				continue
+			}
+			s.loading = ""
+			if result.err != nil {
+				s.status = "读取表结构失败：" + result.err.Error()
+				continue
+			}
+			s.columns, s.tableDetails = result.columns, result.details
+			s.status = fmt.Sprintf("%s · %d 个字段", result.table, len(result.columns))
 		default:
 			return
 		}
@@ -294,7 +324,7 @@ func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
 								}
 							}
 						}
-						button := material.OutlinedButton(s.theme, &s.refreshConnection, "刷新连接")
+						button := material.Button(s.theme, &s.refreshConnection, "刷新连接")
 						button.TextSize = unit.Sp(12)
 						return button.Layout(gtx)
 					}),
@@ -353,6 +383,36 @@ func (s *workspace) layoutDatabasePanel(gtx layout.Context) layout.Dimensions {
 	})
 }
 
+func (s *workspace) loadTableSchema(table string) {
+	if s.selectedID == "" || s.selectedDatabase == "" || table == "" {
+		return
+	}
+	if s.cancelRequest != nil {
+		s.cancelRequest()
+	}
+	s.requestSeq++
+	seq, connectionID, database := s.requestSeq, s.selectedID, s.selectedDatabase
+	s.selectedTable = table
+	s.columns = nil
+	s.tableDetails = metadataapp.TableDetails{}
+	s.loading = "正在读取表结构与 DDL…"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	s.cancelRequest = cancel
+	go func() {
+		defer cancel()
+		columns, err := s.services.Metadata.GetTableSchema(ctx, connectionID, database, table)
+		var details metadataapp.TableDetails
+		if err == nil {
+			details, err = s.services.Metadata.GetTableDetails(ctx, connectionID, database, table)
+		}
+		select {
+		case s.schemaResults <- schemaResult{seq: seq, connectionID: connectionID, database: database, table: table, columns: columns, details: details, err: err}:
+		default:
+		}
+		s.window.Invalidate()
+	}()
+}
+
 func (s *workspace) layoutObjectsPanel(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -364,14 +424,14 @@ func (s *workspace) layoutObjectsPanel(gtx layout.Context) layout.Dimensions {
 						if s.refreshObjects.Clicked() && s.selectedDatabase != "" {
 							s.selectDatabase(s.selectedDatabase)
 						}
-						button := material.OutlinedButton(s.theme, &s.refreshObjects, "刷新")
+						button := material.Button(s.theme, &s.refreshObjects, "刷新")
 						button.TextSize = unit.Sp(12)
 						return button.Layout(gtx)
 					}),
 				)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			layout.Flexed(0.48, func(gtx layout.Context) layout.Dimensions {
 				if s.selectedDatabase == "" {
 					return material.Body2(s.theme, "选择左侧数据库以加载对象").Layout(gtx)
 				}
@@ -391,7 +451,7 @@ func (s *workspace) layoutObjectsPanel(gtx layout.Context) layout.Dimensions {
 					}
 					if click.Clicked(gtx) {
 						s.selectedObject = key
-						s.status = "已选择对象：" + item.Name
+						s.loadTableSchema(item.Name)
 					}
 					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -410,6 +470,28 @@ func (s *workspace) layoutObjectsPanel(gtx layout.Context) layout.Dimensions {
 						})
 					})
 				})
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+			layout.Rigid(material.Subtitle1(s.theme, "表结构 / DDL").Layout),
+			layout.Flexed(0.52, func(gtx layout.Context) layout.Dimensions {
+				if s.selectedTable == "" {
+					return material.Body2(s.theme, "选择一张表查看字段、引擎和建表语句").Layout(gtx)
+				}
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("引擎：%s · 主键：%s", s.tableDetails.Engine, s.tableDetails.PrimaryKey)).Layout),
+					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("分区：%s · 排序：%s", s.tableDetails.PartitionKey, s.tableDetails.SortingKey)).Layout),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return material.List(s.theme, &s.columnList).Layout(gtx, len(s.columns), func(gtx layout.Context, index int) layout.Dimensions {
+							column := s.columns[index]
+							marker := ""
+							if column.IsPrimary { marker += " · 主键" }
+							if column.HasDefault { marker += " · 默认值" }
+							return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx,
+								material.Body2(s.theme, fmt.Sprintf("%s  %s%s", column.Name, column.Type, marker)).Layout)
+						})
+					}),
+					layout.Rigid(material.Caption(s.theme, s.tableDetails.TTLExpression).Layout),
+				)
 			}),
 		)
 	})
