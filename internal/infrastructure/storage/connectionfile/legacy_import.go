@@ -11,7 +11,12 @@ import (
 
 // legacyFile 仅用于读取旧 connections.json；不参与新应用运行时读写。
 type legacyFile struct {
+	Folders []legacyFolder `json:"folders"`
 	Connections []legacyConnection `json:"connections"`
+}
+type legacyFolder struct {
+	ID string `json:"id"`
+	Name string `json:"name"`
 }
 type legacyConnection struct {
 	ID string `json:"id"`
@@ -33,6 +38,20 @@ func (r *Repository) ImportLegacyJSON(ctx context.Context, raw []byte) (int,erro
 	var old legacyFile
 	if err:=json.Unmarshal(raw,&old); err!=nil { return 0,fmt.Errorf("解析旧连接配置: %w",err) }
 	converted:=make([]connection.Connection,0,len(old.Connections))
+	convertedFolders:=make([]connection.Folder,0,len(old.Folders))
+	seenFolders:=make(map[string]struct{},len(old.Folders))
+	for i,item:=range old.Folders {
+		folder:=connection.Folder{ID:strings.TrimSpace(item.ID),Name:strings.TrimSpace(item.Name)}
+		if folder.ID=="" {
+			id,err:=ids.NewID()
+			if err!=nil { return 0,fmt.Errorf("旧配置第 %d 个分组生成 ID: %w",i+1,err) }
+			folder.ID=id
+		}
+		if err:=folder.Validate(); err!=nil { return 0,fmt.Errorf("旧配置第 %d 个分组无效: %w",i+1,err) }
+		if _,ok:=seenFolders[folder.ID];ok { return 0,fmt.Errorf("分组包含重复 ID: %s",folder.ID) }
+		seenFolders[folder.ID]=struct{}{}
+		convertedFolders=append(convertedFolders,folder)
+	}
 	ids:=RandomIDGenerator{}
 	for i,item:=range old.Connections {
 		if strings.TrimSpace(item.ID)=="" {
@@ -62,6 +81,15 @@ func (r *Repository) ImportLegacyJSON(ctx context.Context, raw []byte) (int,erro
 	defer r.mu.Unlock()
 	data,err:=r.read()
 	if err!=nil { return 0,err }
+	folderByID:=make(map[string]int,len(data.Folders))
+	for index,item:=range data.Folders { folderByID[item.ID]=index }
+	for _,item:=range convertedFolders {
+		record:=folderToRecord(item)
+		if index,ok:=folderByID[item.ID];ok { data.Folders[index]=record } else {
+			folderByID[item.ID]=len(data.Folders)
+			data.Folders=append(data.Folders,record)
+		}
+	}
 	byID:=make(map[string]int,len(data.Connections))
 	for index,item:=range data.Connections { byID[item.ID]=index }
 	for _,item:=range converted {
