@@ -398,6 +398,10 @@ func (s *workspace) drainResults() {
 }
 
 func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
+	connectedID, connectingID := "", ""
+	if s.connected { connectedID = s.selectedID }
+	if s.selectedID != "" && s.loading != "" { connectingID = s.selectedID }
+	s.connectionView.SetConnectionStatus(s.selectedID, connectedID, connectingID)
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, colorAppBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
