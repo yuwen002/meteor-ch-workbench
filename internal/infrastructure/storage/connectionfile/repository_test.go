@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
@@ -46,7 +47,11 @@ func TestRepositorySaveListAndUpdate(t *testing.T) {
 	if len(items) != 1 || items[0].Name != "Updated" || items[0].Password != "local-secret" { t.Fatalf("读取结果不正确: %+v", items) }
 	info, err := os.Stat(path)
 	if err != nil { t.Fatal(err) }
-	if info.Mode().Perm() != 0o600 { t.Fatalf("配置文件权限=%o，期望 600", info.Mode().Perm()) }
+	// Windows 的文件访问控制由 ACL 管理，os.FileMode 不会反映 ACL 权限位。
+	// 该权限位断言仅适用于支持 Unix chmod 语义的平台。
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("配置文件权限=%o，期望 600", info.Mode().Perm())
+	}
 }
 
 func TestRepositoryDelete(t *testing.T) {
