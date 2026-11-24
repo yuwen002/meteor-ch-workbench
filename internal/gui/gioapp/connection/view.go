@@ -329,7 +329,10 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							prefix := "▾ "
 							if v.folderCollapsed[folder.ID] { prefix = "▸ " }
-							return v.rows["folder:"+folder.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Body1(theme, prefix+folder.Name).Layout(gtx) })
+							connectionCount := 0
+							for _, item := range snapshot.Items { if item.FolderID == folder.ID { connectionCount++ } }
+							label := fmt.Sprintf("%s%s  ·  %d", prefix, folder.Name, connectionCount)
+							return v.rows["folder:"+folder.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Body1(theme, label).Layout(gtx) })
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							button := material.Button(theme, v.folderRename[folder.ID], "改名")
