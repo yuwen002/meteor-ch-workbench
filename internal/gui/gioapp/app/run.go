@@ -25,6 +25,7 @@ import (
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
+	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
 
 type metadataService interface {
@@ -49,7 +50,7 @@ type schemaResult struct {
 
 type queryEvent struct {
 	seq     uint64
-	tab     int
+	tab     workspaceui.TabID
 	columns []queryapp.Column
 	batch   [][]any
 	summary queryapp.Summary
@@ -111,6 +112,8 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		schemaResults:   make(chan schemaResult, 4),
 		queryResults:    make(chan queryEvent, 128),
 		sqlTabs:         []string{"查询 1"},
+		sqlTabIDs:       []workspaceui.TabID{1},
+		nextSQLTabID:    1,
 		sqlTabTexts:     make(map[int]string),
 		sqlTabStates:    map[int]sqlTabState{0: {}},
 		queryRows:       widget.List{List: layout.List{Axis: layout.Vertical}},
@@ -165,6 +168,8 @@ type workspace struct {
 	queryResults      chan queryEvent
 	queryEditor       widget.Editor
 	sqlTabs           []string
+	sqlTabIDs         []workspaceui.TabID
+	nextSQLTabID      workspaceui.TabID
 	sqlTabTexts       map[int]string
 	sqlTabStates      map[int]sqlTabState
 	sqlTabClicks      []*widget.Clickable
@@ -378,8 +383,12 @@ func (s *workspace) drainResults() {
 			if result.seq != s.querySeq {
 				continue
 			}
-			if result.tab != s.activeSQLTab {
-				state := s.sqlTabStates[result.tab]
+			resultTabIndex, exists := workspaceui.IndexOf(s.sqlTabIDs, result.tab)
+			if !exists {
+				continue // 标签页已关闭，丢弃迟到的查询事件。
+			}
+			if resultTabIndex != s.activeSQLTab {
+				state := s.sqlTabStates[resultTabIndex]
 				if len(result.columns) > 0 {
 					state.Columns = result.columns
 					state.Data = nil
@@ -390,7 +399,7 @@ func (s *workspace) drainResults() {
 				if result.done {
 					state.Status = queryResultStatus(result, state.Columns)
 				}
-				s.sqlTabStates[result.tab] = state
+				s.sqlTabStates[resultTabIndex] = state
 				continue
 			}
 			if len(result.columns) > 0 {
@@ -634,7 +643,7 @@ func (s *workspace) executeQuery() {
 	}
 	s.querySeq++
 	seq := s.querySeq
-	tab := s.activeSQLTab
+	tab := s.sqlTabIDs[s.activeSQLTab]
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	s.queryCancelFunc = cancel
 	s.queryRunning = true
@@ -823,6 +832,8 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
 								s.sqlTabStates[s.activeSQLTab] = current
 								s.sqlTabTexts[s.activeSQLTab] = current.Text
+								s.nextSQLTabID++
+								s.sqlTabIDs = append(s.sqlTabIDs, s.nextSQLTabID)
 								s.sqlTabs = append(s.sqlTabs, fmt.Sprintf("查询 %d", len(s.sqlTabs)+1))
 								s.activeSQLTab = len(s.sqlTabs) - 1
 								s.sqlTabStates[s.activeSQLTab] = sqlTabState{Status: "新查询标签页已创建"}
