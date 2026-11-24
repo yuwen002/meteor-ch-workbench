@@ -2,10 +2,14 @@ package connection
 
 import (
 	"fmt"
+	"image"
+	"image/color"
 	"strconv"
 	"strings"
 
 	"gioui.org/layout"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -154,13 +158,14 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						button := material.Button(theme, &v.refresh, "刷新")
-						addButton := material.Button(theme, &v.add, "新增")
+						addButton := material.Button(theme, &v.add, "新增连接")
 						button.TextSize = unit.Sp(12)
 						if v.refresh.Clicked(gtx) && v.onRefresh != nil {
 							v.onRefresh()
 						}
 						if v.add.Clicked(gtx) {
-							v.formOpen = !v.formOpen
+							v.resetForm()
+							v.formOpen = true
 						}
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Rigid(button.Layout),
@@ -169,10 +174,6 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					}),
 				)
 			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if v.formOpen { return v.layoutEditor(gtx, theme) }
-			return layout.Dimensions{}
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if snapshot.Loading {
@@ -212,4 +213,39 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 			})
 		}),
 	)
+}
+
+func (v *View) resetForm() {
+ v.name.SetText("")
+ v.host.SetText("")
+ v.port.SetText("9000")
+ v.user.SetText("default")
+ v.password.SetText("")
+ v.database.SetText("")
+ v.protocol = domain.ProtocolNative
+ v.secure = false
+ v.formError = ""
+}
+
+// Modal 在窗口中央绘制连接表单，不再占用左侧连接列表空间。
+func (v *View) Modal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
+ if !v.formOpen { return layout.Dimensions{} }
+ return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+  layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+   paint.FillShape(gtx.Ops, color.NRGBA{R:20,G:25,B:35,A:105}, clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Dimensions{Size:gtx.Constraints.Max}
+  }),
+  layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+   width := gtx.Dp(unit.Dp(460))
+   height := gtx.Dp(unit.Dp(570))
+   if width > gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32)) { width = gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32)) }
+   if height > gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32)) { height = gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32)) }
+   if width < 0 { width = 0 }; if height < 0 { height = 0 }
+   gtx.Constraints = layout.Exact(image.Pt(width,height))
+   paint.FillShape(gtx.Ops, color.NRGBA{R:250,G:251,B:253,A:255}, clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Inset{Top:unit.Dp(22),Bottom:unit.Dp(18),Left:unit.Dp(24),Right:unit.Dp(24)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+    return v.layoutEditor(gtx,theme)
+   })
+  }),
+ )
 }
