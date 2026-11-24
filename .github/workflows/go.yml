@@ -32,9 +32,7 @@ jobs:
           cache: true
 
       - name: Download Go modules
-        run: |
-          go mod download all
-          grep '^gioui.org/x ' go.sum || true
+        run: go mod download all
 
       - name: Run tests
         run: go test ./...
@@ -42,5 +40,15 @@ jobs:
       - name: Run vet
         run: go vet ./...
 
-      - name: Build Gio desktop application
-        run: go build ./cmd/meteor-ch-gio
+      - name: Build preview binary
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags="-s -w" -o dist/meteor-ch-workbench ./cmd/meteor-ch-gio
+
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteor-ch-workbench-linux-amd64
+          path: dist/meteor-ch-workbench
+          if-no-files-found: error
+          retention-days: 7
