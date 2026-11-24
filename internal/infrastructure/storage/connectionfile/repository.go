@@ -26,7 +26,21 @@ var (
 
 type fileData struct {
 	Version int                `json:"version"`
+	Folders []folderRecord     `json:"folders"`
 	Connections []connectionRecord `json:"connections"`
+}
+
+type folderRecord struct {
+	ID string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (r folderRecord) toDomain() connection.Folder {
+	return connection.Folder{ID: r.ID, Name: r.Name}
+}
+
+func folderToRecord(item connection.Folder) folderRecord {
+	return folderRecord{ID: item.ID, Name: item.Name}
 }
 
 type connectionRecord struct {
@@ -187,10 +201,68 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	return r.write(data)
 }
 
+// ListFolders 返回分组列表的独立副本。
+func (r *Repository) ListFolders(ctx context.Context) ([]connection.Folder, error) {
+	if err := ctx.Err(); err != nil { return nil, err }
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, err := r.read()
+	if err != nil { return nil, err }
+	items := make([]connection.Folder, 0, len(data.Folders))
+	for _, record := range data.Folders {
+		if err := ctx.Err(); err != nil { return nil, err }
+		items = append(items, record.toDomain())
+	}
+	return items, nil
+}
+
+// SaveFolder 新增或更新分组，并原子写回连接配置文件。
+func (r *Repository) SaveFolder(ctx context.Context, item connection.Folder) error {
+	if err := ctx.Err(); err != nil { return err }
+	item.Name = strings.TrimSpace(item.Name)
+	if err := item.Validate(); err != nil { return err }
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, err := r.read()
+	if err != nil { return err }
+	record := folderToRecord(item)
+	for i := range data.Folders {
+		if data.Folders[i].ID == item.ID {
+			data.Folders[i] = record
+			return r.write(data)
+		}
+	}
+	data.Folders = append(data.Folders, record)
+	return r.write(data)
+}
+
+// DeleteFolder 删除分组，并将其连接移回根级，避免连接配置丢失。
+func (r *Repository) DeleteFolder(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil { return err }
+	id = strings.TrimSpace(id)
+	if id == "" { return connection.ErrMissingFolderID }
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, err := r.read()
+	if err != nil { return err }
+	filtered := make([]folderRecord, 0, len(data.Folders))
+	found := false
+	for _, item := range data.Folders {
+		if item.ID == id { found = true; continue }
+		filtered = append(filtered, item)
+	}
+	if !found { return os.ErrNotExist }
+	data.Folders = filtered
+	for i := range data.Connections {
+		if data.Connections[i].FolderID == id { data.Connections[i].FolderID = "" }
+	}
+	return r.write(data)
+}
+
 func (r *Repository) read() (fileData, error) {
 	data, err := os.ReadFile(r.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return fileData{Version: schemaVersion, Connections: []connectionRecord{}}, nil
+		return fileData{Version: schemaVersion, Folders: []folderRecord{}, Connections: []connectionRecord{}}, nil
 	}
 	if err != nil {
 		return fileData{}, fmt.Errorf("读取连接配置: %w", err)
@@ -202,8 +274,19 @@ func (r *Repository) read() (fileData, error) {
 	if decoded.Version != schemaVersion {
 		return fileData{}, fmt.Errorf("%w: 不支持版本 %d", ErrInvalidFile, decoded.Version)
 	}
+	if decoded.Folders == nil { decoded.Folders = []folderRecord{} }
 	if decoded.Connections == nil {
 		decoded.Connections = []connectionRecord{}
+	}
+	seenFolders := make(map[string]struct{}, len(decoded.Folders))
+	for _, item := range decoded.Folders {
+		if err := item.toDomain().Validate(); err != nil {
+			return fileData{}, fmt.Errorf("%w: 分组无效: %v", ErrInvalidFile, err)
+		}
+		if _, ok := seenFolders[item.ID]; ok {
+			return fileData{}, fmt.Errorf("%w: 分组 ID %s", ErrDuplicateID, item.ID)
+		}
+		seenFolders[item.ID] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(decoded.Connections))
 	for i := range decoded.Connections {
