@@ -14,7 +14,7 @@ func TestResultColumnFlexWeightsUsesContentAndBounds(t *testing.T) {
 	}
 	rows := [][]any{
 		{1, "正常", "short"},
-		{2, "中文字段内容", "a very long JSON payload that should be capped"},
+		{2, "这是一个比较长的中文字段内容", "a very long JSON payload that should be capped"},
 	}
 	got := resultColumnFlexWeights(columns, rows, 40)
 	if len(got) != 3 {
