@@ -22,6 +22,49 @@ import (
 // 组件只处理点击并通过回调通知上层窗口。
 type sidebarRow struct { folder *domain.Folder; item *domain.Connection; unassigned bool }
 
+
+func buildSidebarRows(items []domain.Connection, folders []domain.Folder, collapsed map[string]bool) ([]sidebarRow, int) {
+	rows := make([]sidebarRow, 0, len(items)+len(folders)+1)
+	assigned := make(map[string][]domain.Connection)
+	knownFolders := make(map[string]struct{}, len(folders))
+	for _, folder := range folders {
+		knownFolders[folder.ID] = struct{}{}
+	}
+	var unassigned []domain.Connection
+	orphanedCount := 0
+	for _, item := range items {
+		if item.FolderID == "" {
+			unassigned = append(unassigned, item)
+			continue
+		}
+		if _, ok := knownFolders[item.FolderID]; !ok {
+			// 分组记录缺失时仍展示连接，避免孤立连接在侧栏中不可见。
+			unassigned = append(unassigned, item)
+			orphanedCount++
+			continue
+		}
+		assigned[item.FolderID] = append(assigned[item.FolderID], item)
+	}
+	for i := range folders {
+		folder := folders[i]
+		rows = append(rows, sidebarRow{folder: &folder})
+		if !collapsed[folder.ID] {
+			for j := range assigned[folder.ID] {
+				item := assigned[folder.ID][j]
+				rows = append(rows, sidebarRow{item: &item})
+			}
+		}
+	}
+	if len(unassigned) > 0 || len(folders) == 0 {
+		rows = append(rows, sidebarRow{unassigned: true})
+		for i := range unassigned {
+			item := unassigned[i]
+			rows = append(rows, sidebarRow{item: &item})
+		}
+	}
+	return rows, orphanedCount
+}
+
 func nextFolderID(folders []domain.Folder, current string) string {
 	if current == "" { if len(folders)>0 { return folders[0].ID }; return "" }
 	for i,item := range folders { if item.ID==current { if i+1<len(folders) { return folders[i+1].ID }; return "" } }
@@ -261,38 +304,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 			return layout.Dimensions{}
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			rows := make([]sidebarRow, 0, len(snapshot.Items)+len(snapshot.Folders)+1)
-			assigned := make(map[string][]domain.Connection)
-			knownFolders := make(map[string]struct{}, len(snapshot.Folders))
-			for _, folder := range snapshot.Folders {
-				knownFolders[folder.ID] = struct{}{}
-			}
-			var unassigned []domain.Connection
-			orphanedCount := 0
-			for _, item := range snapshot.Items {
-				if item.FolderID == "" {
-					unassigned = append(unassigned, item)
-					continue
-				}
-				if _, ok := knownFolders[item.FolderID]; !ok {
-					// 分组记录缺失时仍展示连接，避免孤立连接在侧栏中不可见。
-					unassigned = append(unassigned, item)
-					orphanedCount++
-					continue
-				}
-				assigned[item.FolderID] = append(assigned[item.FolderID], item)
-			}
-			for i := range snapshot.Folders {
-				folder := snapshot.Folders[i]
-				rows = append(rows, sidebarRow{folder:&folder})
-				if !v.folderCollapsed[folder.ID] {
-					for j := range assigned[folder.ID] { item := assigned[folder.ID][j]; rows = append(rows, sidebarRow{item:&item}) }
-				}
-			}
-			if len(unassigned) > 0 || len(snapshot.Folders) == 0 {
-				rows = append(rows, sidebarRow{unassigned:true})
-				for i := range unassigned { item := unassigned[i]; rows = append(rows, sidebarRow{item:&item}) }
-			}
+			rows, orphanedCount := buildSidebarRows(snapshot.Items, snapshot.Folders, v.folderCollapsed)
 			return material.List(theme, &v.list).Layout(gtx, len(rows), func(gtx layout.Context, index int) layout.Dimensions {
 				row := rows[index]
 				if row.folder != nil {
