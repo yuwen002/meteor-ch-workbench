@@ -71,6 +71,11 @@ type View struct {
 	deleteConfirmID string
 	deleteConfirm widget.Clickable
 	deleteCancel widget.Clickable
+	folderPickerOpen bool
+	folderPickOptions map[string]*widget.Clickable
+	folderPickTargetID string
+	folderDeleteConfirmID string
+	folderDeleteConfirm widget.Clickable
 }
 
 func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (*View, error) {
@@ -87,6 +92,7 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		folderMove: make(map[string]*widget.Clickable),
 		rowEdit: make(map[string]*widget.Clickable),
 		rowDelete: make(map[string]*widget.Clickable),
+		folderPickOptions: make(map[string]*widget.Clickable),
 		onRefresh: onRefresh,
 		onSelect: onSelect,
 		protocol: domain.ProtocolNative,
@@ -137,7 +143,7 @@ func (v *View) layoutEditor(gtx layout.Context, theme *material.Theme) layout.Di
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			label := "所属分组：未分组"
 			for _, folder := range v.model.Snapshot().Folders { if folder.ID == v.formFolderID { label = "所属分组："+folder.Name; break } }
-			if v.folderPick.Clicked(gtx) { v.formFolderID = nextFolderID(v.model.Snapshot().Folders, v.formFolderID) }
+			if v.folderPick.Clicked(gtx) { v.folderPickTargetID = ""; v.folderPickerOpen = true }
 			button := material.Button(theme, &v.folderPick, label+"（切换）")
 			button.TextSize = unit.Sp(12)
 			return button.Layout(gtx)
@@ -292,9 +298,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							button := material.Button(theme, v.folderDelete[folder.ID], "删除")
 							button.TextSize = unit.Sp(10)
-							if v.folderDelete[folder.ID].Clicked(gtx) {
-								if err := v.model.DeleteFolder(context.Background(), folder.ID); err != nil { v.folderErrors=err.Error() } else { delete(v.folderCollapsed, folder.ID); v.folderErrors="" }
-							}
+							if v.folderDelete[folder.ID].Clicked(gtx) { v.folderDeleteConfirmID = folder.ID }
 							return button.Layout(gtx)
 						}),
 					)
@@ -334,10 +338,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							button:=material.Button(theme,v.folderMove[item.ID],"移动")
 							button.TextSize=unit.Sp(10)
-							if v.folderMove[item.ID].Clicked(gtx) && v.onSave != nil {
-								item.FolderID = nextFolderID(snapshot.Folders,item.FolderID)
-								v.onSave(item)
-							}
+							if v.folderMove[item.ID].Clicked(gtx) { v.folderPickTargetID = item.ID; v.formFolderID = item.FolderID; v.folderPickerOpen = true }
 							return button.Layout(gtx)
 						}),
 					)
@@ -372,6 +373,8 @@ func (v *View) resetForm() {
 // Modal 在窗口中央绘制连接表单，不再占用左侧连接列表空间。
 func (v *View) Modal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
  if v.deleteConfirmID != "" { return v.deleteModal(gtx,theme) }
+ if v.folderDeleteConfirmID != "" { return v.folderDeleteModal(gtx,theme) }
+ if v.folderPickerOpen { return v.folderPickerModal(gtx,theme) }
  if !v.formOpen && !v.folderOpen { return layout.Dimensions{} }
  if v.folderOpen { return v.folderModal(gtx,theme) }
  return layout.Stack{Alignment: layout.Center}.Layout(gtx,
@@ -414,6 +417,84 @@ func (v *View) folderModal(gtx layout.Context, theme *material.Theme) layout.Dim
        layout.Flexed(1,func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size:image.Pt(gtx.Constraints.Max.X,0)} }),
        layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.folderCancel,"取消"); if v.folderCancel.Clicked(gtx){v.folderOpen=false;v.folderErrors=""}; return layout.Inset{Right:unit.Dp(8)}.Layout(gtx,b.Layout) }),
        layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.folderSave,"保存"); if v.folderSave.Clicked(gtx){ _,err:=v.model.SaveFolder(context.Background(),domain.Folder{ID:v.editingFolderID,Name:strings.TrimSpace(v.folderName.Text())}); if err!=nil {v.folderErrors=err.Error()} else {v.folderOpen=false;v.folderErrors=""} }; return b.Layout(gtx) }),
+      )
+     }),
+    )
+   })
+  }),
+ )
+}
+
+
+func (v *View) folderPickerModal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
+ snapshot := v.model.Snapshot()
+ return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+  layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+   paint.FillShape(gtx.Ops, color.NRGBA{R:20,G:25,B:35,A:105}, clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Dimensions{Size:gtx.Constraints.Max}
+  }),
+  layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+   width:=gtx.Dp(unit.Dp(340)); height:=gtx.Dp(unit.Dp(300))
+   if width>gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32)){width=gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32))}
+   if height>gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32)){height=gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32))}
+   gtx.Constraints=layout.Exact(image.Pt(width,height))
+   paint.FillShape(gtx.Ops,color.NRGBA{R:250,G:251,B:253,A:255},clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Inset{Top:unit.Dp(18),Bottom:unit.Dp(14),Left:unit.Dp(20),Right:unit.Dp(20)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+    return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+     layout.Rigid(material.H6(theme,"选择所属分组").Layout),
+     layout.Rigid(layout.Spacer{Height:unit.Dp(8)}.Layout),
+     layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
+      return material.List(theme,&widget.List{List:layout.List{Axis:layout.Vertical}}).Layout(gtx,len(snapshot.Folders)+1,func(gtx layout.Context,index int) layout.Dimensions {
+       key,label:="","未分组"
+       if index>0 { folder:=snapshot.Folders[index-1]; key=folder.ID; label=folder.Name }
+       if v.folderPickOptions[key]==nil { v.folderPickOptions[key]=new(widget.Clickable) }
+       click:=v.folderPickOptions[key]
+       selected:=v.formFolderID==key
+       if click.Clicked(gtx) {
+        if v.folderPickTargetID!="" {
+         for _,item:=range snapshot.Items { if item.ID==v.folderPickTargetID { item.FolderID=key; if v.onSave!=nil { v.onSave(item) }; break } }
+        } else { v.formFolderID=key }
+        v.folderPickerOpen=false
+        v.folderPickTargetID=""
+       }
+       if selected { label="● "+label }
+       return layout.Inset{Top:unit.Dp(4),Bottom:unit.Dp(4)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+        return click.Layout(gtx,func(gtx layout.Context) layout.Dimensions { return material.Body1(theme,label).Layout(gtx) })
+       })
+      })
+     }),
+     layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+      b:=material.Button(theme,&v.folderCancel,"取消")
+      if v.folderCancel.Clicked(gtx){v.folderPickerOpen=false;v.folderPickTargetID=""}
+      return layout.Flex{Axis:layout.Horizontal,Alignment:layout.End}.Layout(gtx,layout.Rigid(b.Layout))
+     }),
+    )
+   })
+  }),
+ )
+}
+
+func (v *View) folderDeleteModal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
+ return layout.Stack{Alignment:layout.Center}.Layout(gtx,
+  layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+   paint.FillShape(gtx.Ops,color.NRGBA{R:20,G:25,B:35,A:105},clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Dimensions{Size:gtx.Constraints.Max}
+  }),
+  layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+   width:=gtx.Dp(unit.Dp(390)); height:=gtx.Dp(unit.Dp(205))
+   if width>gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32)){width=gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32))}
+   gtx.Constraints=layout.Exact(image.Pt(width,height))
+   paint.FillShape(gtx.Ops,color.NRGBA{R:250,G:251,B:253,A:255},clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Inset{Top:unit.Dp(20),Bottom:unit.Dp(16),Left:unit.Dp(22),Right:unit.Dp(22)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+    return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+     layout.Rigid(material.H6(theme,"删除分组").Layout),
+     layout.Rigid(material.Body2(theme,"确定删除此分组吗？分组内的连接会保留，并移动到“未分组”。").Layout),
+     layout.Rigid(layout.Spacer{Height:unit.Dp(18)}.Layout),
+     layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+      return layout.Flex{Axis:layout.Horizontal,Alignment:layout.Middle}.Layout(gtx,
+       layout.Flexed(1,func(gtx layout.Context) layout.Dimensions{return layout.Dimensions{Size:image.Pt(gtx.Constraints.Max.X,0)}}),
+       layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.deleteCancel,"取消"); if v.deleteCancel.Clicked(gtx){v.folderDeleteConfirmID=""}; return layout.Inset{Right:unit.Dp(8)}.Layout(gtx,b.Layout) }),
+       layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.folderDeleteConfirm,"确认删除"); if v.folderDeleteConfirm.Clicked(gtx){if err:=v.model.DeleteFolder(context.Background(),v.folderDeleteConfirmID);err!=nil{v.folderErrors=err.Error()}else{delete(v.folderCollapsed,v.folderDeleteConfirmID);v.folderErrors=""};v.folderDeleteConfirmID=""}; return b.Layout(gtx) }),
       )
      }),
     )
