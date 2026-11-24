@@ -463,7 +463,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								s.queryStatus="新查询标签页已创建"
 							}
 							button:=material.Button(s.theme,&s.sqlNewTab,"＋"); button.TextSize=unit.Sp(12)
-							return button.Layout
+							return button.Layout(gtx)
 						}),
 					)
 				}),
