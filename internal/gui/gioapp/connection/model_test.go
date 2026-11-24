@@ -35,10 +35,27 @@ func (s *serviceStub) Delete(_ context.Context, id string) error {
 }
 func (s *serviceStub) Test(context.Context, domain.Connection) error { return s.testErr }
 
+type folderStub struct { items []domain.Folder; deleteErr error }
+func (s *folderStub) List(context.Context) ([]domain.Folder, error) { return append([]domain.Folder(nil), s.items...), nil }
+func (s *folderStub) Save(_ context.Context, item domain.Folder) (domain.Folder, error) {
+ for i := range s.items { if s.items[i].ID == item.ID { s.items[i] = item; return item, nil } }
+ s.items = append(s.items, item); return item, nil
+}
+func (s *folderStub) Delete(_ context.Context, id string) error {
+ if s.deleteErr != nil { return s.deleteErr }
+ for i := range s.items { if s.items[i].ID == id { s.items = append(s.items[:i], s.items[i+1:]...); return nil } }
+ return errors.New("not found")
+}
+func newTestModel(t *testing.T, service Service) *Model {
+ t.Helper()
+ model, err := NewModel(service, &folderStub{})
+ if err != nil { t.Fatal(err) }
+ return model
+}
+
 func TestModelReloadAndSelect(t *testing.T) {
 	first := domain.Connection{ID:"c1", Name:"Local"}
-	model, err := NewModel(&serviceStub{items:[]domain.Connection{first}})
-	if err != nil { t.Fatal(err) }
+	model := newTestModel(t, &serviceStub{items:[]domain.Connection{first}})
 	if err := model.Reload(context.Background()); err != nil { t.Fatal(err) }
 	if !model.Select("c1") { t.Fatal("已有连接应可选中") }
 	if model.Select("missing") { t.Fatal("不存在的连接不应被选中") }
@@ -47,8 +64,7 @@ func TestModelReloadAndSelect(t *testing.T) {
 }
 
 func TestModelSaveAndDelete(t *testing.T) {
-	model, err := NewModel(&serviceStub{})
-	if err != nil { t.Fatal(err) }
+	model := newTestModel(t, &serviceStub{})
 	saved, err := model.Save(context.Background(), domain.Connection{ID:"c1", Name:"Local"})
 	if err != nil { t.Fatal(err) }
 	if saved.ID != "c1" || model.Snapshot().SelectedID != "c1" { t.Fatalf("保存状态不正确: %+v", model.Snapshot()) }
@@ -59,8 +75,7 @@ func TestModelSaveAndDelete(t *testing.T) {
 
 func TestModelReportsServiceErrors(t *testing.T) {
 	want := errors.New("storage unavailable")
-	model, err := NewModel(&serviceStub{saveErr:want})
-	if err != nil { t.Fatal(err) }
+	model := newTestModel(t, &serviceStub{saveErr:want})
 	if _, err := model.Save(context.Background(), domain.Connection{ID:"c1"}); !errors.Is(err, want) { t.Fatalf("错误未透传: %v", err) }
 	if model.Snapshot().Error == "" { t.Fatal("应在状态中保留错误提示") }
 }
@@ -79,10 +94,7 @@ func (s *blockingTestService) Test(context.Context, domain.Connection) error {
 
 func TestModelNewerConnectionTestSupersedesOlderResult(t *testing.T) {
 	service := &blockingTestService{started: make(chan chan struct{}, 2)}
-	model, err := NewModel(service)
-	if err != nil {
-		t.Fatal(err)
-	}
+	model := newTestModel(t, service)
 	firstDone := make(chan struct{})
 	go func() {
 		_ = model.Test(context.Background(), domain.Connection{ID: "first"})
@@ -106,4 +118,18 @@ func TestModelNewerConnectionTestSupersedesOlderResult(t *testing.T) {
 	if got := model.Snapshot().TestingID; got != "" {
 		t.Fatalf("较旧测试结束不应覆盖新状态，得到 %q", got)
 	}
+}
+
+func TestModelFolderCRUD(t *testing.T) {
+ folders := &folderStub{}
+ model, err := NewModel(&serviceStub{}, folders)
+ if err != nil { t.Fatal(err) }
+ created, err := model.SaveFolder(context.Background(), domain.Folder{ID:"f1", Name:"生产"})
+ if err != nil { t.Fatal(err) }
+ if created.ID != "f1" || len(model.Snapshot().Folders) != 1 { t.Fatalf("新建分组失败: %+v", model.Snapshot()) }
+ created.Name = "分析"
+ if _, err := model.SaveFolder(context.Background(), created); err != nil { t.Fatal(err) }
+ if got := model.Snapshot().Folders[0].Name; got != "分析" { t.Fatalf("重命名未生效: %s", got) }
+ if err := model.DeleteFolder(context.Background(), "f1"); err != nil { t.Fatal(err) }
+ if len(model.Snapshot().Folders) != 0 { t.Fatal("删除后分组仍存在") }
 }
