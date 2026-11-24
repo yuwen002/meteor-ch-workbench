@@ -36,3 +36,26 @@ func TestResultColumnFlexWeightsUsesOnlySampledRows(t *testing.T) {
 		t.Fatalf("sampled weight = %v, want minimum 10", got[0])
 	}
 }
+
+func TestResultColumnFlexWeightsTreatsNonPositiveSampleAsAllRows(t *testing.T) {
+	columns := []queryapp.Column{{Name: "value", DatabaseType: "String"}}
+	rows := [][]any{{"short"}, {"中文长字段内容"}}
+	got := resultColumnFlexWeights(columns, rows, 0)
+	if got[0] <= 10 {
+		t.Fatalf("weight with all-row sample = %v, want wider than minimum", got[0])
+	}
+}
+
+func TestResultColumnFlexWeightsHandlesMissingCellsAndEmptyRows(t *testing.T) {
+	columns := []queryapp.Column{
+		{Name: "id", DatabaseType: "UInt64"},
+		{Name: "description", DatabaseType: "Nullable(String)"},
+	}
+	got := resultColumnFlexWeights(columns, [][]any{{1}, {}}, 10)
+	if len(got) != len(columns) {
+		t.Fatalf("weights length = %d, want %d", len(got), len(columns))
+	}
+	if got[0] < 10 || got[1] < 10 {
+		t.Fatalf("weights should respect minimum width: %#v", got)
+	}
+}
