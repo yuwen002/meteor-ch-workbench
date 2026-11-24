@@ -108,6 +108,8 @@ type View struct {
 	folderCollapsed map[string]bool
 	folderRename map[string]*widget.Clickable
 	folderDelete map[string]*widget.Clickable
+	folderMore map[string]*widget.Clickable
+	folderActionsOpen map[string]bool
 	folderMove map[string]*widget.Clickable
 	rowEdit map[string]*widget.Clickable
 	rowDelete map[string]*widget.Clickable
@@ -140,6 +142,8 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		folderCollapsed: make(map[string]bool),
 		folderRename: make(map[string]*widget.Clickable),
 		folderDelete: make(map[string]*widget.Clickable),
+		folderMore: make(map[string]*widget.Clickable),
+		folderActionsOpen: make(map[string]bool),
 		folderMove: make(map[string]*widget.Clickable),
 		rowEdit: make(map[string]*widget.Clickable),
 		rowDelete: make(map[string]*widget.Clickable),
@@ -326,29 +330,46 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					folder := *row.folder
 					if v.folderRename[folder.ID] == nil { v.folderRename[folder.ID] = new(widget.Clickable) }
 					if v.folderDelete[folder.ID] == nil { v.folderDelete[folder.ID] = new(widget.Clickable) }
-					if v.folderCollapsed[folder.ID] { /* collapsed */ }
+					if v.folderMore[folder.ID] == nil { v.folderMore[folder.ID] = new(widget.Clickable) }
 					if v.rows["folder:"+folder.ID] == nil { v.rows["folder:"+folder.ID] = new(widget.Clickable) }
 					if v.rows["folder:"+folder.ID].Clicked(gtx) { v.folderCollapsed[folder.ID] = !v.folderCollapsed[folder.ID] }
-					return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							prefix := "▾ "
-							if v.folderCollapsed[folder.ID] { prefix = "▸ " }
-							connectionCount := 0
-							for _, item := range snapshot.Items { if item.FolderID == folder.ID { connectionCount++ } }
-							label := fmt.Sprintf("%s%s  ·  %d", prefix, folder.Name, connectionCount)
-							return v.rows["folder:"+folder.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Body1(theme, label).Layout(gtx) })
+					return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									prefix := "▾ "
+									if v.folderCollapsed[folder.ID] { prefix = "▸ " }
+									connectionCount := 0
+								for _, item := range snapshot.Items { if item.FolderID == folder.ID { connectionCount++ } }
+									label := fmt.Sprintf("%s%s  ·  %d", prefix, folder.Name, connectionCount)
+									return v.rows["folder:"+folder.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Body1(theme, label).Layout(gtx) })
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									button := material.Button(theme, v.folderMore[folder.ID], func() string { if v.folderActionsOpen[folder.ID] { return "收起" }; return "更多" }())
+									button.TextSize = unit.Sp(10)
+									if v.folderMore[folder.ID].Clicked(gtx) { v.folderActionsOpen[folder.ID] = !v.folderActionsOpen[folder.ID] }
+									return button.Layout(gtx)
+								}),
+							)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							button := material.Button(theme, v.folderRename[folder.ID], "改名")
-							button.TextSize = unit.Sp(10)
-							if v.folderRename[folder.ID].Clicked(gtx) { v.editingFolderID=folder.ID; v.folderName.SetText(folder.Name); v.folderErrors=""; v.folderOpen=true }
-							return button.Layout(gtx)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							button := material.Button(theme, v.folderDelete[folder.ID], "删除")
-							button.TextSize = unit.Sp(10)
-							if v.folderDelete[folder.ID].Clicked(gtx) { v.folderDeleteConfirmID = folder.ID }
-							return button.Layout(gtx)
+							if !v.folderActionsOpen[folder.ID] { return layout.Dimensions{} }
+							return layout.Inset{Left:unit.Dp(18), Top:unit.Dp(2), Bottom:unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										button := material.Button(theme, v.folderRename[folder.ID], "改名")
+										button.TextSize = unit.Sp(10)
+										if v.folderRename[folder.ID].Clicked(gtx) { v.editingFolderID=folder.ID; v.folderName.SetText(folder.Name); v.folderErrors=""; v.folderOpen=true }
+										return button.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										button := material.Button(theme, v.folderDelete[folder.ID], "删除")
+										button.TextSize = unit.Sp(10)
+										if v.folderDelete[folder.ID].Clicked(gtx) { v.folderDeleteConfirmID = folder.ID }
+										return button.Layout(gtx)
+									}),
+								)
+							})
 						}),
 					)
 				}
