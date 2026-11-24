@@ -73,6 +73,7 @@ func nextFolderID(folders []domain.Folder, current string) string {
 
 type View struct {
 	model     *Model
+	diagnostic string
 	list      widget.List
 	folderPickerList widget.List
 	refresh   widget.Clickable
@@ -171,6 +172,9 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 func (v *View) SetOnDelete(onDelete func(string)) { v.onDelete = onDelete }
 
 // SetConnectionStatus 区分列表选中、正在连接和已建立连接，避免把选中状态误显示为在线。
+// SetDiagnostic 显示当前配置文件路径和读取状态，便于定位历史连接未显示的问题。
+func (v *View) SetDiagnostic(message string) { v.diagnostic = message }
+
 func (v *View) SetConnectionStatus(selectedID, connectedID, connectingID string) {
 	v.selectedConnectionID = selectedID
 	v.connectedConnectionID = connectedID
@@ -325,11 +329,13 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			rows, orphanedCount := buildSidebarRows(snapshot.Items, snapshot.Folders, v.folderCollapsed)
 			if len(rows) == 0 {
-				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(16), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(material.Body1(theme, "暂无已保存连接").Layout),
 						layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 						layout.Rigid(material.Caption(theme, "点击上方“新增连接”添加 ClickHouse 数据库").Layout),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
+						layout.Rigid(material.Caption(theme, v.diagnostic).Layout),
 					)
 				})
 			}
