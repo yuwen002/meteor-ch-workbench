@@ -15,7 +15,6 @@ import (
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
-	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
 )
 
