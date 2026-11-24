@@ -411,13 +411,15 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(14), Bottom: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								// 连接导航始终独立占据左侧区域；未连接时也不能被欢迎页替代或挤掉。
-								width := unit.Dp(286)
-								if gtx.Constraints.Max.X < gtx.Dp(unit.Dp(1120)) {
-									width = unit.Dp(232)
+								// 明确给侧栏分配固定宽度和完整可用高度，避免子布局因约束不完整而收缩。
+								availableWidth := gtx.Constraints.Max.X
+								width := gtx.Dp(unit.Dp(286))
+								if availableWidth < gtx.Dp(unit.Dp(1120)) {
+									width = gtx.Dp(unit.Dp(232))
 								}
-								gtx.Constraints.Min.X = gtx.Dp(width)
-								gtx.Constraints.Max.X = gtx.Dp(width)
+								if width > availableWidth { width = availableWidth }
+								height := gtx.Constraints.Max.Y
+								gtx.Constraints = layout.Exact(image.Pt(width, height))
 								return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return s.connectionView.Layout(gtx, s.theme)
