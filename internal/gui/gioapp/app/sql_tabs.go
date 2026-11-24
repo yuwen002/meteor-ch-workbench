@@ -35,12 +35,10 @@ func (s *workspace) closeSQLTab(index int) {
 		current.Text = s.queryEditor.Text()
 		current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
 		s.sqlTabStates[index] = current
-		s.sqlTabTexts[index] = current.Text
 	}
 
 	if len(s.sqlTabs) == 1 {
 		s.sqlTabs[0] = "查询 1"
-		s.sqlTabTexts = map[int]string{0: ""}
 		s.sqlTabStates = map[int]sqlTabState{0: {Status: "已重置查询标签页"}}
 		s.activeSQLTab = 0
 		s.queryEditor.SetText("")
