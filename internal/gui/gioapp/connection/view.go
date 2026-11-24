@@ -62,6 +62,12 @@ type View struct {
 	folderRename map[string]*widget.Clickable
 	folderDelete map[string]*widget.Clickable
 	folderMove map[string]*widget.Clickable
+	rowEdit map[string]*widget.Clickable
+	rowDelete map[string]*widget.Clickable
+	editingConnectionID string
+	formFolderID string
+	folderPick widget.Clickable
+	onDelete func(string)
 }
 
 func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (*View, error) {
@@ -76,6 +82,8 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		folderRename: make(map[string]*widget.Clickable),
 		folderDelete: make(map[string]*widget.Clickable),
 		folderMove: make(map[string]*widget.Clickable),
+		rowEdit: make(map[string]*widget.Clickable),
+		rowDelete: make(map[string]*widget.Clickable),
 		onRefresh: onRefresh,
 		onSelect: onSelect,
 		protocol: domain.ProtocolNative,
@@ -93,6 +101,8 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 }
 
 
+func (v *View) SetOnDelete(onDelete func(string)) { v.onDelete = onDelete }
+
 func (v *View) SetOnSave(onSave func(domain.Connection)) {
 	v.onSave = onSave
 }
@@ -106,7 +116,7 @@ func (v *View) layoutEditor(gtx layout.Context, theme *material.Theme) layout.Di
 		}
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(material.H6(theme, "新增连接").Layout),
+		layout.Rigid(material.H6(theme, func() string { if v.editingConnectionID != "" { return "编辑连接" }; return "新增连接" }()).Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(16)}.Layout(gtx, material.Caption(theme, "填写 ClickHouse 服务地址和认证信息").Layout)
 		}),
@@ -121,6 +131,15 @@ func (v *View) layoutEditor(gtx layout.Context, theme *material.Theme) layout.Di
 		}),
 		layout.Rigid(field(&v.user, "用户名")),
 		layout.Rigid(field(&v.password, "密码")),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			label := "所属分组：未分组"
+			for _, folder := range v.model.Snapshot().Folders { if folder.ID == v.formFolderID { label = "所属分组："+folder.Name; break } }
+			if v.folderPick.Clicked(gtx) { v.formFolderID = nextFolderID(v.model.Snapshot().Folders, v.formFolderID) }
+			button := material.Button(theme, &v.folderPick, label+"（切换）")
+			button.TextSize = unit.Sp(12)
+			return button.Layout(gtx)
+		}),
+
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -168,7 +187,7 @@ func (v *View) layoutEditor(gtx layout.Context, theme *material.Theme) layout.Di
 						} else {
 							v.formError = ""
 							v.onSave(domain.Connection{
-								Name: strings.TrimSpace(v.name.Text()), Host: strings.TrimSpace(v.host.Text()), Port: port,
+								ID: v.editingConnectionID, FolderID: v.formFolderID, Name: strings.TrimSpace(v.name.Text()), Host: strings.TrimSpace(v.host.Text()), Port: port,
 								Protocol: v.protocol, User: strings.TrimSpace(v.user.Text()), Password: v.password.Text(),
 								Database: strings.TrimSpace(v.database.Text()), Secure: v.secure,
 							})
@@ -283,6 +302,8 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 				click := v.rows[item.ID]
 				if click == nil { click = new(widget.Clickable); v.rows[item.ID] = click }
 				if v.folderMove[item.ID] == nil { v.folderMove[item.ID] = new(widget.Clickable) }
+				if v.rowEdit[item.ID] == nil { v.rowEdit[item.ID] = new(widget.Clickable) }
+				if v.rowDelete[item.ID] == nil { v.rowDelete[item.ID] = new(widget.Clickable) }
 				return layout.Inset{Top:unit.Dp(2),Bottom:unit.Dp(2),Left:unit.Dp(6),Right:unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -294,6 +315,18 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 								layout.Rigid(material.Caption(theme,fmt.Sprintf("%s:%d · %s",item.Host,item.Port,item.Protocol)).Layout),
 							)
 							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button:=material.Button(theme,v.rowEdit[item.ID],"编辑")
+							button.TextSize=unit.Sp(10)
+							if v.rowEdit[item.ID].Clicked(gtx) { v.loadConnectionForm(item) }
+							return button.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button:=material.Button(theme,v.rowDelete[item.ID],"删除")
+							button.TextSize=unit.Sp(10)
+							if v.rowDelete[item.ID].Clicked(gtx) && v.onDelete != nil { v.onDelete(item.ID) }
+							return button.Layout(gtx)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							button:=material.Button(theme,v.folderMove[item.ID],"移动")
@@ -311,7 +344,17 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 	)
 }
 
+func (v *View) loadConnectionForm(item domain.Connection) {
+	v.editingConnectionID = item.ID
+	v.formFolderID = item.FolderID
+	v.name.SetText(item.Name); v.host.SetText(item.Host); v.port.SetText(strconv.Itoa(item.Port))
+	v.user.SetText(item.User); v.password.SetText(item.Password); v.database.SetText(item.Database)
+	v.protocol = item.Protocol; v.secure = item.Secure; v.formError = ""; v.formOpen = true
+}
+
 func (v *View) resetForm() {
+ v.editingConnectionID = ""
+ v.formFolderID = ""
  v.name.SetText("")
  v.host.SetText("")
  v.port.SetText("9000")
