@@ -133,3 +133,49 @@ func TestModelFolderCRUD(t *testing.T) {
  if err := model.DeleteFolder(context.Background(), "f1"); err != nil { t.Fatal(err) }
  if len(model.Snapshot().Folders) != 0 { t.Fatal("删除后分组仍存在") }
 }
+
+
+func TestBuildSidebarRowsKeepsConnectionsWithMissingFoldersVisible(t *testing.T) {
+	items := []domain.Connection{
+		{ID: "assigned", FolderID: "folder-existing", Name: "正常分组连接"},
+		{ID: "orphaned", FolderID: "folder-missing", Name: "失效分组连接"},
+		{ID: "unassigned", Name: "未分组连接"},
+	}
+	folders := []domain.Folder{{ID: "folder-existing", Name: "生产"}}
+
+	rows, orphanedCount := buildSidebarRows(items, folders, nil)
+	if orphanedCount != 1 {
+		t.Fatalf("失效分组连接数量 = %d，期望 1", orphanedCount)
+	}
+	visible := make(map[string]bool)
+	for _, row := range rows {
+		if row.item != nil {
+			visible[row.item.ID] = true
+		}
+	}
+	for _, id := range []string{"assigned", "orphaned", "unassigned"} {
+		if !visible[id] {
+			t.Errorf("连接 %q 未出现在侧栏行中: %+v", id, rows)
+		}
+	}
+}
+
+func TestBuildSidebarRowsKeepsConnectionsWhenAllFoldersAreMissing(t *testing.T) {
+	items := []domain.Connection{
+		{ID: "orphaned-1", FolderID: "missing-1"},
+		{ID: "orphaned-2", FolderID: "missing-2"},
+	}
+	rows, orphanedCount := buildSidebarRows(items, nil, nil)
+	if orphanedCount != 2 {
+		t.Fatalf("失效分组连接数量 = %d，期望 2", orphanedCount)
+	}
+	visible := 0
+	for _, row := range rows {
+		if row.item != nil {
+			visible++
+		}
+	}
+	if visible != len(items) {
+		t.Fatalf("应展示全部连接，实际展示 %d / %d", visible, len(items))
+	}
+}
