@@ -241,13 +241,15 @@ func (s *workspace) reloadConnections() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.connections.Reload(ctx); err != nil {
-		// 配置读取失败时不能静默显示空侧栏；保留错误，便于定位旧配置未加载的原因。
+		// 配置读取失败时不能静默显示空侧栏；侧栏空状态直接展示实际路径和错误。
 		s.status = fmt.Sprintf("加载连接配置失败 · 配置文件：%s · 原因：%v", s.services.ConfigPath, err)
+		s.connectionView.SetDiagnostic(s.status)
 		s.window.Invalidate()
 		return
 	}
 	snapshot := s.connections.Snapshot()
-	s.status = fmt.Sprintf("配置正常 · %d 个连接 · %d 个分组", len(snapshot.Items), len(snapshot.Folders))
+	s.status = fmt.Sprintf("配置正常 · %d 个连接 · %d 个分组 · %s", len(snapshot.Items), len(snapshot.Folders), s.services.ConfigPath)
+	s.connectionView.SetDiagnostic(s.status)
 	s.window.Invalidate()
 }
 
