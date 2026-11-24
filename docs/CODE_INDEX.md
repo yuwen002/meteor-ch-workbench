@@ -1029,3 +1029,11 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 
 - `internal/gui/gioapp/connection/model.go`：连接列表快照、选择、加载、保存、删除、连通性测试与错误状态；只依赖新连接应用服务接口。
 - `internal/gui/gioapp/connection/model_test.go`：覆盖列表刷新、选择校验、保存 / 删除状态更新与服务错误传播。
+
+
+### 新 Gio 运行入口
+
+- `cmd/meteor-ch-gio/main.go`：使用 `internal/bootstrap.NewDefault` 装配新应用服务并启动新 Gio 工作台。
+- `internal/gui/gioapp/app/run.go`：新架构工作台事件循环、连接侧栏、连接测试、数据库 / 表 / 视图浏览、字段结构与 DDL 摘要。
+- `internal/gui/gioapp/connection/model.go`：连接管理状态模型，依赖新连接应用服务接口。
+- `internal/gui/gioapp/connection/view.go`：连接列表侧栏展示组件。
