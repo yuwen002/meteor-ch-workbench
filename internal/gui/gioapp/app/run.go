@@ -350,7 +350,7 @@ func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
 						)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if s.refreshConnection.Clicked() && s.selectedID != "" {
+						if s.refreshConnection.Clicked(gtx) && s.selectedID != "" {
 							for _, item := range s.connections.Snapshot().Items {
 								if item.ID == s.selectedID {
 									s.selectConnection(item)
@@ -455,7 +455,7 @@ func (s *workspace) layoutObjectsPanel(gtx layout.Context) layout.Dimensions {
 					layout.Flexed(1, material.Subtitle1(s.theme, "表与视图").Layout),
 					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d 张表 · %d 个视图", len(s.tables), len(s.views))).Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if s.refreshObjects.Clicked() && s.selectedDatabase != "" {
+						if s.refreshObjects.Clicked(gtx) && s.selectedDatabase != "" {
 							s.selectDatabase(s.selectedDatabase)
 						}
 						button := material.Button(s.theme, &s.refreshObjects, "刷新")
