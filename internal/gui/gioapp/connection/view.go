@@ -263,9 +263,24 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			rows := make([]sidebarRow, 0, len(snapshot.Items)+len(snapshot.Folders)+1)
 			assigned := make(map[string][]domain.Connection)
+			knownFolders := make(map[string]struct{}, len(snapshot.Folders))
+			for _, folder := range snapshot.Folders {
+				knownFolders[folder.ID] = struct{}{}
+			}
 			var unassigned []domain.Connection
+			orphanedCount := 0
 			for _, item := range snapshot.Items {
-				if item.FolderID == "" { unassigned = append(unassigned, item) } else { assigned[item.FolderID] = append(assigned[item.FolderID], item) }
+				if item.FolderID == "" {
+					unassigned = append(unassigned, item)
+					continue
+				}
+				if _, ok := knownFolders[item.FolderID]; !ok {
+					// 分组记录缺失时仍展示连接，避免孤立连接在侧栏中不可见。
+					unassigned = append(unassigned, item)
+					orphanedCount++
+					continue
+				}
+				assigned[item.FolderID] = append(assigned[item.FolderID], item)
 			}
 			for i := range snapshot.Folders {
 				folder := snapshot.Folders[i]
@@ -307,7 +322,13 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 						}),
 					)
 				}
-				if row.unassigned { return layout.Inset{Top:unit.Dp(8),Bottom:unit.Dp(3)}.Layout(gtx, material.Caption(theme,"未分组").Layout) }
+				if row.unassigned {
+					label := "未分组"
+					if orphanedCount > 0 {
+						label = fmt.Sprintf("未分组（含 %d 条失效分组连接）", orphanedCount)
+					}
+					return layout.Inset{Top:unit.Dp(8),Bottom:unit.Dp(3)}.Layout(gtx, material.Caption(theme,label).Layout)
+				}
 				if row.item == nil { return layout.Dimensions{} }
 				item := *row.item
 				click := v.rows[item.ID]
