@@ -11,14 +11,14 @@ import (
 // 使用有界权重，避免超长 JSON / String 列挤压其他字段。
 func resultColumnFlexWeights(columns []queryapp.Column, rows [][]any, sampleRows int) []float32 {
 	weights := make([]float32, len(columns))
+	if sampleRows <= 0 || sampleRows > len(rows) {
+		sampleRows = len(rows)
+	}
 	for i, column := range columns {
 		width := utf8.RuneCountInString(column.Name)
 		typeWidth := utf8.RuneCountInString(column.DatabaseType)
 		if typeWidth > width {
 			width = typeWidth
-		}
-		if sampleRows <= 0 || sampleRows > len(rows) {
-			sampleRows = len(rows)
 		}
 		for rowIndex := 0; rowIndex < sampleRows; rowIndex++ {
 			if i >= len(rows[rowIndex]) {
