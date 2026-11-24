@@ -12,7 +12,7 @@ import (
 )
 
 // migrateLegacyConnections 识别并迁移旧版连接配置。
-// Windows 上新旧目录名仅大小写不同，实际指向同一目录，不能仅凭目标文件存在就跳过。
+// 如果新版文件已存在但为空，会尝试从历史配置路径恢复数据；非空新版配置始终优先。
 func migrateLegacyConnections(dataDir string, legacyPath string) error {
 	newPath := filepath.Join(dataDir, "connections.json")
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
@@ -25,10 +25,18 @@ func migrateLegacyConnections(dataDir string, legacyPath string) error {
 		if detectErr != nil {
 			return fmt.Errorf("检查现有连接配置: %w", detectErr)
 		}
-		if !isLegacy {
+		if isLegacy {
+			return migrateLegacyJSON(newPath, raw)
+		}
+		empty, emptyErr := isEmptyVersionedConnectionFile(raw)
+		if emptyErr != nil {
+			return fmt.Errorf("检查现有连接配置数据: %w", emptyErr)
+		}
+		if !empty {
 			return nil
 		}
-		return migrateLegacyJSON(newPath, raw)
+		// 新版空文件可能是在迁移前首次启动时创建的。此时不能直接跳过历史文件。
+		return mergeLegacyConnections(newPath, legacyPath)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("读取现有连接配置: %w", err)
@@ -52,6 +60,48 @@ func isLegacyConnectionFile(raw []byte) (bool, error) {
 		return false, fmt.Errorf("JSON 格式无效: %w", err)
 	}
 	return header.Version == nil, nil
+}
+
+func isEmptyVersionedConnectionFile(raw []byte) (bool, error) {
+	var data struct {
+		Version     int               `json:"version"`
+		Folders     []json.RawMessage `json:"folders"`
+		Connections []json.RawMessage `json:"connections"`
+	}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return false, err
+	}
+	if data.Version != 1 {
+		return false, fmt.Errorf("不支持版本 %d", data.Version)
+	}
+	return len(data.Folders) == 0 && len(data.Connections) == 0, nil
+}
+
+// mergeLegacyConnections 仅在目标配置为空时导入历史文件，不覆盖已有数据。
+// ImportLegacyJSON 按 ID 合并，并保留旧文件作为恢复副本。
+func mergeLegacyConnections(target, legacyPath string) error {
+	raw, err := os.ReadFile(legacyPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("读取历史连接配置: %w", err)
+	}
+	isLegacy, err := isLegacyConnectionFile(raw)
+	if err != nil {
+		return fmt.Errorf("检查历史连接配置: %w", err)
+	}
+	if !isLegacy {
+		return nil
+	}
+	repository, err := connectionfile.New(target)
+	if err != nil {
+		return err
+	}
+	if _, err := repository.ImportLegacyJSON(context.Background(), raw); err != nil {
+		return fmt.Errorf("恢复历史连接配置: %w", err)
+	}
+	return nil
 }
 
 // migrateLegacyJSON 先在同目录临时文件中完整转换并校验，再替换目标文件。
