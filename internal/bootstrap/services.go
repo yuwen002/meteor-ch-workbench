@@ -68,14 +68,20 @@ func New(dataDir string) (*Services, error) {
 	}, nil
 }
 
+// defaultDataDir 返回稳定的应用配置目录。目录名与旧版应用保持一致，避免升级后丢失已有连接。
+func defaultDataDir(configDir string) string {
+	return filepath.Join(configDir, "meteor-ch-workbench")
+}
+
 // NewDefault 使用操作系统默认用户配置目录。
 func NewDefault() (*Services, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, err
 	}
-	dataDir := filepath.Join(configDir, "MeteorCHWorkbench")
-	legacyPath := filepath.Join(configDir, "meteor-ch-workbench", "connections.json")
+	dataDir := defaultDataDir(configDir)
+	// 兼容上一轮迁移版本使用的目录名；目标目录始终采用旧应用的稳定路径。
+	legacyPath := filepath.Join(configDir, "MeteorCHWorkbench", "connections.json")
 	if err := migrateLegacyConnections(dataDir, legacyPath); err != nil {
 		return nil, err
 	}
