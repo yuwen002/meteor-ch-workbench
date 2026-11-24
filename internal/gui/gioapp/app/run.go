@@ -243,7 +243,7 @@ func (s *workspace) reloadConnections() {
 		return
 	}
 	snapshot := s.connections.Snapshot()
-	s.status = fmt.Sprintf("连接配置已加载 · %d 个连接 · %d 个分组 · 文件：%s", len(snapshot.Items), len(snapshot.Folders), s.services.ConfigPath)
+	s.status = fmt.Sprintf("配置正常 · %d 个连接 · %d 个分组", len(snapshot.Items), len(snapshot.Folders))
 	s.window.Invalidate()
 }
 
@@ -393,22 +393,23 @@ func (s *workspace) drainResults() {
 func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 241, G: 244, B: 249, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(s.layoutTopBar),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14), Top: unit.Dp(12), Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(14), Bottom: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								gtx.Constraints.Min.X = gtx.Dp(unit.Dp(250))
-								gtx.Constraints.Max.X = gtx.Dp(unit.Dp(290))
+								gtx.Constraints.Min.X = gtx.Dp(unit.Dp(270))
+								gtx.Constraints.Max.X = gtx.Dp(unit.Dp(310))
 								return s.connectionView.Layout(gtx, s.theme)
 							}),
 							layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-									layout.Flexed(0.48, s.layoutExplorer),
+									layout.Flexed(0.44, s.layoutExplorer),
 									layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-									layout.Flexed(0.52, s.layoutQueryWorkspace),
+									layout.Flexed(0.56, s.layoutQueryWorkspace),
 								)
 							}),
 						)
@@ -424,7 +425,7 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
-	return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20), Top: unit.Dp(14), Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Left: unit.Dp(22), Right: unit.Dp(22), Top: unit.Dp(18), Bottom: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -522,7 +523,7 @@ func (s *workspace) layoutQueryCellDetail(gtx layout.Context) layout.Dimensions 
 
 func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Top:unit.Dp(8),Bottom:unit.Dp(8),Left:unit.Dp(12),Right:unit.Dp(12)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top:unit.Dp(14),Bottom:unit.Dp(12),Left:unit.Dp(16),Right:unit.Dp(16)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis:layout.Horizontal,Alignment:layout.Middle}.Layout(gtx,
@@ -593,7 +594,10 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
 				layout.Flexed(0.42,func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Top:unit.Dp(8), Bottom:unit.Dp(8), Left:unit.Dp(8), Right:unit.Dp(8)}.Layout(gtx,material.Editor(s.theme,&s.queryEditor,"输入 SQL，例如 SELECT 1").Layout)
+					return layout.Inset{Top:unit.Dp(10), Bottom:unit.Dp(10), Left:unit.Dp(10), Right:unit.Dp(10)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+						paint.FillShape(gtx.Ops, color.NRGBA{R: 247, G: 249, B: 252, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+						return layout.Inset{Top:unit.Dp(10),Bottom:unit.Dp(10),Left:unit.Dp(12),Right:unit.Dp(12)}.Layout(gtx,material.Editor(s.theme,&s.queryEditor,"输入 SQL，例如 SELECT 1").Layout)
+					})
 				}),
 				layout.Rigid(layout.Spacer{Height:unit.Dp(6)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -691,7 +695,7 @@ func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
 func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimensions {
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, color.NRGBA{R: 246, G: 248, B: 251, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			return layout.Dimensions{Size: gtx.Constraints.Max}
 		}),
 		layout.Stacked(child),
