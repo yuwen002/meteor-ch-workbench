@@ -8,6 +8,7 @@ import (
 
 	gio "gioui.org/app"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -83,7 +84,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 	}
 	go state.reloadConnections()
 
-	var ops gio.Ops
+	var ops op.Ops
 	for {
 		event := window.Event()
 		switch e := event.(type) {
