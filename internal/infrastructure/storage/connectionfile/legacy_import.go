@@ -37,6 +37,7 @@ type legacyConnection struct {
 func (r *Repository) ImportLegacyJSON(ctx context.Context, raw []byte) (int,error) {
 	var old legacyFile
 	if err:=json.Unmarshal(raw,&old); err!=nil { return 0,fmt.Errorf("解析旧连接配置: %w",err) }
+	ids:=RandomIDGenerator{}
 	converted:=make([]connection.Connection,0,len(old.Connections))
 	convertedFolders:=make([]connection.Folder,0,len(old.Folders))
 	seenFolders:=make(map[string]struct{},len(old.Folders))
@@ -52,7 +53,6 @@ func (r *Repository) ImportLegacyJSON(ctx context.Context, raw []byte) (int,erro
 		seenFolders[folder.ID]=struct{}{}
 		convertedFolders=append(convertedFolders,folder)
 	}
-	ids:=RandomIDGenerator{}
 	for i,item:=range old.Connections {
 		if strings.TrimSpace(item.ID)=="" {
 			id,err:=ids.NewID()
