@@ -201,6 +201,8 @@ type workspace struct {
 	columnList widget.List
 	selectedID string
 	selectedName string
+	connected bool
+	retryConnection widget.Clickable
 	databases []string
 	selectedDatabase string
 	tables []metadataapp.Object
@@ -252,6 +254,7 @@ func (s *workspace) reloadConnections() {
 func (s *workspace) selectConnection(item connection.Connection) {
 	s.selectedID = item.ID
 	s.selectedName = item.Name
+	s.connected = false
 	s.selectedDatabase = ""
 	s.selectedTable = ""
 	s.selectedObject = ""
@@ -284,7 +287,7 @@ func (s *workspace) selectConnection(item connection.Connection) {
 }
 
 func (s *workspace) selectDatabase(name string) {
-	if s.selectedID == "" {
+	if !s.connected || s.selectedID == "" {
 		return
 	}
 	s.selectedDatabase = name
@@ -329,7 +332,7 @@ func (s *workspace) drainResults() {
 			s.selectConnection(result.item)
 		case result := <-s.deleteResults:
 			if result.err != nil { s.status = "删除连接失败：" + result.err.Error() } else {
-				if s.selectedID == result.id { s.selectedID = ""; s.selectedName = ""; s.databases=nil; s.tables=nil; s.views=nil; s.columns=nil }
+				if s.selectedID == result.id { s.selectedID = ""; s.selectedName = ""; s.connected = false; s.databases=nil; s.tables=nil; s.views=nil; s.columns=nil }
 				s.status = "连接已删除"
 			}
 		case result := <-s.checkResults:
@@ -338,9 +341,11 @@ func (s *workspace) drainResults() {
 			}
 			s.loading = ""
 			if result.err != nil {
+				s.connected = false
 				s.status = "连接测试或数据库读取失败：" + result.err.Error()
 				s.databases = nil
 			} else {
+				s.connected = true
 				s.databases = result.databases
 				s.status = fmt.Sprintf("连接成功 · %d 个数据库", len(result.databases))
 			}
@@ -408,7 +413,7 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 							}),
 							layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								if s.selectedID == "" {
+								if !s.connected {
 									return s.layoutWelcome(gtx)
 								}
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -435,9 +440,30 @@ func (s *workspace) layoutWelcome(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(material.H4(s.theme, "欢迎使用 Meteor CH Workbench").Layout),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
-				layout.Rigid(material.Body1(s.theme, "先从左侧选择一个 ClickHouse 连接，或新建连接开始使用").Layout),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(20)}.Layout),
+				layout.Rigid(material.Body1(s.theme, "选择左侧已保存的连接，或新建连接开始使用").Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(14)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					message := "尚未连接数据库"
+					if s.selectedName != "" && s.loading != "" { message = "正在连接 · " + s.selectedName }
+					if s.selectedName != "" && s.loading == "" && !s.connected { message = "连接失败 · " + s.selectedName }
+					return material.Body2(s.theme, message).Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if s.status == "" { return layout.Dimensions{} }
+					return material.Caption(s.theme, s.status).Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(18)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if s.selectedID != "" && s.loading == "" && !s.connected {
+						if s.retryConnection.Clicked(gtx) {
+							for _, item := range s.connections.Snapshot().Items {
+								if item.ID == s.selectedID { s.selectConnection(item); break }
+							}
+						}
+						button := material.Button(s.theme, &s.retryConnection, "重新连接")
+						return button.Layout(gtx)
+					}
 					if s.refreshConnection.Clicked(gtx) { s.reloadConnections() }
 					button := material.Button(s.theme, &s.refreshConnection, "刷新连接列表")
 					return button.Layout(gtx)
@@ -446,7 +472,6 @@ func (s *workspace) layoutWelcome(gtx layout.Context) layout.Dimensions {
 		})
 	})
 }
-
 func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
 	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20), Top: unit.Dp(10), Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -482,7 +507,7 @@ func queryResultStatus(result queryEvent, columns []queryapp.Column) string {
 	return fmt.Sprintf("执行完成 · 影响 %d 行 · %s", result.summary.RowsAffected, result.summary.Elapsed.Round(time.Millisecond))
 }
 func (s *workspace) executeQuery() {
-	if s.selectedID == "" { s.queryStatus = "请先选择一个 ClickHouse 连接"; return }
+	if !s.connected || s.selectedID == "" { s.queryStatus = "请先连接 ClickHouse"; return }
 	sqlText := strings.TrimSpace(s.queryEditor.Text())
 	if sqlText == "" { s.queryStatus = "请输入 SQL 语句"; return }
 	if s.queryCancelFunc != nil { s.queryCancelFunc() }
