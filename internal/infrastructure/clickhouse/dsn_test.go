@@ -28,7 +28,7 @@ func TestBuildDSNEscapesCredentialsAndDatabase(t *testing.T) {
 	u,err:=url.Parse(dsn); if err!=nil { t.Fatal(err) }
 	password,_:=u.User.Password()
 	if password!=item.Password { t.Fatalf("密码解析不一致: %q",password) }
-	username,_:=u.User.Username()
+	username:=u.User.Username()
 	if username!=item.User { t.Fatalf("用户名解析不一致: %q",username) }
 	if u.Query().Get("database")!=item.Database || u.Query().Get("compress")!="true" { t.Fatalf("query 参数不正确: %s",u.RawQuery) }
 }
