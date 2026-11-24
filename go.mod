@@ -11,6 +11,7 @@ require (
 
 require (
 	gioui.org/shader v1.0.9 // indirect
+	git.wow.st/gmp/jni v0.0.0-20210610011705-34026c7e22d0 // indirect
 	github.com/ClickHouse/ch-go v0.66.0 // indirect
 	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
