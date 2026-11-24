@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 )
 
@@ -27,5 +28,13 @@ func TestNewBuildsApplicationServices(t *testing.T) {
 func TestNewRequiresDataDirectory(t *testing.T) {
 	if _, err := New(" "); err == nil {
 		t.Fatal("空数据目录应返回错误")
+	}
+}
+
+func TestDefaultDataDirUsesLegacyCompatibleDirectoryName(t *testing.T) {
+	configDir := filepath.Join("user", "config")
+	want := filepath.Join(configDir, "meteor-ch-workbench")
+	if got := defaultDataDir(configDir); got != want {
+		t.Fatalf("默认配置目录 = %q，期望 %q", got, want)
 	}
 }
