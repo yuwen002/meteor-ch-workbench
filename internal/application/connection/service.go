@@ -27,6 +27,18 @@ func NewService(repository Repository, tester Tester, ids IDGenerator) (*Service
 	return &Service{repository: repository, tester: tester, ids: ids}, nil
 }
 
+func (s *Service) Get(ctx context.Context, id string) (connection.Connection, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return connection.Connection{}, connection.ErrMissingID
+	}
+	item, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return connection.Connection{}, fmt.Errorf("读取连接: %w", err)
+	}
+	return item, nil
+}
+
 func (s *Service) List(ctx context.Context) ([]connection.Connection, error) {
 	return s.repository.List(ctx)
 }
