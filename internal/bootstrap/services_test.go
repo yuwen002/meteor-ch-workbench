@@ -14,7 +14,14 @@ func TestNewBuildsApplicationServices(t *testing.T) {
 	defer services.Close()
 
 	if services.Connections == nil || services.Folders == nil || services.Queries == nil || services.Metadata == nil {
+
 		t.Fatal("新架构应用服务未完整装配")
+	}
+	if services.ConfigPath == "" || !filepath.IsAbs(services.ConfigPath) {
+		t.Fatalf("连接配置路径应为绝对路径，得到 %q", services.ConfigPath)
+	}
+	if filepath.Base(services.ConfigPath) != "connections.json" {
+		t.Fatalf("连接配置文件名错误: %q", services.ConfigPath)
 	}
 	items, err := services.Connections.List(context.Background())
 	if err != nil {
