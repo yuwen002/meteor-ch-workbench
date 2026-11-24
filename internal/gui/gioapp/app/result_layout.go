@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
@@ -38,4 +39,20 @@ func resultColumnFlexWeights(columns []queryapp.Column, rows [][]any, sampleRows
 		weights[i] = float32(width)
 	}
 	return weights
+}
+
+const maxResultCellRunes = 80
+
+// formatResultCell 将数据库值转换为紧凑、可读的单元格文本。
+func formatResultCell(value any) string {
+	if value == nil {
+		return "NULL"
+	}
+	text := fmt.Sprint(value)
+	text = strings.NewReplacer("\\r\\n", " ↵ ", "\\n", " ↵ ", "\\r", " ↵ ", "\\t", " ⇥ ").Replace(text)
+	if utf8.RuneCountInString(text) <= maxResultCellRunes {
+		return text
+	}
+	runes := []rune(text)
+	return string(runes[:maxResultCellRunes-1]) + "…"
 }
