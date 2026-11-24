@@ -996,3 +996,12 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/infrastructure/clickhouse/query_executor.go`：基于新连接池实现 QueryContext / ExecContext、超时、取消、列元数据、分批流式结果和最大行数截断。
 - `internal/infrastructure/clickhouse/query_executor_test.go`：使用 fake database/sql driver 覆盖批次交付、截断、Exec 影响行数、取消和 Rows 释放。
 - `internal/infrastructure/storage/connectionfile/repository.go`：新增 `Get(ctx, id)`，为查询用例按 ID 读取连接配置。
+
+
+### 新架构 ClickHouse 元数据读取
+
+- `internal/application/metadata/ports.go`：数据库 / 表 / 视图 / 字段 / 表详情 DTO 与 Reader 端口。
+- `internal/application/metadata/service.go`：元数据用例编排、连接 ID 和数据库 / 表名称校验。
+- `internal/application/metadata/service_test.go`：应用层请求校验、连接读取和错误传播测试。
+- `internal/infrastructure/clickhouse/metadata.go`：基于新连接池查询数据库列表、表和视图、DESCRIBE 字段结构、system.tables 表详情与 TTL。
+- `internal/infrastructure/clickhouse/metadata_test.go`：覆盖数据库、表 / 视图、参数绑定、字段结构、标识符转义和 DDL TTL 解析。
