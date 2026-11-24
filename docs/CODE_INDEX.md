@@ -1037,3 +1037,7 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/gui/gioapp/app/run.go`：新架构工作台事件循环、连接侧栏、连接测试、数据库 / 表 / 视图浏览、字段结构与 DDL 摘要。
 - `internal/gui/gioapp/connection/model.go`：连接管理状态模型，依赖新连接应用服务接口。
 - `internal/gui/gioapp/connection/view.go`：连接列表侧栏展示组件。
+
+
+- `internal/gui/gioapp/connection/view.go`：连接侧栏与新增连接表单，支持 Native / HTTP、TLS 和遮蔽密码输入；保存操作回调到新连接应用服务。
+- `internal/gui/gioapp/app/run.go`：异步保存新连接，成功后自动连通性测试并读取数据库、表 / 视图和字段详情。
