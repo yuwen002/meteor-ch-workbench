@@ -445,7 +445,7 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 		connectingID = s.selectedID
 	}
 	s.connectionView.SetConnectionStatus(s.selectedID, connectedID, connectingID)
-	// 背景必须先绘制，之后再绘制的子组件才能覆盖在其上，否则整屏背景会把内容遮住。
+	// 整屏底色直接铺一层不透明矩形，避免任何录制/回放机制带来透明缝隙。
 	paint.FillShape(gtx.Ops, colorAppBackground, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	outer := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(s.layoutTopBar),
@@ -496,48 +496,61 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutWelcome(gtx layout.Context) layout.Dimensions {
-	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
+	return s.card(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(material.H4(s.theme, "欢迎使用 Meteor CH Workbench").Layout),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
-				layout.Rigid(material.Body1(s.theme, "选择左侧已保存的连接，或新建连接开始使用").Layout),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(14)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					message := "尚未连接数据库"
+					size := image.Pt(gtx.Dp(unit.Dp(56)), gtx.Dp(unit.Dp(56)))
+					fillRounded(gtx, size, radiusM, colorAccent)
+					return layout.Dimensions{Size: size}
+				}),
+				layout.Rigid(layout.Spacer{Height: spaceL}.Layout),
+				layout.Rigid(styledText(s.theme, "Meteor CH Workbench", unit.Sp(26), colorTextPrimary)),
+				layout.Rigid(layout.Spacer{Height: spaceS}.Layout),
+				layout.Rigid(styledText(s.theme, "轻量级 ClickHouse 数据库 IDE", unit.Sp(13), colorTextSecondary)),
+				layout.Rigid(layout.Spacer{Height: spaceXL}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					message, dot := "尚未连接数据库", colorTextMuted
 					if s.selectedName != "" && s.loading != "" {
-						message = "正在连接 · " + s.selectedName
+						message, dot = "正在连接 · "+s.selectedName, colorWarning
 					}
 					if s.selectedName != "" && s.loading == "" && !s.connected {
-						message = "连接失败 · " + s.selectedName
+						message, dot = "连接失败 · "+s.selectedName, colorWarning
 					}
-					return material.Body2(s.theme, message).Layout(gtx)
+					return s.statusPill(gtx, dot, message)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if s.status == "" {
 						return layout.Dimensions{}
 					}
-					return material.Caption(s.theme, s.status).Layout(gtx)
+					return layout.Inset{Top: spaceS}.Layout(gtx, styledText(s.theme, s.status, unit.Sp(12), colorTextMuted))
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(18)}.Layout),
+				layout.Rigid(layout.Spacer{Height: spaceXL}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					var click *widget.Clickable
+					label := "刷新连接列表"
 					if s.selectedID != "" && s.loading == "" && !s.connected {
-						if s.retryConnection.Clicked(gtx) {
+						click = &s.retryConnection
+						label = "重新连接"
+					} else {
+						click = &s.refreshConnection
+					}
+					if click.Clicked(gtx) {
+						if s.selectedID != "" && s.loading == "" && !s.connected {
 							for _, item := range s.connections.Snapshot().Items {
 								if item.ID == s.selectedID {
 									s.selectConnection(item)
 									break
 								}
 							}
+						} else {
+							s.reloadConnections()
 						}
-						button := material.Button(s.theme, &s.retryConnection, "重新连接")
-						return button.Layout(gtx)
 					}
-					if s.refreshConnection.Clicked(gtx) {
-						s.reloadConnections()
-					}
-					button := material.Button(s.theme, &s.refreshConnection, "刷新连接列表")
+					button := material.Button(s.theme, click, label)
+					button.CornerRadius = radiusS
+					button.Inset = layout.Inset{Left: unit.Dp(18), Right: unit.Dp(18), Top: unit.Dp(8), Bottom: unit.Dp(8)}
+					button.TextSize = unit.Sp(12)
 					return button.Layout(gtx)
 				}),
 			)
@@ -545,35 +558,53 @@ func (s *workspace) layoutWelcome(gtx layout.Context) layout.Dimensions {
 	})
 }
 func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
-	return s.panelContent(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Left: unit.Dp(20), Right: unit.Dp(20), Top: unit.Dp(10), Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return s.topSurface(gtx, colorSurface, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Left: spaceXL, Right: spaceXL, Top: spaceM, Bottom: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						layout.Rigid(material.H6(s.theme, "Meteor CH Workbench").Layout),
-						layout.Rigid(material.Caption(s.theme, "轻量级 ClickHouse 数据库 IDE").Layout),
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							size := image.Pt(gtx.Dp(unit.Dp(30)), gtx.Dp(unit.Dp(30)))
+							fillRounded(gtx, size, radiusS, colorAccent)
+							return layout.Dimensions{Size: size}
+						}),
+						layout.Rigid(layout.Spacer{Width: spaceM}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							title := styledText(s.theme, "Meteor CH Workbench", unit.Sp(15), colorTextPrimary)
+							subtitle := styledText(s.theme, "轻量级 ClickHouse 数据库 IDE", unit.Sp(10), colorTextMuted)
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(title),
+								layout.Rigid(subtitle),
+							)
+						}),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(28)}.Layout),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(32)}.Layout),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					label := "未连接 · 选择左侧连接开始工作"
+					label, dot := "未连接 · 选择左侧连接开始工作", colorTextMuted
 					if s.selectedName != "" && s.loading != "" {
-						label = "◌  正在连接 · " + s.selectedName
+						label = "正在连接 · " + s.selectedName
+						dot = colorWarning
 					}
 					if s.connected {
-						label = "●  已连接 · " + s.selectedName
+						label = "已连接 · " + s.selectedName
+						dot = colorSuccess
 					}
 					if s.selectedName != "" && s.loading == "" && !s.connected {
 						label = "连接失败 · " + s.selectedName
+						dot = colorWarning
 					}
-					return material.Body2(s.theme, label).Layout(gtx)
+					return s.statusPill(gtx, dot, label)
 				}),
+				layout.Rigid(layout.Spacer{Width: spaceM}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if s.refreshConnection.Clicked(gtx) {
 						s.reloadConnections()
 					}
 					button := material.Button(s.theme, &s.refreshConnection, "刷新连接")
-					button.TextSize = unit.Sp(12)
+					button.TextSize = unit.Sp(11)
+					button.Inset = layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12), Top: unit.Dp(6), Bottom: unit.Dp(6)}
+					button.CornerRadius = radiusS
 					return button.Layout(gtx)
 				}),
 			)
@@ -876,8 +907,8 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
-	return s.panelContent(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Left: unit.Dp(18), Right: unit.Dp(18), Top: unit.Dp(8), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return s.topSurface(gtx, colorSurface, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Left: spaceXL, Right: spaceXL, Top: spaceS, Bottom: spaceS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			message := s.status
 			if s.loading != "" {
 				message = s.loading
@@ -885,32 +916,43 @@ func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
 			if message == "" {
 				message = "就绪 · 选择连接并打开数据库"
 			}
-			return material.Caption(s.theme, message).Layout(gtx)
+			label := material.Label(s.theme, unit.Sp(11), message)
+			label.Color = colorTextMuted
+			// 单行展示，窗口变窄时自动截断，避免文字溢出到窗口外。
+			label.MaxLines = 1
+			return label.Layout(gtx)
 		})
 	})
 }
 
-// panel 为数据库浏览的各列提供统一的浅色面板底色。
+// panel 为数据库浏览的各列提供统一的圆角面板底色。
 func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimensions {
+	size := gtx.Constraints.Max
+	if gtx.Constraints.Min.X > 0 {
+		size.X = gtx.Constraints.Min.X
+	}
+	if gtx.Constraints.Min.Y > 0 {
+		size.Y = gtx.Constraints.Min.Y
+	}
+	// 圆角半径不得超过短边一半，避免 clip.RRect 在小尺寸下生成退化路径。
+	r := gtx.Dp(radiusM)
+	if limit := min(size.X, size.Y) / 2; r > limit {
+		r = limit
+	}
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(gtx.Ops, colorSurface, clip.Rect{Max: gtx.Constraints.Max}.Op())
-			return layout.Dimensions{Size: gtx.Constraints.Max}
+			fillRounded(gtx, size, radiusM, colorSurface)
+			return layout.Dimensions{Size: size}
 		}),
-		layout.Stacked(child),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if r > 0 {
+				defer clip.RRect{Rect: image.Rectangle{Max: size}, NE: r, NW: r, SE: r, SW: r}.Push(gtx.Ops).Pop()
+			}
+			gtx.Constraints.Min = image.Point{}
+			gtx.Constraints.Max = size
+			return child(gtx)
+		}),
 	)
-}
-
-// panelContent 只按内容尺寸绘制背景，不会撑满剩余空间，适用于放在垂直 Flex 的 Rigid 子项中。
-func (s *workspace) panelContent(gtx layout.Context, child layout.Widget) layout.Dimensions {
-	macro := op.Record(gtx.Ops)
-	childGtx := gtx
-	childGtx.Constraints.Min = image.Point{}
-	dims := child(childGtx)
-	call := macro.Stop()
-	paint.FillShape(gtx.Ops, colorSurface, clip.Rect{Max: dims.Size}.Op())
-	call.Add(gtx.Ops)
-	return dims
 }
 
 // layoutExplorer 使用单一对象树呈现数据库、表和视图，右侧显示选中对象结构。
