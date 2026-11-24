@@ -542,9 +542,12 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top:unit.Dp(4),Bottom:unit.Dp(6)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
 								children:=make([]layout.FlexChild,0,len(s.queryColumns))
 								for _,col:=range s.queryColumns {
-									name:=col.Name
+									name, databaseType := col.Name, col.DatabaseType
 									children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
-										return material.Body2(s.theme,name).Layout(gtx)
+										return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+											layout.Rigid(material.Body2(s.theme,name).Layout),
+											layout.Rigid(material.Caption(s.theme,databaseType).Layout),
+										)
 									}))
 								}
 								return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
@@ -556,9 +559,9 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Top:unit.Dp(3),Bottom:unit.Dp(3)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
 									children:=make([]layout.FlexChild,0,len(s.queryColumns))
 									for i:=range s.queryColumns {
-										value:=""
-										if i<len(row) { value=fmt.Sprint(row[i]) }
-										if len(value)>80 { value=value[:77]+"…" }
+										var cell any
+										if i<len(row) { cell=row[i] }
+										value:=formatResultCell(cell)
 										children=append(children,layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
 											return material.Caption(s.theme,value).Layout(gtx)
 										}))
