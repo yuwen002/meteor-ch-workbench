@@ -342,44 +342,85 @@ func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		layout.Flexed(0.24, s.layoutDatabasePanel),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
+		layout.Flexed(0.34, s.layoutTablePanel),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
+		layout.Flexed(0.42, s.layoutSchemaPanel),
+	)
+}
+
+func (s *workspace) layoutTablePanel(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						title := "数据库浏览"
-						if s.selectedName != "" {
-							title = s.selectedName
-						}
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(material.H6(s.theme, title).Layout),
-							layout.Rigid(material.Caption(s.theme, "选择数据库后查看表、视图及对象信息").Layout),
-						)
-					}),
+					layout.Flexed(1, material.Subtitle1(s.theme, "表与视图").Layout),
+					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d 张表 · %d 个视图", len(s.tables), len(s.views))).Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if s.refreshConnection.Clicked(gtx) && s.selectedID != "" {
-							for _, item := range s.connections.Snapshot().Items {
-								if item.ID == s.selectedID {
-									s.selectConnection(item)
-									break
-								}
-							}
-						}
-						button := material.Button(s.theme, &s.refreshConnection, "刷新连接")
+						if s.refreshObjects.Clicked(gtx) && s.selectedDatabase != "" { s.selectDatabase(s.selectedDatabase) }
+						button := material.Button(s.theme, &s.refreshObjects, "刷新")
 						button.TextSize = unit.Sp(12)
 						return button.Layout(gtx)
 					}),
 				)
-			})
-		}),
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(0.34, s.layoutDatabasePanel),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
-				layout.Flexed(0.66, s.layoutObjectsPanel),
-			)
-		}),
-	)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				if s.selectedDatabase == "" { return material.Body2(s.theme, "选择数据库以加载表和视图").Layout(gtx) }
+				items := make([]structObject, 0, len(s.tables)+len(s.views))
+				items = append(items, s.tables...)
+				items = append(items, s.views...)
+				if len(items) == 0 && s.loading == "" { return material.Body2(s.theme, "该数据库没有可显示的表或视图").Layout(gtx) }
+				return material.List(s.theme, &s.objectList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
+					item := items[index]
+					key := s.selectedDatabase + "." + item.Name
+					click := s.objectClicks[key]
+					if click == nil { click = new(widget.Clickable); s.objectClicks[key] = click }
+					if click.Clicked(gtx) { s.selectedObject = key; s.loadTableSchema(item.Name) }
+					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							kind := "表"
+							if index >= len(s.tables) { kind = "视图" }
+							title := item.Name
+							if key == s.selectedObject { title = "● " + title }
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(material.Body1(s.theme, title).Layout),
+								layout.Rigid(material.Caption(s.theme, kind+" · "+item.Engine).Layout),
+							)
+						})
+					})
+				})
+			}),
+		)
+	})
+}
+
+func (s *workspace) layoutSchemaPanel(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(material.Subtitle1(s.theme, "表结构 / DDL").Layout),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				if s.selectedTable == "" { return material.Body2(s.theme, "选择一张表查看字段、引擎和建表语句").Layout(gtx) }
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("引擎：%s · 主键：%s", s.tableDetails.Engine, s.tableDetails.PrimaryKey)).Layout),
+					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("分区：%s · 排序：%s", s.tableDetails.PartitionKey, s.tableDetails.SortingKey)).Layout),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return material.List(s.theme, &s.columnList).Layout(gtx, len(s.columns), func(gtx layout.Context, index int) layout.Dimensions {
+							column := s.columns[index]
+							marker := ""
+							if column.IsPrimary { marker += " · 主键" }
+							if column.HasDefault { marker += " · 默认值" }
+							return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, material.Body2(s.theme, fmt.Sprintf("%s  %s%s", column.Name, column.Type, marker)).Layout)
+						})
+					}),
+					layout.Rigid(material.Caption(s.theme, s.tableDetails.TTLExpression).Layout),
+				)
+			}),
+		)
+	})
 }
 
 func (s *workspace) layoutDatabasePanel(gtx layout.Context) layout.Dimensions {
