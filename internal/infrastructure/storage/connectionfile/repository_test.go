@@ -70,7 +70,7 @@ func TestRepositoryRejectsUnsupportedVersion(t *testing.T) {
 func TestRepositoryRejectsDuplicateIDs(t *testing.T) {
 	repo, path := testRepository(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil { t.Fatal(err) }
-	raw := `{"version":1,"connections":[{"id":"same"},{"id":"same"}]}`
+	raw := `{"version":1,"connections":[{"id":"same","name":"First","host":"127.0.0.1","port":9000,"protocol":"native"},{"id":"same","name":"Second","host":"127.0.0.1","port":9000,"protocol":"native"}]}`
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil { t.Fatal(err) }
 	if _, err := repo.List(context.Background()); !errors.Is(err, ErrDuplicateID) { t.Fatalf("期望 ErrDuplicateID，得到 %v", err) }
 }
