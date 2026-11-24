@@ -238,12 +238,12 @@ func (s *workspace) reloadConnections() {
 	defer cancel()
 	if err := s.connections.Reload(ctx); err != nil {
 		// 配置读取失败时不能静默显示空侧栏；保留错误，便于定位旧配置未加载的原因。
-		s.status = "加载连接配置失败：" + err.Error()
+		s.status = fmt.Sprintf("加载连接配置失败 · 配置文件：%s · 原因：%v", s.services.ConfigPath, err)
 		s.window.Invalidate()
 		return
 	}
 	snapshot := s.connections.Snapshot()
-	s.status = fmt.Sprintf("连接配置已加载 · %d 个连接 · %d 个分组", len(snapshot.Items), len(snapshot.Folders))
+	s.status = fmt.Sprintf("连接配置已加载 · %d 个连接 · %d 个分组 · 文件：%s", len(snapshot.Items), len(snapshot.Folders), s.services.ConfigPath)
 	s.window.Invalidate()
 }
 
