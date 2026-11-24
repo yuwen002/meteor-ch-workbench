@@ -671,9 +671,27 @@ func (s *workspace) executeQuery() {
 				}
 			},
 		)
-		s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, err: err, done: true}
+		select {
+		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, err: err, done: true}:
+		case <-ctx.Done():
+			// 标签页切换或窗口退出后不再等待无人消费的结果事件。
+		}
 		s.window.Invalidate()
 	}()
+}
+
+// cancelActiveQuery 在离开当前 SQL 标签页时取消仍在执行的请求，并使其后续事件失效。
+func (s *workspace) cancelActiveQuery(reason string) {
+	if !s.queryRunning {
+		return
+	}
+	if s.queryCancelFunc != nil {
+		s.queryCancelFunc()
+		s.queryCancelFunc = nil
+	}
+	s.querySeq++
+	s.queryRunning = false
+	s.queryStatus = reason
 }
 
 func (s *workspace) clearQueryCellSelection() {
@@ -758,6 +776,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									click := s.sqlTabClicks[index]
 									if click.Clicked(gtx) && index != s.activeSQLTab {
+										s.cancelActiveQuery("查询已取消（切换标签页）")
 										current := s.sqlTabStates[s.activeSQLTab]
 										current.Text = s.queryEditor.Text()
 										current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
@@ -783,6 +802,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if s.sqlNewTab.Clicked(gtx) {
+								s.cancelActiveQuery("查询已取消（新建标签页）")
 								current := s.sqlTabStates[s.activeSQLTab]
 								current.Text = s.queryEditor.Text()
 								current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
