@@ -4,11 +4,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"time"
 
 	gio "gioui.org/app"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -341,13 +344,24 @@ func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
 	})
 }
 
+// panel 为数据库浏览的各列提供统一的浅色面板底色。
+func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimensions {
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(gtx.Ops, color.NRGBA{R: 246, G: 248, B: 251, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		}),
+		layout.Stacked(child),
+	)
+}
+
 func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-		layout.Flexed(0.24, s.layoutDatabasePanel),
+		layout.Flexed(0.24, func(gtx layout.Context) layout.Dimensions { return s.panel(gtx, s.layoutDatabasePanel) }),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
-		layout.Flexed(0.34, s.layoutTablePanel),
+		layout.Flexed(0.34, func(gtx layout.Context) layout.Dimensions { return s.panel(gtx, s.layoutTablePanel) }),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
-		layout.Flexed(0.42, s.layoutSchemaPanel),
+		layout.Flexed(0.42, func(gtx layout.Context) layout.Dimensions { return s.panel(gtx, s.layoutSchemaPanel) }),
 	)
 }
 
