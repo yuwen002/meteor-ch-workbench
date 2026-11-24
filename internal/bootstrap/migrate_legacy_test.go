@@ -76,7 +76,7 @@ func TestMigrateLegacyConnectionsRestoresLegacyWhenNewConfigIsEmpty(t *testing.T
 func TestMigrateLegacyConnectionsRestoresVersionedHistoryWhenNewConfigIsEmpty(t *testing.T) {
 	root := t.TempDir()
 	newDir := filepath.Join(root, "meteor-ch-workbench")
-	legacyPath := filepath.Join(root, "MeteorCHWorkbench", "connections.json")
+	legacyPath := filepath.Join(root, "MeteorCHWorkbench-previous", "connections.json")
 	if err := os.MkdirAll(newDir, 0o700); err != nil { t.Fatal(err) }
 	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil { t.Fatal(err) }
 
