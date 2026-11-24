@@ -2,6 +2,7 @@ package connection
 
 import (
 	"fmt"
+	"context"
 	"image"
 	"image/color"
 	"strconv"
@@ -19,6 +20,14 @@ import (
 
 // View 是连接侧栏的 Gio 展示组件。数据操作由 Model / 应用服务负责，
 // 组件只处理点击并通过回调通知上层窗口。
+type sidebarRow struct { folder *domain.Folder; item *domain.Connection; unassigned bool }
+
+func nextFolderID(folders []domain.Folder, current string) string {
+	if current == "" { if len(folders)>0 { return folders[0].ID }; return "" }
+	for i,item := range folders { if item.ID==current { if i+1<len(folders) { return folders[i+1].ID }; return "" } }
+	return ""
+}
+
 type View struct {
 	model     *Model
 	list      widget.List
@@ -42,6 +51,17 @@ type View struct {
 	secure bool
 	formOpen bool
 	formError string
+	folderAdd widget.Clickable
+	folderName widget.Editor
+	folderSave widget.Clickable
+	folderCancel widget.Clickable
+	folderOpen bool
+	editingFolderID string
+	folderErrors string
+	folderCollapsed map[string]bool
+	folderRename map[string]*widget.Clickable
+	folderDelete map[string]*widget.Clickable
+	folderMove map[string]*widget.Clickable
 }
 
 func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (*View, error) {
@@ -52,6 +72,10 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		model: model,
 		list: widget.List{List: layout.List{Axis: layout.Vertical}},
 		rows: make(map[string]*widget.Clickable),
+		folderCollapsed: make(map[string]bool),
+		folderRename: make(map[string]*widget.Clickable),
+		folderDelete: make(map[string]*widget.Clickable),
+		folderMove: make(map[string]*widget.Clickable),
 		onRefresh: onRefresh,
 		onSelect: onSelect,
 		protocol: domain.ProtocolNative,
@@ -171,6 +195,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						button := material.Button(theme, &v.refresh, "刷新")
 						addButton := material.Button(theme, &v.add, "新增连接")
+						folderButton := material.Button(theme, &v.folderAdd, "新建分组")
 						button.TextSize = unit.Sp(12)
 						if v.refresh.Clicked(gtx) && v.onRefresh != nil {
 							v.onRefresh()
@@ -179,9 +204,16 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 							v.resetForm()
 							v.formOpen = true
 						}
+						if v.folderAdd.Clicked(gtx) {
+							v.editingFolderID = ""
+							v.folderName.SetText("")
+							v.folderErrors = ""
+							v.folderOpen = true
+						}
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 							layout.Rigid(button.Layout),
 							layout.Rigid(addButton.Layout),
+							layout.Rigid(folderButton.Layout),
 						)
 					}),
 				)
@@ -197,33 +229,85 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 			return layout.Dimensions{}
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return material.List(theme, &v.list).Layout(gtx, len(snapshot.Items), func(gtx layout.Context, index int) layout.Dimensions {
-				item := snapshot.Items[index]
+			rows := make([]sidebarRow, 0, len(snapshot.Items)+len(snapshot.Folders)+1)
+			assigned := make(map[string][]domain.Connection)
+			var unassigned []domain.Connection
+			for _, item := range snapshot.Items {
+				if item.FolderID == "" { unassigned = append(unassigned, item) } else { assigned[item.FolderID] = append(assigned[item.FolderID], item) }
+			}
+			for i := range snapshot.Folders {
+				folder := snapshot.Folders[i]
+				rows = append(rows, sidebarRow{folder:&folder})
+				if !v.folderCollapsed[folder.ID] {
+					for j := range assigned[folder.ID] { item := assigned[folder.ID][j]; rows = append(rows, sidebarRow{item:&item}) }
+				}
+			}
+			if len(unassigned) > 0 || len(snapshot.Folders) == 0 {
+				rows = append(rows, sidebarRow{unassigned:true})
+				for i := range unassigned { item := unassigned[i]; rows = append(rows, sidebarRow{item:&item}) }
+			}
+			return material.List(theme, &v.list).Layout(gtx, len(rows), func(gtx layout.Context, index int) layout.Dimensions {
+				row := rows[index]
+				if row.folder != nil {
+					folder := *row.folder
+					if v.folderRename[folder.ID] == nil { v.folderRename[folder.ID] = new(widget.Clickable) }
+					if v.folderDelete[folder.ID] == nil { v.folderDelete[folder.ID] = new(widget.Clickable) }
+					if v.folderCollapsed[folder.ID] { /* collapsed */ }
+					if v.rows["folder:"+folder.ID] == nil { v.rows["folder:"+folder.ID] = new(widget.Clickable) }
+					if v.rows["folder:"+folder.ID].Clicked(gtx) { v.folderCollapsed[folder.ID] = !v.folderCollapsed[folder.ID] }
+					return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							prefix := "▾ "
+							if v.folderCollapsed[folder.ID] { prefix = "▸ " }
+							return v.rows["folder:"+folder.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions { return material.Body1(theme, prefix+folder.Name).Layout(gtx) })
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button := material.Button(theme, v.folderRename[folder.ID], "改名")
+							button.TextSize = unit.Sp(10)
+							if v.folderRename[folder.ID].Clicked(gtx) { v.editingFolderID=folder.ID; v.folderName.SetText(folder.Name); v.folderErrors=""; v.folderOpen=true }
+							return button.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button := material.Button(theme, v.folderDelete[folder.ID], "删除")
+							button.TextSize = unit.Sp(10)
+							if v.folderDelete[folder.ID].Clicked(gtx) {
+								if err := v.model.DeleteFolder(context.Background(), folder.ID); err != nil { v.folderErrors=err.Error() } else { delete(v.folderCollapsed, folder.ID); v.folderErrors="" }
+							}
+							return button.Layout(gtx)
+						}),
+					)
+				}
+				if row.unassigned { return layout.Inset{Top:unit.Dp(8),Bottom:unit.Dp(3)}.Layout(gtx, material.Caption(theme,"未分组").Layout) }
+				if row.item == nil { return layout.Dimensions{} }
+				item := *row.item
 				click := v.rows[item.ID]
-				if click == nil {
-					click = new(widget.Clickable)
-					v.rows[item.ID] = click
-				}
-				if click.Clicked(gtx) {
-					v.model.Select(item.ID)
-					if v.onSelect != nil {
-						v.onSelect(item)
-					}
-				}
-				return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(4), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						label := item.Name
-						if item.ID == snapshot.SelectedID {
-							label = "● " + label
-						}
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(material.Body1(theme, label).Layout),
-							layout.Rigid(material.Caption(theme, fmt.Sprintf("%s:%d · %s", item.Host, item.Port, item.Protocol)).Layout),
-						)
-					})
+				if click == nil { click = new(widget.Clickable); v.rows[item.ID] = click }
+				if v.folderMove[item.ID] == nil { v.folderMove[item.ID] = new(widget.Clickable) }
+				return layout.Inset{Top:unit.Dp(2),Bottom:unit.Dp(2),Left:unit.Dp(6),Right:unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							if click.Clicked(gtx) { v.model.Select(item.ID); if v.onSelect != nil { v.onSelect(item) } }
+							return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								label:=item.Name; if item.ID==snapshot.SelectedID { label="● "+label }
+							return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+								layout.Rigid(material.Body1(theme,label).Layout),
+								layout.Rigid(material.Caption(theme,fmt.Sprintf("%s:%d · %s",item.Host,item.Port,item.Protocol)).Layout),
+							)
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							button:=material.Button(theme,v.folderMove[item.ID],"移动")
+							button.TextSize=unit.Sp(10)
+							if v.folderMove[item.ID].Clicked(gtx) && v.onSave != nil {
+								item.FolderID = nextFolderID(snapshot.Folders,item.FolderID)
+								v.onSave(item)
+							}
+							return button.Layout(gtx)
+						}),
+					)
 				})
 			})
-		}),
+		}),,
 	)
 }
 
@@ -241,7 +325,8 @@ func (v *View) resetForm() {
 
 // Modal 在窗口中央绘制连接表单，不再占用左侧连接列表空间。
 func (v *View) Modal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
- if !v.formOpen { return layout.Dimensions{} }
+ if !v.formOpen && !v.folderOpen { return layout.Dimensions{} }
+ if v.folderOpen { return v.folderModal(gtx,theme) }
  return layout.Stack{Alignment: layout.Center}.Layout(gtx,
   layout.Expanded(func(gtx layout.Context) layout.Dimensions {
    paint.FillShape(gtx.Ops, color.NRGBA{R:20,G:25,B:35,A:105}, clip.Rect{Max:gtx.Constraints.Max}.Op())
@@ -257,6 +342,34 @@ func (v *View) Modal(gtx layout.Context, theme *material.Theme) layout.Dimension
    paint.FillShape(gtx.Ops, color.NRGBA{R:250,G:251,B:253,A:255}, clip.Rect{Max:gtx.Constraints.Max}.Op())
    return layout.Inset{Top:unit.Dp(22),Bottom:unit.Dp(18),Left:unit.Dp(24),Right:unit.Dp(24)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
     return v.layoutEditor(gtx,theme)
+   })
+  }),
+ )
+}
+
+func (v *View) folderModal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
+ return layout.Stack{Alignment:layout.Center}.Layout(gtx,
+  layout.Expanded(func(gtx layout.Context) layout.Dimensions { paint.FillShape(gtx.Ops,color.NRGBA{R:20,G:25,B:35,A:105},clip.Rect{Max:gtx.Constraints.Max}.Op()); return layout.Dimensions{Size:gtx.Constraints.Max} }),
+  layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+   width:=gtx.Dp(unit.Dp(400)); height:=gtx.Dp(unit.Dp(210))
+   if width>gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32)){width=gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32))}
+   gtx.Constraints=layout.Exact(image.Pt(width,height))
+   paint.FillShape(gtx.Ops,color.NRGBA{R:250,G:251,B:253,A:255},clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Inset{Top:unit.Dp(20),Bottom:unit.Dp(16),Left:unit.Dp(22),Right:unit.Dp(22)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+    title:="新建分组"; if v.editingFolderID!="" { title="重命名分组" }
+    return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+     layout.Rigid(material.H6(theme,title).Layout),
+     layout.Rigid(func(gtx layout.Context) layout.Dimensions { return material.Editor(theme,&v.folderName,"分组名称").Layout(gtx) }),
+     layout.Rigid(func(gtx layout.Context) layout.Dimensions { if v.folderErrors=="" { return layout.Dimensions{} }; return material.Caption(theme,v.folderErrors).Layout(gtx) }),
+     layout.Rigid(layout.Spacer{Height:unit.Dp(14)}.Layout),
+     layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+      return layout.Flex{Axis:layout.Horizontal,Alignment:layout.Middle}.Layout(gtx,
+       layout.Flexed(1,func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size:image.Pt(gtx.Constraints.Max.X,0)} }),
+       layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.folderCancel,"取消"); if v.folderCancel.Clicked(gtx){v.folderOpen=false;v.folderErrors=""}; return layout.Inset{Right:unit.Dp(8)}.Layout(gtx,b.Layout) }),
+       layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.folderSave,"保存"); if v.folderSave.Clicked(gtx){ _,err:=v.model.SaveFolder(context.Background(),domain.Folder{ID:v.editingFolderID,Name:strings.TrimSpace(v.folderName.Text())}); if err!=nil {v.folderErrors=err.Error()} else {v.folderOpen=false;v.folderErrors=""} }; return b.Layout(gtx) }),
+      )
+     }),
+    )
    })
   }),
  )
