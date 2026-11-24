@@ -64,3 +64,46 @@ func TestModelReportsServiceErrors(t *testing.T) {
 	if _, err := model.Save(context.Background(), domain.Connection{ID:"c1"}); !errors.Is(err, want) { t.Fatalf("错误未透传: %v", err) }
 	if model.Snapshot().Error == "" { t.Fatal("应在状态中保留错误提示") }
 }
+
+type blockingTestService struct {
+	serviceStub
+	started chan chan struct{}
+}
+
+func (s *blockingTestService) Test(context.Context, domain.Connection) error {
+	release := make(chan struct{})
+	s.started <- release
+	<-release
+	return nil
+}
+
+func TestModelNewerConnectionTestSupersedesOlderResult(t *testing.T) {
+	service := &blockingTestService{started: make(chan chan struct{}, 2)}
+	model, err := NewModel(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstDone := make(chan struct{})
+	go func() {
+		_ = model.Test(context.Background(), domain.Connection{ID: "first"})
+		close(firstDone)
+	}()
+	releaseFirst := <-service.started
+
+	secondDone := make(chan struct{})
+	go func() {
+		_ = model.Test(context.Background(), domain.Connection{ID: "second"})
+		close(secondDone)
+	}()
+	releaseSecond := <-service.started
+	close(releaseSecond)
+	<-secondDone
+	if got := model.Snapshot().TestingID; got != "" {
+		t.Fatalf("较新的测试完成后应清除测试状态，得到 %q", got)
+	}
+	close(releaseFirst)
+	<-firstDone
+	if got := model.Snapshot().TestingID; got != "" {
+		t.Fatalf("较旧测试结束不应覆盖新状态，得到 %q", got)
+	}
+}
