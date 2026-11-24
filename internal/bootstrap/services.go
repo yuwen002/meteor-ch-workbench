@@ -17,6 +17,8 @@ import (
 
 // Services 是新架构的应用服务容器。GUI 只需依赖这些应用层服务，不直接创建基础设施对象。
 type Services struct {
+	// ConfigPath 是本次运行实际使用的连接配置文件绝对路径，供界面诊断与用户备份。
+	ConfigPath string
 	Connections *connectionapp.Service
 	Folders *folderapp.Service
 	Queries     *queryapp.Service
@@ -30,7 +32,11 @@ func New(dataDir string) (*Services, error) {
 	if dataDir == "" {
 		return nil, errors.New("应用数据目录不能为空")
 	}
-	repository, err := connectionfile.New(filepath.Join(dataDir, "connections.json"))
+	configPath, err := filepath.Abs(filepath.Join(dataDir, "connections.json"))
+	if err != nil {
+		return nil, err
+	}
+	repository, err := connectionfile.New(configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +72,7 @@ func New(dataDir string) (*Services, error) {
 	}
 
 	return &Services{
+		ConfigPath: configPath,
 		Connections: connections,
 		Folders: folders,
 		Queries: queries,
