@@ -209,3 +209,13 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 切换连接时清空上一连接遗留的数据库、表结构和对象选中状态。
 - 仍未完成：连接新增 / 编辑 / 删除的完整表单交互、分组管理、SQL 编辑器、多标签、执行 / 取消、结果表格、筛选导出、历史和收藏；当前 GUI 只能算新工作区第一版，不是可用产品完成态。
 - 未执行本地 gofmt、go test、go vet 或 build；需要本地 Gio 编译和实际窗口截图验收后才能确认布局效果。
+
+### 预览构建门禁（2026-11-24）
+
+- README 已改为当前 Gio 原生预览版说明，不再把旧 Wails / Vue 功能清单描述成当前可用能力。
+- Go CI 在 Linux runner 安装 Gio 所需图形开发库，依次执行 `go test ./...`、`go vet ./...`、构建 `cmd/meteor-ch-gio`。
+- CI 构建成功后上传 `meteor-ch-workbench-linux-amd64` Artifact，保留 7 天，可从 Actions 对应最新 head run 下载预览二进制。
+- 预览验收口径：Artifact 必须来自 PR 当前 head SHA，且该 SHA 的测试、vet、build 全部成功；旧 SHA 的成功构建不算当前版本可预览。
+- Linux Artifact 是可执行预览二进制，不是免依赖安装包；目标机器仍需 Gio 对应的图形运行库。Windows / macOS 产物和真实桌面窗口验收仍未完成。
+- 当前连接侧栏已出现新增连接表单，但编辑、删除、分组及完整保存反馈仍待实现；SQL 编辑器和结果表格也尚未接入新工作区。
+- 本轮未宣称构建通过；提交后需等待最新 head 的 CI run 完成，并按实际日志修复失败项。
