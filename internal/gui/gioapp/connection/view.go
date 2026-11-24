@@ -376,6 +376,25 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					return layout.Inset{Left:unit.Dp(7),Right:unit.Dp(5),Top:unit.Dp(4),Bottom:unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if click.Clicked(gtx) { v.model.Select(item.ID); if v.onSelect != nil { v.onSelect(item) } }
+							return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								label := item.Name
+								if item.ID == v.selectedConnectionID { label = "› " + label }
+								state := "未连接"
+								if item.ID == v.connectingConnectionID { state = "连接中…" }
+								if item.ID == v.connectedConnectionID { state = "● 已连接" }
+								return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+									layout.Rigid(material.Body1(theme, label).Layout),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
+											layout.Flexed(1, material.Caption(theme, fmt.Sprintf("%s:%d · %s", item.Host, item.Port, item.Protocol)).Layout),
+											layout.Rigid(material.Caption(theme, state).Layout),
+										)
+									}),
+								)
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis:layout.Horizontal, Alignment:layout.Middle}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									button := material.Button(theme, v.rowMore[item.ID], func() string { if v.rowActionsOpen[item.ID] { return "收起" }; return "更多" }())
