@@ -358,9 +358,10 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 							return button.Layout(gtx)
 						}),
  						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							button := material.Button(theme, v.rowTest[item.ID], "测试")
+							label := "测试"
+							if snapshot.TestingID == item.ID { label = "测试中" }
+							button := material.Button(theme, v.rowTest[item.ID], label)
 							button.TextSize = unit.Sp(10)
-							if snapshot.TestingID == item.ID { button.Text = "测试中" }
 							if v.rowTest[item.ID].Clicked(gtx) && v.onSelect != nil { v.onSelect(item) }
 							return button.Layout(gtx)
 						}),
