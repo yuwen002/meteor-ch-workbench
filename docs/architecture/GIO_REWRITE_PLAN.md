@@ -144,3 +144,13 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 默认查询超时 30 秒、结果行数上限 10,000、批次大小 256；支持请求级覆盖、context 取消、列名 / ClickHouse 类型 / Go 扫描类型元数据、截断标记和 DDL/DML 受影响行数。
 - 增加应用用例测试和 fake database/sql driver 测试，覆盖连接读取、请求校验、列元数据、批次、行数截断、Exec 结果、取消和回调失败后的 Rows 释放。
 - **尚未完成**：尚未在本地运行 gofmt / go test / go vet / build；仓库当前没有 `.github/workflows/`，因此没有可触发的 GitHub Actions 工作流。查询执行器尚未接入 Gio GUI，也没有真实 ClickHouse 集成测试。结果回调的消费方必须自行限制 UI 队列 / 缓冲区，不能把所有批次重新累积到内存。
+
+
+### 阶段 D：ClickHouse 元数据读取首批实现（2026-11-24）
+
+- 新增 `internal/application/metadata`：定义数据库对象、字段结构、表详情 DTO，以及 Reader 端口和应用服务；按连接 ID 读取连接配置，校验数据库 / 表名称。
+- 新增 `internal/infrastructure/clickhouse/metadata.go`：查询数据库列表、普通表、视图、DESCRIBE 字段结构，以及 system.tables 中的引擎、注释、完整建表 SQL、分区键、排序键、主键和 TTL 摘要。
+- 数据库和表名称值使用 database/sql 参数绑定；DESCRIBE 标识符通过反引号引用并转义，避免把用户输入直接拼成 SQL 标识符。
+- DESCRIBE 结果按列名匹配字段，不依赖 ClickHouse 版本间返回列的固定顺序；主键与默认值标志兼容多种驱动值类型。
+- 新增应用服务测试、元数据 SQL 测试和 TTL / 标识符解析测试。
+- **尚未完成**：未运行本地 gofmt / go test / go vet / build；仓库无 GitHub Actions workflow；尚无真实 ClickHouse 集成测试，尚未接入 Gio GUI。
