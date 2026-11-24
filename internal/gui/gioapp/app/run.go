@@ -554,7 +554,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis:layout.Horizontal}.Layout(gtx,children...)
 							})
 						}),
-						layout.Flexed(columnWeights[len(children)],func(gtx layout.Context) layout.Dimensions {
+						layout.Flexed(1,func(gtx layout.Context) layout.Dimensions {
 							return material.List(s.theme,&s.queryRows).Layout(gtx,len(s.queryData),func(gtx layout.Context,index int) layout.Dimensions {
 								row:=s.queryData[index]
 								return layout.Inset{Top:unit.Dp(3),Bottom:unit.Dp(3)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
