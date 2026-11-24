@@ -1005,3 +1005,12 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/application/metadata/service_test.go`：应用层请求校验、连接读取和错误传播测试。
 - `internal/infrastructure/clickhouse/metadata.go`：基于新连接池查询数据库列表、表和视图、DESCRIBE 字段结构、system.tables 表详情与 TTL。
 - `internal/infrastructure/clickhouse/metadata_test.go`：覆盖数据库、表 / 视图、参数绑定、字段结构、标识符转义和 DDL TTL 解析。
+
+
+### 新架构服务装配
+
+- `internal/bootstrap/services.go`：集中装配新连接仓库、连接用例、ClickHouse 连接池、SQL 查询用例和元数据用例；提供显式数据目录与默认用户配置目录入口，并统一关闭连接池。
+- `internal/bootstrap/services_test.go`：覆盖服务容器完整装配、空数据目录校验和初始连接列表。
+- `internal/application/connection/service.go`：新增按 ID 读取连接配置的应用用例，供查询与元数据用例复用。
+- `internal/application/connection/service_test.go`：覆盖按 ID 读取和空 ID 校验。
+- `internal/infrastructure/clickhouse/metadata.go`：字段主键标记兼容 `is_in_primary_key` / `primary_key`，默认值标记兼容 `default_type` / `default_kind` / `default_expression`。
