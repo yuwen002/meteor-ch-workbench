@@ -9,6 +9,7 @@ import (
 
 // Repository 是连接配置的持久化端口。实现必须返回独立副本，避免外部修改内部状态。
 type Repository interface {
+	Get(ctx context.Context, id string) (connection.Connection, error)
 	List(ctx context.Context) ([]connection.Connection, error)
 	Save(ctx context.Context, item connection.Connection) error
 	Delete(ctx context.Context, id string) error
