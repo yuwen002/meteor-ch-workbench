@@ -1,5 +1,14 @@
 # 代码索引
 
+## 新架构当前运行时迁移状态（2026-11-24）
+
+- `internal/bootstrap`：新连接、查询、元数据服务的组合根；当前 Gio 启动入口尚未切换到该组合根。
+- `internal/gui/gioapp/connection/model.go`：连接列表、选择、保存、删除、测试和异步刷新状态。
+- `internal/gui/gioapp/connection/view.go`：独立 Gio 连接侧栏展示组件，支持刷新回调、连接选择、加载 / 错误状态；目前尚未挂载到主窗口。
+- `internal/infrastructure/clickhouse/metadata.go`：表字段从 `system.columns` 读取，避免依赖 `DESCRIBE TABLE` 不一定提供的主键标记；数据库 / 表名均参数绑定。
+
+> 以上是新架构实现与可复用 UI 组件，不代表主窗口已完成接线。当前 `cmd/meteor-ch-gio` 仍调用旧 `internal/app.Service`，旧 `window.go` 仍是运行中的原型。
+
 ## 新架构（重写中）
 
 ### [internal/infrastructure/clickhouse](../internal/infrastructure/clickhouse/)
