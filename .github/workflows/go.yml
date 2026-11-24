@@ -32,7 +32,9 @@ jobs:
           cache: true
 
       - name: Download Go modules
-        run: go mod download all
+        run: |
+          go mod download all
+          grep '^gioui.org/x ' go.sum || true
 
       - name: Run tests
         run: go test ./...
