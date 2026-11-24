@@ -709,7 +709,7 @@ func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
 			return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Flexed(0.42, s.layoutDatabasePanel),
-					layout.Rigid(layout.Divider{Color: color.NRGBA{R: 226, G: 231, B: 239, A: 255}, Thickness: unit.Dp(1)}.Layout),
+					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 					layout.Flexed(0.58, s.layoutTablePanel),
 				)
 			})
