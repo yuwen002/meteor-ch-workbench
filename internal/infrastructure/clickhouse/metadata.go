@@ -92,8 +92,10 @@ func (r *MetadataReader) GetTableSchema(ctx context.Context, item connection.Con
 			case "name": column.Name = metadataString(values[i])
 			case "type": column.Type = metadataString(values[i])
 			case "comment": column.Comment = metadataString(values[i])
-			case "primary_key": column.IsPrimary = metadataTruthy(values[i])
-			case "default_type": column.HasDefault = metadataString(values[i]) != ""
+			case "is_in_primary_key", "primary_key":
+				column.IsPrimary = column.IsPrimary || metadataTruthy(values[i])
+			case "default_type", "default_kind", "default_expression":
+				column.HasDefault = column.HasDefault || metadataString(values[i]) != ""
 			}
 		}
 		result = append(result, column)
