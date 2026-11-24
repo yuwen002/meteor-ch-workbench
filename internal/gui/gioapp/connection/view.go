@@ -375,7 +375,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 						}),
 					)
 				})
-			}),
+			})
 		}),
 	)
 }
