@@ -2,6 +2,8 @@ package connection
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -20,6 +22,22 @@ type View struct {
 	rows      map[string]*widget.Clickable
 	onRefresh func()
 	onSelect  func(domain.Connection)
+	onSave func(domain.Connection)
+	add widget.Clickable
+	save widget.Clickable
+	cancel widget.Clickable
+	protocolToggle widget.Clickable
+	secureToggle widget.Clickable
+	name widget.Editor
+	host widget.Editor
+	port widget.Editor
+	user widget.Editor
+	password widget.Editor
+	database widget.Editor
+	protocol domain.Protocol
+	secure bool
+	formOpen bool
+	formError string
 }
 
 func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (*View, error) {
@@ -32,7 +50,86 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		rows: make(map[string]*widget.Clickable),
 		onRefresh: onRefresh,
 		onSelect: onSelect,
+		protocol: domain.ProtocolNative,
 	}, nil
+}
+
+
+func (v *View) SetOnSave(onSave func(domain.Connection)) {
+	v.onSave = onSave
+}
+
+func (v *View) layoutEditor(gtx layout.Context, theme *material.Theme) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(material.Subtitle2(theme, "新增连接").Layout),
+			layout.Rigid(material.Editor(theme, &v.name, "连接名称").Layout),
+			layout.Rigid(material.Editor(theme, &v.host, "主机地址").Layout),
+			layout.Rigid(material.Editor(theme, &v.port, "端口（Native 默认 9000）").Layout),
+			layout.Rigid(material.Editor(theme, &v.user, "用户名").Layout),
+			layout.Rigid(material.Editor(theme, &v.password, "密码").Layout),
+			layout.Rigid(material.Editor(theme, &v.database, "默认数据库（可选）").Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if v.protocolToggle.Clicked(gtx) {
+					if v.protocol == domain.ProtocolNative {
+						v.protocol = domain.ProtocolHTTP
+					} else {
+						v.protocol = domain.ProtocolNative
+					}
+				}
+				return material.Button(theme, &v.protocolToggle, "协议："+string(v.protocol)).Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if v.secureToggle.Clicked(gtx) {
+					v.secure = !v.secure
+				}
+				label := "TLS：关闭"
+				if v.secure { label = "TLS：开启" }
+				return material.Button(theme, &v.secureToggle, label).Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if v.formError != "" { return material.Caption(theme, v.formError).Layout(gtx) }
+				return layout.Dimensions{}
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						button := material.Button(theme, &v.save, "保存连接")
+						if v.save.Clicked(gtx) {
+							port, err := strconv.Atoi(strings.TrimSpace(v.port.Text()))
+							if err != nil {
+								v.formError = "端口必须是有效数字"
+							} else if v.onSave == nil {
+								v.formError = "连接保存服务尚未初始化"
+							} else {
+								v.formError = ""
+								v.onSave(domain.Connection{
+									Name: strings.TrimSpace(v.name.Text()),
+									Host: strings.TrimSpace(v.host.Text()),
+									Port: port,
+									Protocol: v.protocol,
+									User: strings.TrimSpace(v.user.Text()),
+									Password: v.password.Text(),
+									Database: strings.TrimSpace(v.database.Text()),
+									Secure: v.secure,
+								})
+								v.formOpen = false
+							}
+						}
+						return button.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						button := material.Button(theme, &v.cancel, "取消")
+						if v.cancel.Clicked(gtx) {
+							v.formOpen = false
+							v.formError = ""
+						}
+						return button.Layout(gtx)
+					}),
+				)
+			}),
+		)
+	})
 }
 
 // Layout 绘制连接列表、刷新入口和当前加载 / 错误状态。
@@ -47,14 +144,25 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						button := material.Button(theme, &v.refresh, "刷新")
+						addButton := material.Button(theme, &v.add, "新增")
 						button.TextSize = unit.Sp(12)
 						if v.refresh.Clicked(gtx) && v.onRefresh != nil {
 							v.onRefresh()
 						}
-						return button.Layout(gtx)
+						if v.add.Clicked(gtx) {
+							v.formOpen = !v.formOpen
+						}
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+							layout.Rigid(button.Layout),
+							layout.Rigid(addButton.Layout),
+						)
 					}),
 				)
 			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if v.formOpen { return v.layoutEditor(gtx, theme) }
+			return layout.Dimensions{}
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if snapshot.Loading {
