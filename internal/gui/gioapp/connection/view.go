@@ -68,6 +68,9 @@ type View struct {
 	formFolderID string
 	folderPick widget.Clickable
 	onDelete func(string)
+	deleteConfirmID string
+	deleteConfirm widget.Clickable
+	deleteCancel widget.Clickable
 }
 
 func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (*View, error) {
@@ -325,7 +328,7 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							button:=material.Button(theme,v.rowDelete[item.ID],"删除")
 							button.TextSize=unit.Sp(10)
-							if v.rowDelete[item.ID].Clicked(gtx) && v.onDelete != nil { v.onDelete(item.ID) }
+							if v.rowDelete[item.ID].Clicked(gtx) { v.deleteConfirmID = item.ID }
 							return button.Layout(gtx)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -368,6 +371,7 @@ func (v *View) resetForm() {
 
 // Modal 在窗口中央绘制连接表单，不再占用左侧连接列表空间。
 func (v *View) Modal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
+ if v.deleteConfirmID != "" { return v.deleteModal(gtx,theme) }
  if !v.formOpen && !v.folderOpen { return layout.Dimensions{} }
  if v.folderOpen { return v.folderModal(gtx,theme) }
  return layout.Stack{Alignment: layout.Center}.Layout(gtx,
@@ -410,6 +414,32 @@ func (v *View) folderModal(gtx layout.Context, theme *material.Theme) layout.Dim
        layout.Flexed(1,func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size:image.Pt(gtx.Constraints.Max.X,0)} }),
        layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.folderCancel,"取消"); if v.folderCancel.Clicked(gtx){v.folderOpen=false;v.folderErrors=""}; return layout.Inset{Right:unit.Dp(8)}.Layout(gtx,b.Layout) }),
        layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.folderSave,"保存"); if v.folderSave.Clicked(gtx){ _,err:=v.model.SaveFolder(context.Background(),domain.Folder{ID:v.editingFolderID,Name:strings.TrimSpace(v.folderName.Text())}); if err!=nil {v.folderErrors=err.Error()} else {v.folderOpen=false;v.folderErrors=""} }; return b.Layout(gtx) }),
+      )
+     }),
+    )
+   })
+  }),
+ )
+}
+
+func (v *View) deleteModal(gtx layout.Context, theme *material.Theme) layout.Dimensions {
+ return layout.Stack{Alignment:layout.Center}.Layout(gtx,
+  layout.Expanded(func(gtx layout.Context) layout.Dimensions { paint.FillShape(gtx.Ops,color.NRGBA{R:20,G:25,B:35,A:105},clip.Rect{Max:gtx.Constraints.Max}.Op()); return layout.Dimensions{Size:gtx.Constraints.Max} }),
+  layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+   width:=gtx.Dp(unit.Dp(360)); height:=gtx.Dp(unit.Dp(180))
+   if width>gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32)){width=gtx.Constraints.Max.X-gtx.Dp(unit.Dp(32))}
+   gtx.Constraints=layout.Exact(image.Pt(width,height))
+   paint.FillShape(gtx.Ops,color.NRGBA{R:250,G:251,B:253,A:255},clip.Rect{Max:gtx.Constraints.Max}.Op())
+   return layout.Inset{Top:unit.Dp(22),Bottom:unit.Dp(18),Left:unit.Dp(22),Right:unit.Dp(22)}.Layout(gtx,func(gtx layout.Context) layout.Dimensions {
+    return layout.Flex{Axis:layout.Vertical}.Layout(gtx,
+     layout.Rigid(material.H6(theme,"删除连接").Layout),
+     layout.Rigid(material.Body2(theme,"确定删除这个连接吗？此操作无法撤销。").Layout),
+     layout.Rigid(layout.Spacer{Height:unit.Dp(20)}.Layout),
+     layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+      return layout.Flex{Axis:layout.Horizontal,Alignment:layout.Middle}.Layout(gtx,
+       layout.Flexed(1,func(gtx layout.Context) layout.Dimensions{return layout.Dimensions{Size:image.Pt(gtx.Constraints.Max.X,0)}}),
+       layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.deleteCancel,"取消"); if v.deleteCancel.Clicked(gtx){v.deleteConfirmID=""}; return layout.Inset{Right:unit.Dp(8)}.Layout(gtx,b.Layout) }),
+       layout.Rigid(func(gtx layout.Context) layout.Dimensions { b:=material.Button(theme,&v.deleteConfirm,"确认删除"); if v.deleteConfirm.Clicked(gtx){if v.onDelete!=nil{v.onDelete(v.deleteConfirmID)};v.deleteConfirmID=""}; return b.Layout(gtx) }),
       )
      }),
     )
