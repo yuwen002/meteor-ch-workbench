@@ -1014,3 +1014,9 @@ SQL 自动补全的 Monaco provider 与数据缓存（P8-3，纯前端，后端�
 - `internal/application/connection/service.go`：新增按 ID 读取连接配置的应用用例，供查询与元数据用例复用。
 - `internal/application/connection/service_test.go`：覆盖按 ID 读取和空 ID 校验。
 - `internal/infrastructure/clickhouse/metadata.go`：字段主键标记兼容 `is_in_primary_key` / `primary_key`，默认值标记兼容 `default_type` / `default_kind` / `default_expression`。
+
+
+### 新 Gio 连接管理状态层
+
+- `internal/gui/gioapp/connection/model.go`：连接列表快照、选择、加载、保存、删除、连通性测试与错误状态；只依赖新连接应用服务接口。
+- `internal/gui/gioapp/connection/model_test.go`：覆盖列表刷新、选择校验、保存 / 删除状态更新与服务错误传播。
