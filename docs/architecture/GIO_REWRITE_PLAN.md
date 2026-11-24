@@ -161,3 +161,13 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 默认值标记同时识别 `default_type`、`default_kind` 和 `default_expression`，并采用 OR 合并，避免返回列顺序或字段版本差异导致标记被覆盖。
 - fake driver 测试切换为 `is_in_primary_key` + `default_kind` 组合，验证新版字段元数据路径。
 - 尚未运行本地 gofmt / go test；仍需使用目标 ClickHouse 22.5 实例验证真实 DESCRIBE 输出。
+
+
+### 新架构应用服务装配入口（2026-11-24）
+
+- 新增 `internal/bootstrap`：集中创建新连接仓库、连接管理用例、ClickHouse 连接池、SQL 查询用例和元数据用例；GUI 不需要自行实例化基础设施对象。
+- 新增 `New(dataDir)` 与 `NewDefault()`，数据文件使用独立的 `connections.json`；`Services.Close` 统一释放新连接池。
+- 连接应用服务新增 `Get(ctx, id)`，连接仓库端口增加按 ID 查询能力，使连接应用服务可以作为查询和元数据用例的 ConnectionLookup。
+- 新增服务装配测试和连接按 ID 读取测试。
+- 当前 Gio 仍使用旧 `internal/app.Service`，本次只建立新架构组合根，下一步将创建独立 Gio 应用状态 / presenter，逐步替换旧窗口调用；不把旧服务作为新架构兼容层。
+- 尚未运行本地 gofmt / go test / go vet / build；装配测试仅已编写。
