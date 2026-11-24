@@ -59,6 +59,7 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 	view.port.SingleLine = true
 	view.user.SingleLine = true
 	view.password.SingleLine = true
+	view.password.Mask = '*'
 	view.database.SingleLine = true
 	return view, nil
 }
