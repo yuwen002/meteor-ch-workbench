@@ -41,7 +41,7 @@ func TestResultColumnFlexWeightsUsesOnlySampledRows(t *testing.T) {
 
 func TestResultColumnFlexWeightsTreatsNonPositiveSampleAsAllRows(t *testing.T) {
 	columns := []queryapp.Column{{Name: "value", DatabaseType: "String"}}
-	rows := [][]any{{"short"}, {"中文长字段内容"}}
+	rows := [][]any{{"short"}, {"这是一段明显超过最小列宽的中文长字段内容"}}
 	got := resultColumnFlexWeights(columns, rows, 0)
 	if got[0] <= 10 {
 		t.Fatalf("weight with all-row sample = %v, want wider than minimum", got[0])
@@ -68,6 +68,9 @@ func TestFormatResultCellHandlesNullAndMultilineValues(t *testing.T) {
 	}
 	if got := formatResultCell("first\\nsecond"); got != "first ↵ second" {
 		t.Fatalf("multiline cell = %q, want visible line break marker", got)
+	}
+	if got := formatResultCell("first\nsecond"); got != "first ↵ second" {
+		t.Fatalf("actual multiline cell = %q, want visible line break marker", got)
 	}
 }
 
