@@ -52,6 +52,7 @@ func (s *workspace) closeSQLTab(index int) {
 		s.queryColumns, s.queryData = nil, nil
 		s.queryStatus = "已重置查询标签页"
 		s.clearQueryCellSelection()
+		s.resetResultWidgets(nil)
 		return
 	}
 
@@ -69,5 +70,6 @@ func (s *workspace) closeSQLTab(index int) {
 		s.queryEditor.SetText(nextTab.Editor.Text())
 		s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 		s.clearQueryCellSelection()
+		s.resetResultWidgets(s.queryColumns)
 	}
 }

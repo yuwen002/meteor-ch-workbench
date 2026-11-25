@@ -3,6 +3,7 @@ package app
 import (
 	"image"
 	"image/color"
+	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -23,7 +24,32 @@ var (
 	radiusS = unit.Dp(6)
 	radiusM = unit.Dp(10)
 	radiusL = unit.Dp(14)
+
+	compactBreakpoint = unit.Dp(1100)
 )
+
+// isCompact 统一窄屏判定，避免各布局各自使用不同阈值。
+func isCompact(gtx layout.Context) bool {
+	return gtx.Constraints.Max.X < gtx.Dp(compactBreakpoint)
+}
+
+// adaptiveMaxLines 在窄屏允许两行展示，宽屏保持单行以免破坏表格密度。
+func adaptiveMaxLines(gtx layout.Context) int {
+	if isCompact(gtx) {
+		return 2
+	}
+	return 1
+}
+
+// statusForeground 让失败与中断类消息在状态区更醒目。
+func statusForeground(message string) color.NRGBA {
+	for _, marker := range []string{"失败", "错误", "中断", "无法", "未连接"} {
+		if strings.Contains(message, marker) {
+			return colorWarning
+		}
+	}
+	return colorTextMuted
+}
 
 // fillRounded 在给定尺寸上绘制圆角底色，不改变布局约束，可作为装饰层使用。
 // 半径为 0 时退化为普通矩形，避免圆角路径在零半径下生成空区域。
@@ -93,7 +119,7 @@ func styledText(theme *material.Theme, text string, size unit.Sp, foreground col
 }
 
 // statusPill 绘制带状态圆点的胶囊徽标，用于连接状态等场景。
-func (s *workspace) statusPill(gtx layout.Context, dot color.NRGBA, text string) layout.Dimensions {
+func (s *workspace) statusPill(gtx layout.Context, dot color.NRGBA, text string, maxLines int) layout.Dimensions {
 	return s.surface(gtx, colorSurfaceSubtle, unit.Dp(999), func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: spaceXS, Bottom: spaceXS, Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -103,7 +129,14 @@ func (s *workspace) statusPill(gtx layout.Context, dot color.NRGBA, text string)
 					return layout.Dimensions{Size: size}
 				}),
 				layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
-				layout.Rigid(styledText(s.theme, text, unit.Sp(12), colorTextSecondary)),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					label := material.Label(s.theme, unit.Sp(12), text)
+					label.Color = colorTextSecondary
+					if maxLines > 0 {
+						label.MaxLines = maxLines
+					}
+					return label.Layout(gtx)
+				}),
 			)
 		})
 	})

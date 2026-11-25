@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gio "gioui.org/app"
+	"gioui.org/gesture"
 	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -19,6 +20,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	gioexplorer "gioui.org/x/explorer"
 
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
@@ -99,29 +101,34 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 	if err != nil {
 		return err
 	}
+	explorer := gioexplorer.NewExplorer(window)
 	state := &workspace{
-		window:          window,
-		services:        services,
-		connections:     model,
-		theme:           material.NewTheme(),
-		checkResults:    make(chan connectionCheck, 4),
-		saveResults:     make(chan saveResult, 2),
-		deleteResults:   make(chan deleteResult, 4),
-		objectResults:   make(chan objectsResult, 8),
-		schemaResults:   make(chan schemaResult, 4),
-		queryResults:    make(chan queryEvent, 128),
-		sqlWorkspace:    workspaceui.NewTabs(),
-		sqlTabStates:    map[workspaceui.TabID]sqlTabState{1: {}},
-		queryRows:       widget.List{List: layout.List{Axis: layout.Vertical}},
-		queryHorizontal: widget.List{List: layout.List{Axis: layout.Horizontal}},
-		queryDetailRows: widget.List{List: layout.List{Axis: layout.Vertical}},
-		queryCellClicks: make(map[string]*widget.Clickable),
-		databaseClicks:  make(map[string]*widget.Clickable),
-		objectClicks:    make(map[string]*widget.Clickable),
-		databaseList:    widget.List{List: layout.List{Axis: layout.Vertical}},
-		objectList:      widget.List{List: layout.List{Axis: layout.Vertical}},
-		objectTreeList:  widget.List{List: layout.List{Axis: layout.Vertical}},
-		columnList:      widget.List{List: layout.List{Axis: layout.Vertical}},
+		window:           window,
+		explorer:         explorer,
+		services:         services,
+		connections:      model,
+		theme:            material.NewTheme(),
+		checkResults:     make(chan connectionCheck, 4),
+		saveResults:      make(chan saveResult, 2),
+		deleteResults:    make(chan deleteResult, 4),
+		objectResults:    make(chan objectsResult, 8),
+		schemaResults:    make(chan schemaResult, 4),
+		queryResults:     make(chan queryEvent, 128),
+		sqlWorkspace:     workspaceui.NewTabs(),
+		sqlTabStates:     map[workspaceui.TabID]sqlTabState{1: {}},
+		queryRows:        widget.List{List: layout.List{Axis: layout.Vertical}},
+		queryHorizontal:  widget.List{List: layout.List{Axis: layout.Horizontal}},
+		queryDetailRows:  widget.List{List: layout.List{Axis: layout.Vertical}},
+		queryCellClicks:  make(map[int64]*widget.Clickable),
+		resultCellText:   make(map[int64]string),
+		exportResults:    make(chan exportResult, 4),
+		resultSortColumn: -1,
+		databaseClicks:   make(map[string]*widget.Clickable),
+		objectClicks:     make(map[string]*widget.Clickable),
+		databaseList:     widget.List{List: layout.List{Axis: layout.Vertical}},
+		objectList:       widget.List{List: layout.List{Axis: layout.Vertical}},
+		objectTreeList:   widget.List{List: layout.List{Axis: layout.Vertical}},
+		columnList:       widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
 	state.connectionView, err = connectionui.NewView(model, state.reloadConnections, state.selectConnection)
 	if err != nil {
@@ -135,6 +142,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 	var ops op.Ops
 	for {
 		event := window.Event()
+		state.explorer.ListenEvents(event)
 		switch e := event.(type) {
 		case gio.DestroyEvent:
 			if state.cancelRequest != nil {
@@ -144,6 +152,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		case gio.FrameEvent:
 			gtx := gio.NewContext(&ops, e)
 			state.drainResults()
+			state.drainExportResults()
 			state.layout(gtx)
 			e.Frame(gtx.Ops)
 		}
@@ -172,7 +181,7 @@ type workspace struct {
 	queryRows         widget.List
 	queryHorizontal   widget.List
 	queryDetailRows   widget.List
-	queryCellClicks   map[string]*widget.Clickable
+	queryCellClicks   map[int64]*widget.Clickable
 	selectedQueryCell *queryCellSelection
 	queryDetailClose  widget.Clickable
 	queryDetailCopy   widget.Clickable
@@ -184,30 +193,60 @@ type workspace struct {
 	queryData         [][]any
 	queryStatus       string
 	queryRunning      bool
-	databaseClicks    map[string]*widget.Clickable
-	objectClicks      map[string]*widget.Clickable
-	refreshObjects    widget.Clickable
-	refreshConnection widget.Clickable
-	selectedObject    string
-	selectedTable     string
-	columns           []metadataapp.Column
-	tableDetails      metadataapp.TableDetails
-	databaseList      widget.List
-	objectList        widget.List
-	objectTreeList    widget.List
-	columnList        widget.List
-	selectedID        string
-	selectedName      string
-	connected         bool
-	retryConnection   widget.Clickable
-	databases         []string
-	selectedDatabase  string
-	tables            []metadataapp.Object
-	views             []metadataapp.Object
-	loading           string
-	status            string
-	requestSeq        uint64
-	cancelRequest     context.CancelFunc
+
+	resultView           []resultRowView
+	resultViewDirty      bool
+	resultCellText       map[int64]string
+	resultHeaderChildren []layout.FlexChild
+	resultRowChildren    []layout.FlexChild
+	resultPixelWidths    []int
+	resultFilter         widget.Editor
+	resultFilterLast     string
+	resultFilterClear    widget.Clickable
+	columnFilterEditors  []widget.Editor
+	columnFilterLast     []string
+	columnFilterClears   []widget.Clickable
+	columnFilterClearAll widget.Clickable
+	sortClicks           []widget.Clickable
+	resultSortColumn     int
+	resultSortDescending bool
+	columnWidths         []unit.Dp
+	columnDrags          []gesture.Drag
+	columnDragLastX      []float32
+	columnDragActive     []bool
+
+	exportCSV     widget.Clickable
+	exportTSV     widget.Clickable
+	exportRunning bool
+	exportResults chan exportResult
+	explorer      *gioexplorer.Explorer
+
+	databaseClicks             map[string]*widget.Clickable
+	objectClicks               map[string]*widget.Clickable
+	refreshObjects             widget.Clickable
+	refreshConnection          widget.Clickable
+	selectedObject             string
+	selectedTable              string
+	columns                    []metadataapp.Column
+	tableDetails               metadataapp.TableDetails
+	databaseList               widget.List
+	objectList                 widget.List
+	objectTreeList             widget.List
+	columnList                 widget.List
+	selectedID                 string
+	selectedName               string
+	connected                  bool
+	connectionSidebarCollapsed bool
+	sidebarToggle              widget.Clickable
+	retryConnection            widget.Clickable
+	databases                  []string
+	selectedDatabase           string
+	tables                     []metadataapp.Object
+	views                      []metadataapp.Object
+	loading                    string
+	status                     string
+	requestSeq                 uint64
+	cancelRequest              context.CancelFunc
 }
 
 func (s *workspace) saveConnection(item connection.Connection) {
@@ -390,9 +429,11 @@ func (s *workspace) drainResults() {
 				s.queryColumns = result.columns
 				s.queryData = nil
 				s.clearQueryCellSelection()
+				s.resetResultWidgets(result.columns)
 			}
 			if len(result.batch) > 0 {
 				s.queryData = append(s.queryData, result.batch...)
+				s.resultViewDirty = true
 			}
 			if result.done {
 				s.queryExecution.Finish(result.seq, result.tab)
@@ -440,12 +481,14 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(s.layoutTopBar),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(14), Bottom: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						// 明确给侧栏分配固定宽度和完整可用高度，避免子布局因约束不完整而收缩。
+				compact := isCompact(gtx)
+				children := make([]layout.FlexChild, 0, 3)
+				if !s.connectionSidebarCollapsed {
+					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						// 统一窄屏阈值：折叠后由顶栏按钮恢复，避免两处断点不一致。
 						availableWidth := gtx.Constraints.Max.X
 						width := gtx.Dp(unit.Dp(286))
-						if availableWidth < gtx.Dp(unit.Dp(1120)) {
+						if compact {
 							width = gtx.Dp(unit.Dp(232))
 						}
 						if width > availableWidth {
@@ -459,15 +502,16 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 								return s.connectionView.Layout(gtx, s.theme)
 							})
 						})
-					}),
-					layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						if !s.connected {
-							return s.layoutWelcome(gtx)
-						}
-						return s.layoutWorkbench(gtx)
-					}),
-				)
+					}))
+					children = append(children, layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout))
+				}
+				children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					if !s.connected {
+						return s.layoutWelcome(gtx)
+					}
+					return s.layoutWorkbench(gtx)
+				}))
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 			})
 		}),
 		layout.Rigid(s.layoutStatusBar),
@@ -502,7 +546,7 @@ func (s *workspace) layoutWelcome(gtx layout.Context) layout.Dimensions {
 					if s.selectedName != "" && s.loading == "" && !s.connected {
 						message, dot = "连接失败 · "+s.selectedName, colorWarning
 					}
-					return s.statusPill(gtx, dot, message)
+					return s.statusPill(gtx, dot, message, adaptiveMaxLines(gtx))
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if s.status == "" {
@@ -543,56 +587,85 @@ func (s *workspace) layoutWelcome(gtx layout.Context) layout.Dimensions {
 	})
 }
 func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
+	compact := isCompact(gtx)
+	inset := layout.Inset{Left: spaceXL, Right: spaceXL, Top: spaceM, Bottom: spaceM}
+	if compact {
+		inset.Left, inset.Right = spaceM, spaceM
+	}
 	return s.topSurface(gtx, colorSurface, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Left: spaceXL, Right: spaceXL, Top: spaceM, Bottom: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							size := image.Pt(gtx.Dp(unit.Dp(30)), gtx.Dp(unit.Dp(30)))
-							fillRounded(gtx, size, radiusS, colorAccent)
-							return layout.Dimensions{Size: size}
-						}),
-						layout.Rigid(layout.Spacer{Width: spaceM}.Layout),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							title := styledText(s.theme, "Meteor CH Workbench", unit.Sp(15), colorTextPrimary)
-							subtitle := styledText(s.theme, "轻量级 ClickHouse 数据库 IDE", unit.Sp(10), colorTextMuted)
-							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-								layout.Rigid(title),
-								layout.Rigid(subtitle),
-							)
-						}),
-					)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(32)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					label, dot := "未连接 · 选择左侧连接开始工作", colorTextMuted
-					if s.selectedName != "" && s.loading != "" {
-						label = "正在连接 · " + s.selectedName
-						dot = colorWarning
+		return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			children := make([]layout.FlexChild, 0, 6)
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						size := image.Pt(gtx.Dp(unit.Dp(30)), gtx.Dp(unit.Dp(30)))
+						fillRounded(gtx, size, radiusS, colorAccent)
+						return layout.Dimensions{Size: size}
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceM}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						titleText := "Meteor CH Workbench"
+						if compact {
+							titleText = "Meteor CH"
+						}
+						widgets := []layout.FlexChild{layout.Rigid(styledText(s.theme, titleText, unit.Sp(15), colorTextPrimary))}
+						if !compact {
+							widgets = append(widgets, layout.Rigid(styledText(s.theme, "轻量级 ClickHouse 数据库 IDE", unit.Sp(10), colorTextMuted)))
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, widgets...)
+					}),
+				)
+			}))
+			spacerWidth := unit.Dp(32)
+			if compact {
+				spacerWidth = spaceM
+			}
+			children = append(children, layout.Rigid(layout.Spacer{Width: spacerWidth}.Layout))
+			children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				label, dot := "未连接 · 选择连接开始工作", colorTextMuted
+				if s.selectedName != "" && s.loading != "" {
+					label = "正在连接 · " + s.selectedName
+					dot = colorWarning
+				}
+				if s.connected {
+					label = "已连接 · " + s.selectedName
+					dot = colorSuccess
+				}
+				if s.selectedName != "" && s.loading == "" && !s.connected {
+					label = "连接失败 · " + s.selectedName
+					dot = colorWarning
+				}
+				return s.statusPill(gtx, dot, label, adaptiveMaxLines(gtx))
+			}))
+			children = append(children, layout.Rigid(layout.Spacer{Width: spaceXS}.Layout))
+			if compact {
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if s.sidebarToggle.Clicked(gtx) {
+						s.connectionSidebarCollapsed = !s.connectionSidebarCollapsed
 					}
-					if s.connected {
-						label = "已连接 · " + s.selectedName
-						dot = colorSuccess
+					label := "隐藏连接"
+					if s.connectionSidebarCollapsed {
+						label = "显示连接"
 					}
-					if s.selectedName != "" && s.loading == "" && !s.connected {
-						label = "连接失败 · " + s.selectedName
-						dot = colorWarning
-					}
-					return s.statusPill(gtx, dot, label)
-				}),
-				layout.Rigid(layout.Spacer{Width: spaceM}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if s.refreshConnection.Clicked(gtx) {
-						s.reloadConnections()
-					}
-					button := material.Button(s.theme, &s.refreshConnection, "刷新连接")
-					button.TextSize = unit.Sp(11)
-					button.Inset = layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12), Top: unit.Dp(6), Bottom: unit.Dp(6)}
-					button.CornerRadius = radiusS
-					return button.Layout(gtx)
-				}),
-			)
+					return s.smallButton(gtx, &s.sidebarToggle, label, false)
+				}))
+				children = append(children, layout.Rigid(layout.Spacer{Width: spaceXS}.Layout))
+			}
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.refreshConnection.Clicked(gtx) {
+					s.reloadConnections()
+				}
+				label := "刷新连接"
+				if compact {
+					label = "刷新"
+				}
+				button := material.Button(s.theme, &s.refreshConnection, label)
+				button.TextSize = unit.Sp(11)
+				button.Inset = layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12), Top: unit.Dp(6), Bottom: unit.Dp(6)}
+				button.CornerRadius = radiusS
+				return button.Layout(gtx)
+			}))
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 		})
 	})
 }
@@ -630,6 +703,7 @@ func (s *workspace) executeQuery() {
 	s.queryRunning = true
 	s.queryColumns, s.queryData = nil, nil
 	s.clearQueryCellSelection()
+	s.resetResultWidgets(nil)
 	s.queryStatus = "正在执行 SQL…"
 	request := queryapp.Request{ConnectionID: s.selectedID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: 10000, BatchSize: 128, Timeout: 30 * time.Second}
 	go func() {
@@ -681,7 +755,8 @@ func (s *workspace) cancelActiveQuery(reason string) {
 
 func (s *workspace) clearQueryCellSelection() {
 	s.selectedQueryCell = nil
-	s.queryCellClicks = make(map[string]*widget.Clickable)
+	clear(s.queryCellClicks)
+	clear(s.resultCellText)
 	s.queryDetailRows.Position.First = 0
 }
 
@@ -735,7 +810,7 @@ func (s *workspace) layoutSchemaStrip(gtx layout.Context) layout.Dimensions {
 						}
 						label := material.Label(s.theme, unit.Sp(12), title)
 						label.Color = colorTextPrimary
-						label.MaxLines = 1
+						label.MaxLines = adaptiveMaxLines(gtx)
 						return label.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -907,7 +982,9 @@ func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
 						s.queryEditor.SetText("")
 						s.queryColumns, s.queryData = nil, nil
 						s.clearQueryCellSelection()
+						s.resetResultWidgets(nil)
 						s.queryStatus = "新查询标签页已创建"
+
 					}
 				}
 				return s.smallButton(gtx, &s.sqlNewTab, "＋ 新建查询", false)
@@ -990,9 +1067,10 @@ func (s *workspace) layoutSQLEditor(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutResultsPanel(gtx layout.Context) layout.Dimensions {
+	s.refreshResultView()
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: spaceS, Bottom: spaceS, Left: spaceL, Right: spaceL}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: spaceS, Bottom: spaceXS, Left: spaceL, Right: spaceL}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						label := material.Label(s.theme, unit.Sp(12), "查询结果")
@@ -1010,12 +1088,98 @@ func (s *workspace) layoutResultsPanel(gtx layout.Context) layout.Dimensions {
 							}
 						}
 						label := material.Label(s.theme, unit.Sp(11), message)
-						label.Color = colorTextMuted
-						label.MaxLines = 1
+						label.Color = statusForeground(message)
+						label.MaxLines = adaptiveMaxLines(gtx)
 						return label.Layout(gtx)
 					}),
 				)
 			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if len(s.queryColumns) == 0 {
+				return layout.Dimensions{}
+			}
+			if s.resultFilterClear.Clicked(gtx) {
+				s.resultFilter.SetText("")
+				s.resultFilterLast = ""
+				s.resultViewDirty = true
+				s.queryRows.Position = layout.Position{}
+			}
+			if s.columnFilterClearAll.Clicked(gtx) {
+				for i := range s.columnFilterEditors {
+					s.columnFilterEditors[i].SetText("")
+				}
+				for i := range s.columnFilterLast {
+					s.columnFilterLast[i] = ""
+				}
+				s.resultViewDirty = true
+				s.queryRows.Position = layout.Position{}
+			}
+			if s.exportCSV.Clicked(gtx) {
+				s.startExport("csv")
+			}
+			if s.exportTSV.Clicked(gtx) {
+				s.startExport("tsv")
+			}
+			return layout.Inset{Top: spaceXS, Bottom: spaceXS, Left: spaceL, Right: spaceL}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						editor := material.Editor(s.theme, &s.resultFilter, "筛选当前结果（匹配任意列）")
+						editor.TextSize = unit.Sp(11)
+						return editor.Layout(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceXS}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return s.smallButton(gtx, &s.resultFilterClear, "清除关键字", s.resultFilter.Text() == "")
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceXS}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						hasColumnFilter := false
+						for i := range s.columnFilterEditors {
+							if s.columnFilterEditors[i].Text() != "" {
+								hasColumnFilter = true
+								break
+							}
+						}
+						return s.smallButton(gtx, &s.columnFilterClearAll, "清除列条件", !hasColumnFilter)
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceXS}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return styledText(s.theme, fmt.Sprintf("显示 %d / %d", len(s.resultView), len(s.queryData)), unit.Sp(10), colorTextMuted)(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceXS}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return s.smallButton(gtx, &s.exportCSV, "CSV", s.exportRunning)
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceXS}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return s.smallButton(gtx, &s.exportTSV, "TSV", s.exportRunning)
+					}),
+				)
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if len(s.queryColumns) == 0 {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Left: spaceL, Right: spaceL, Bottom: spaceXS}.Layout(gtx, styledText(s.theme,
+				"列条件：包含 / !不包含 / = / != / > / < / >= / <= / between:下界..上界 / is:null",
+				unit.Sp(10), colorTextMuted))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if len(s.queryColumns) == 0 {
+				return layout.Dimensions{}
+			}
+			filters := make([]string, len(s.columnFilterEditors))
+			for i := range s.columnFilterEditors {
+				filters[i] = s.columnFilterEditors[i].Text()
+			}
+			summaries := resultColumnFilterSummary(s.queryColumns, filters)
+			if len(summaries) == 0 {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Left: spaceL, Right: spaceL, Bottom: spaceXS}.Layout(gtx, styledText(s.theme,
+				"生效条件："+strings.Join(summaries, "；"), unit.Sp(10), colorAccent))
 		}),
 		layout.Rigid(s.divider),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -1028,51 +1192,83 @@ func (s *workspace) layoutResultsPanel(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
-	columnWeights := resultColumnFlexWeights(s.queryColumns, s.queryData, 40)
 	if len(s.queryCellClicks) > 4096 {
-		s.queryCellClicks = make(map[string]*widget.Clickable)
+		clear(s.queryCellClicks)
+		clear(s.resultCellText)
 	}
-	columnWidths := make([]int, len(columnWeights))
+	s.resultPixelWidths = s.resultPixelWidths[:0]
 	totalWidth := 0
-	for i, weight := range columnWeights {
-		width := int(weight * 9)
-		if width < 112 {
-			width = 112
-		}
-		if width > 320 {
-			width = 320
-		}
-		columnWidths[i] = gtx.Dp(unit.Dp(width))
-		totalWidth += columnWidths[i]
+	for _, width := range s.columnWidths {
+		pixels := gtx.Dp(width)
+		s.resultPixelWidths = append(s.resultPixelWidths, pixels)
+		totalWidth += pixels
 	}
 	return material.List(s.theme, &s.queryHorizontal).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		gtx.Constraints.Min.X = totalWidth
 		gtx.Constraints.Max.X = totalWidth
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					children := make([]layout.FlexChild, 0, len(s.queryColumns))
+				return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					s.resultHeaderChildren = s.resultHeaderChildren[:0]
 					for i, col := range s.queryColumns {
-						name, databaseType, width := col.Name, col.DatabaseType, columnWidths[i]
-						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						columnIndex, name, databaseType := i, col.Name, col.DatabaseType
+						width := s.resultPixelWidths[columnIndex]
+						s.resultHeaderChildren = append(s.resultHeaderChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									label := material.Label(s.theme, unit.Sp(12), name)
-									label.Color = colorTextPrimary
-									label.MaxLines = 1
-									return label.Layout(gtx)
+									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+											dims := s.sortClicks[columnIndex].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												label := material.Label(s.theme, unit.Sp(11), resultColumnLabel(s.queryColumns, columnIndex, s.resultSortColumn, s.resultSortDescending))
+												label.Color = colorTextPrimary
+												label.MaxLines = 1
+												return label.Layout(gtx)
+											})
+											if s.sortClicks[columnIndex].Clicked(gtx) {
+												if s.resultSortColumn == columnIndex {
+													s.resultSortDescending = !s.resultSortDescending
+												} else {
+													s.resultSortColumn, s.resultSortDescending = columnIndex, false
+												}
+												s.resultViewDirty = true
+												s.queryRows.Position = layout.Position{}
+											}
+											return dims
+										}),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return s.layoutResultColumnResizeHandle(gtx, columnIndex)
+										}),
+									)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									label := material.Label(s.theme, unit.Sp(10), databaseType)
+									label := material.Label(s.theme, unit.Sp(9), databaseType)
 									label.Color = colorTextMuted
 									label.MaxLines = 1
 									return label.Layout(gtx)
 								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+											editor := material.Editor(s.theme, &s.columnFilterEditors[columnIndex], "筛选 "+name)
+											editor.TextSize = unit.Sp(10)
+											return editor.Layout(gtx)
+										}),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											if s.columnFilterClears[columnIndex].Clicked(gtx) {
+												s.columnFilterEditors[columnIndex].SetText("")
+												s.columnFilterLast[columnIndex] = ""
+												s.resultViewDirty = true
+												s.queryRows.Position = layout.Position{}
+											}
+											return s.smallButton(gtx, &s.columnFilterClears[columnIndex], "×", s.columnFilterEditors[columnIndex].Text() == "")
+										}),
+									)
+								}),
 							)
 						}))
 					}
-					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, s.resultHeaderChildren...)
 				})
 			}),
 			layout.Rigid(s.divider),
@@ -1084,35 +1280,39 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 				return s.layoutQueryCellDetail(gtx)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return material.List(s.theme, &s.queryRows).Layout(gtx, len(s.queryData), func(gtx layout.Context, index int) layout.Dimensions {
-					row := s.queryData[index]
+				return material.List(s.theme, &s.queryRows).Layout(gtx, len(s.resultView), func(gtx layout.Context, index int) layout.Dimensions {
+					display := s.resultView[index]
 					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						children := make([]layout.FlexChild, 0, len(s.queryColumns))
-						for i := range s.queryColumns {
+						s.resultRowChildren = s.resultRowChildren[:0]
+						for cellIndex := range s.queryColumns {
 							var cell any
-							if i < len(row) {
-								cell = row[i]
+							if cellIndex < len(display.Values) {
+								cell = display.Values[cellIndex]
 							}
-							value, width := formatResultCell(cell), columnWidths[i]
-							cellIndex := i
-							cellKey := fmt.Sprintf("%d:%d", index, cellIndex)
-							click := s.queryCellClicks[cellKey]
+							key := resultCellKey(index, cellIndex)
+							value, ok := s.resultCellText[key]
+							if !ok {
+								value = formatResultCell(cell)
+								s.resultCellText[key] = value
+							}
+							click := s.queryCellClicks[key]
 							if click == nil {
 								click = new(widget.Clickable)
-								s.queryCellClicks[cellKey] = click
+								s.queryCellClicks[key] = click
 							}
 							if click.Clicked(gtx) {
 								column := s.queryColumns[cellIndex]
-								s.selectedQueryCell = &queryCellSelection{row: index + 1, column: column, value: resultCellRawValue(cell)}
+								s.selectedQueryCell = &queryCellSelection{row: display.Index + 1, column: column, value: resultCellRawValue(cell)}
 							}
-							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							width := s.resultPixelWidths[cellIndex]
+							s.resultRowChildren = append(s.resultRowChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 								return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return material.Caption(s.theme, value).Layout(gtx)
 								})
 							}))
 						}
-						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, s.resultRowChildren...)
 					})
 				})
 			}),
@@ -1131,9 +1331,9 @@ func (s *workspace) layoutStatusBar(gtx layout.Context) layout.Dimensions {
 				message = "就绪 · 选择连接并打开数据库"
 			}
 			label := material.Label(s.theme, unit.Sp(11), message)
-			label.Color = colorTextMuted
-			// 单行展示，窗口变窄时自动截断，避免文字溢出到窗口外。
-			label.MaxLines = 1
+			label.Color = statusForeground(message)
+			// 宽屏保持单行密度；窄屏允许两行，避免关键错误信息被截断。
+			label.MaxLines = adaptiveMaxLines(gtx)
 			return label.Layout(gtx)
 		})
 	})
@@ -1175,8 +1375,8 @@ func (s *workspace) layoutWorkbench(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			width := gtx.Dp(unit.Dp(300))
-			if gtx.Constraints.Max.X < gtx.Dp(unit.Dp(980)) {
-				width = gtx.Dp(unit.Dp(256))
+			if isCompact(gtx) {
+				width = gtx.Dp(unit.Dp(232))
 			}
 			if width > gtx.Constraints.Max.X {
 				width = gtx.Constraints.Max.X
@@ -1364,7 +1564,7 @@ func (s *workspace) treeRow(gtx layout.Context, click *widget.Clickable, marker 
 						}
 						label := material.Label(s.theme, size, row.label)
 						label.Color = foreground
-						label.MaxLines = 1
+						label.MaxLines = adaptiveMaxLines(gtx)
 						return label.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1411,6 +1611,7 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 	s.queryEditor.SetText(nextTab.Editor.Text())
 	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 	s.clearQueryCellSelection()
+	s.resetResultWidgets(s.queryColumns)
 }
 func (s *workspace) treeGroupLabel(gtx layout.Context, title string) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(2), Left: unit.Dp(26), Right: unit.Dp(8)}.Layout(gtx, styledText(s.theme, title, unit.Sp(10), colorTextMuted))

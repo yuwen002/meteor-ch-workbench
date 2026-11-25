@@ -43,9 +43,17 @@ func resultColumnFlexWeights(columns []queryapp.Column, rows [][]any, sampleRows
 
 const maxResultCellRunes = 80
 
+// resultCellReplacer 在包级复用，避免每次格式化单元格都重建替换表。
+var resultCellReplacer = strings.NewReplacer(
+	"\\r\\n", " ↵ ", "\\n", " ↵ ", "\\r", " ↵ ", "\\t", " ⇥ ",
+	"\r\n", " ↵ ", "\n", " ↵ ", "\r", " ↵ ", "\t", " ⇥ ",
+)
+
 // resultCellRawValue 返回单元格的完整值，不进行截断或换行替换。
 func resultCellRawValue(value any) string {
-	if value == nil { return "NULL" }
+	if value == nil {
+		return "NULL"
+	}
 	switch typed := value.(type) {
 	case string:
 		return typed
@@ -58,14 +66,22 @@ func resultCellRawValue(value any) string {
 
 // formatResultCell 将数据库值转换为紧凑、可读的单元格文本。
 func formatResultCell(value any) string {
-	if value == nil {
-		return "NULL"
+	text := resultCellRawValue(value)
+	// 绝大多数单元格没有控制字符，先判断再替换，避免每次都分配替换结果。
+	if strings.Contains(text, "\\") || strings.ContainsAny(text, "\r\n\t") {
+		text = resultCellReplacer.Replace(text)
 	}
-	text := fmt.Sprint(value)
-	text = strings.NewReplacer("\\r\\n", " ↵ ", "\\n", " ↵ ", "\\r", " ↵ ", "\\t", " ⇥ ", "\r\n", " ↵ ", "\n", " ↵ ", "\r", " ↵ ", "\t", " ⇥ ").Replace(text)
 	if utf8.RuneCountInString(text) <= maxResultCellRunes {
 		return text
 	}
-	runes := []rune(text)
-	return string(runes[:maxResultCellRunes-1]) + "…"
+	// 按 rune 边界定位截断点，避免 []rune(text) 的整串分配。
+	count, cut := 0, len(text)
+	for index, r := range text {
+		count++
+		if count == maxResultCellRunes-1 {
+			cut = index + utf8.RuneLen(r)
+			break
+		}
+	}
+	return text[:cut] + "…"
 }
