@@ -97,7 +97,7 @@ type objectsResult struct {
 
 // Run 使用新架构服务启动 Gio 窗口，不再依赖旧 internal/app.Service。
 func Run(window *gio.Window, services *bootstrap.Services) error {
-	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil || services.History == nil {
+	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil || services.History == nil || services.SavedSQL == nil {
 		return fmt.Errorf("新架构应用服务未初始化")
 	}
 	model, err := connectionui.NewModel(services.Connections, services.Folders)
