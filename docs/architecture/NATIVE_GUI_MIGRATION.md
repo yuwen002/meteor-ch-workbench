@@ -308,6 +308,6 @@ Gio 编辑区读取并恢复 `TabsManager` 保存的标签快照，支持新建�
 - 查询历史：新增 `domain/queryhistory`、`application/history`、`infrastructure/storage/historyfile`。自动记录 Gio 查询完成事件（SQL、连接 ID、耗时、成功状态），最新记录置顶，最多保留 200 条；支持读取、删除和清空。并发写入在应用服务层串行化，文件重复写入兼容 Windows。
 - 收藏 SQL：新增 `domain/savedsql`、`application/savedsql`、`infrastructure/storage/savedsqlfile`。支持读取、新增、重命名 / 修改 SQL、删除和重复语句校验；不设置条数上限，保留创建与更新时间。
 - `bootstrap.Services` 已装配 `History` 与 `SavedSQL` 服务；Gio 查询完成后自动写入历史。
-- 新增测试覆盖旧 JSON 兼容、排序 / 数量上限、重复语句、增删改、并发写入串行化和文件重复覆盖。
+- 新增测试覆盖旧 JSON 兼容、排序 / 数量上限、重复语句、增删改和文件重复覆盖；查询历史应用服务通过互斥锁串行化并发写入。
 
 **尚未完成**：Gio 查询历史面板和收藏 SQL 面板尚未接入新服务；本轮完成的是领域 / 应用 / 存储迁移及查询历史自动记录，不将界面迁移计入完成。下一步先接入历史与收藏面板，再迁移标签页快照和设置。
