@@ -204,7 +204,10 @@ type workspace struct {
 	savedSQLItems     []savedsqldomain.Entry
 	savedSQLClicks    []widget.Clickable
 	savedSQLDelete    []widget.Clickable
-	savedSQLDeleteID  string
+	savedSQLRenameID  string
+	savedSQLRenameEditor widget.Editor
+	savedSQLRenameSave widget.Clickable
+	savedSQLRename []widget.Clickable
 	savedSQLListSeq   uint64
 	objectResults     chan objectsResult
 	schemaResults     chan schemaResult
@@ -341,6 +344,21 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 						}),
 					)
 				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if s.savedSQLRenameID == "" { return layout.Dimensions{} }
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							editor := material.Editor(s.theme, &s.savedSQLRenameEditor, "输入新的收藏名称")
+							editor.SingleLine = true
+							editor.TextSize = unit.Sp(11)
+							return editor.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if s.savedSQLRenameSave.Clicked(gtx) { s.renameSavedSQL(s.savedSQLRenameID) }
+							return s.smallButton(gtx, &s.savedSQLRenameSave, "保存名称", strings.TrimSpace(s.savedSQLRenameEditor.Text()) == "")
+						}),
+					)
+				}),
 				layout.Rigid(s.divider),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					if len(filtered) == 0 {
@@ -358,6 +376,8 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 							s.queryStatus = "已载入收藏 SQL：" + item.Name
 						}
 						if remove.Clicked(gtx) { s.deleteSavedSQL(item.ID) }
+						rename := &s.savedSQLRename[index]
+						if rename.Clicked(gtx) { s.savedSQLRenameID = item.ID; s.savedSQLRenameEditor.SetText(item.Name) }
 						return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -369,6 +389,9 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 									})
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return s.smallButton(gtx, rename, "改名", false)
+								}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return s.smallButton(gtx, remove, "删除", false)
 								}),
 							)
@@ -378,6 +401,26 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 			)
 		})
 	})
+}
+
+func (s *workspace) renameSavedSQL(id string) {
+	name := strings.TrimSpace(s.savedSQLRenameEditor.Text())
+	if name == "" { return }
+	var item savedsqldomain.Entry
+	for _, saved := range s.savedSQLItems {
+		if saved.ID == id { item = saved; break }
+	}
+	if item.ID == "" { return }
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		updated, err := s.services.SavedSQL.Update(ctx, id, name, item.SQL)
+		select {
+		case s.savedSQLResults <- savedSQLResult{name: updated.Name, action: "重命名收藏", err: err}:
+		case <-ctx.Done():
+		}
+		s.window.Invalidate()
+	}()
 }
 
 func (s *workspace) deleteSavedSQL(id string) {
@@ -534,6 +577,9 @@ func (s *workspace) drainResults() {
 			} else {
 				if result.action == "删除收藏" {
 					s.status = "已删除收藏 SQL"
+				} else if result.action == "重命名收藏" {
+					s.status = "已重命名收藏 SQL：" + result.name
+					s.savedSQLRenameID = ""
 				} else {
 					s.status = "已收藏 SQL：" + result.name
 				}
@@ -547,6 +593,7 @@ func (s *workspace) drainResults() {
 				s.savedSQLItems = result.items
 				s.savedSQLClicks = make([]widget.Clickable, len(result.items))
 				s.savedSQLDelete = make([]widget.Clickable, len(result.items))
+				s.savedSQLRename = make([]widget.Clickable, len(result.items))
 			}
 		case result := <-s.deleteResults:
 			if result.err != nil {
