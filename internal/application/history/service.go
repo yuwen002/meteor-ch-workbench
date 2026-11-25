@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/queryhistory"
@@ -16,6 +17,7 @@ var ErrNotFound = errors.New("查询历史记录不存在")
 
 // Service 提供查询历史的读取、追加、删除和清空用例。
 type Service struct {
+	mu sync.Mutex
 	repository Repository
 	ids IDGenerator
 }
@@ -32,6 +34,8 @@ func (s *Service) List(ctx context.Context) ([]queryhistory.Entry, error) {
 
 // Add 记录一次 SQL 执行；最新记录排在首位，最多保留 200 条。
 func (s *Service) Add(ctx context.Context, entry queryhistory.Entry) (queryhistory.Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	entry.SQL = strings.TrimSpace(entry.SQL)
 	if entry.SQL == "" { return queryhistory.Entry{}, errors.New("SQL 不能为空") }
 	if entry.ConnectionID == "" { return queryhistory.Entry{}, errors.New("连接 ID 不能为空") }
@@ -51,6 +55,8 @@ func (s *Service) Add(ctx context.Context, entry queryhistory.Entry) (queryhisto
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	items, err := s.repository.List(ctx)
 	if err != nil { return err }
 	filtered := make([]queryhistory.Entry, 0, len(items))
@@ -64,5 +70,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 }
 
 func (s *Service) Clear(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.repository.Save(ctx, []queryhistory.Entry{})
 }
