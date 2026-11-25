@@ -259,6 +259,56 @@ func (r *Repository) DeleteFolder(ctx context.Context, id string) error {
 	return r.write(data)
 }
 
+// Reorder 按 ID 顺序重排连接配置。未出现在 ids 中的连接保留原相对顺序。
+func (r *Repository) Reorder(ctx context.Context, ids []string) error {
+	if err := ctx.Err(); err != nil { return err }
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, err := r.read()
+	if err != nil { return err }
+	byID := make(map[string]connectionRecord, len(data.Connections))
+	for _, item := range data.Connections { byID[item.ID] = item }
+	seen := make(map[string]bool, len(ids))
+	ordered := make([]connectionRecord, 0, len(data.Connections))
+	for _, id := range ids {
+		item, ok := byID[id]
+		if !ok || seen[id] { continue }
+		seen[id] = true
+		ordered = append(ordered, item)
+	}
+	for _, item := range data.Connections {
+		if !seen[item.ID] { ordered = append(ordered, item) }
+	}
+	if err := ctx.Err(); err != nil { return err }
+	data.Connections = ordered
+	return r.write(data)
+}
+
+// ReorderFolders 按 ID 顺序重排分组；未指定分组保留原相对顺序。
+func (r *Repository) ReorderFolders(ctx context.Context, ids []string) error {
+	if err := ctx.Err(); err != nil { return err }
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	data, err := r.read()
+	if err != nil { return err }
+	byID := make(map[string]folderRecord, len(data.Folders))
+	for _, item := range data.Folders { byID[item.ID] = item }
+	seen := make(map[string]bool, len(ids))
+	ordered := make([]folderRecord, 0, len(data.Folders))
+	for _, id := range ids {
+		item, ok := byID[id]
+		if !ok || seen[id] { continue }
+		seen[id] = true
+		ordered = append(ordered, item)
+	}
+	for _, item := range data.Folders {
+		if !seen[item.ID] { ordered = append(ordered, item) }
+	}
+	if err := ctx.Err(); err != nil { return err }
+	data.Folders = ordered
+	return r.write(data)
+}
+
 func (r *Repository) read() (fileData, error) {
 	data, err := os.ReadFile(r.path)
 	if errors.Is(err, os.ErrNotExist) {
