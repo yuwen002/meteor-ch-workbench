@@ -80,8 +80,9 @@ type historySaveResult struct {
 }
 
 type savedSQLResult struct {
-	name string
-	err  error
+	name   string
+	action string
+	err    error
 }
 
 type savedSQLListResult struct {
@@ -192,6 +193,7 @@ type workspace struct {
 	deleteResults     chan deleteResult
 	historyResults    chan historySaveResult
 	savedSQLResults   chan savedSQLResult
+	savedSQLListResults chan savedSQLListResult
 	saveSQL           widget.Clickable
 	savedSQLToggle    widget.Clickable
 	savedSQLRefresh   widget.Clickable
@@ -394,7 +396,7 @@ func (s *workspace) deleteSavedSQL(id string) {
 			}
 		}
 		if err != nil {
-			select { case s.savedSQLResults <- savedSQLResult{err: err}: case <-ctx.Done(): }
+			select { case s.savedSQLResults <- savedSQLResult{action: "删除收藏", err: err}: case <-ctx.Done(): }
 		}
 		s.window.Invalidate()
 	}()
@@ -414,7 +416,7 @@ func (s *workspace) saveCurrentSQL() {
 			ConnectionID: connectionID,
 		})
 		select {
-		case s.savedSQLResults <- savedSQLResult{name: item.Name, err: err}:
+		case s.savedSQLResults <- savedSQLResult{name: item.Name, action: "收藏 SQL", err: err}:
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
@@ -535,9 +537,15 @@ func (s *workspace) drainResults() {
 			}
 		case result := <-s.savedSQLResults:
 			if result.err != nil {
-				s.status = "收藏 SQL 失败：" + result.err.Error()
+				action := result.action
+				if action == "" { action = "收藏 SQL" }
+				s.status = action + "失败：" + result.err.Error()
 			} else {
-				s.status = "已收藏 SQL：" + result.name
+				if result.action == "删除收藏" {
+					s.status = "已删除收藏 SQL"
+				} else {
+					s.status = "已收藏 SQL：" + result.name
+				}
 				s.reloadSavedSQL()
 			}
 		case result := <-s.savedSQLListResults:
