@@ -53,13 +53,13 @@ func TestTabsEditAndReorder(t *testing.T) {
 	if !tabs.UpdateSQL(first, "SELECT 1") {
 		t.Fatal("expected SQL update to succeed")
 	}
-	if tab, _ := tabs.Get(first); tab.SQL != "SELECT 1" || !tab.Dirty {
+	if tab, _ := tabs.Get(first); tab.Editor.Text() != "SELECT 1" || !tab.Editor.Dirty() {
 		t.Fatalf("updated tab = %+v, want dirty SQL tab", tab)
 	}
 	if !tabs.MarkSaved(first) {
 		t.Fatal("expected mark saved to succeed")
 	}
-	if tab, _ := tabs.Get(first); tab.Dirty {
+	if tab, _ := tabs.Get(first); tab.Editor.Dirty() {
 		t.Fatal("saved tab must not be dirty")
 	}
 	if !tabs.Rename(first, "查询报表") {
