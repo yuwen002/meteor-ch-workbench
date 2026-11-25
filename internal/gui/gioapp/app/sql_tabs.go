@@ -2,7 +2,6 @@
 package app
 
 import (
-	"gioui.org/widget"
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 )
 
