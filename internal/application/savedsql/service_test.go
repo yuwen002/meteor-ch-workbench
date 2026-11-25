@@ -3,6 +3,7 @@ package savedsql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/savedsql"
@@ -38,7 +39,7 @@ func TestSavedSQLHasNoEntryLimit(t *testing.T){
 	repo:=&memoryRepository{}
 	s,_:=NewService(repo,fixedIDs{id:"unused"})
 	for i:=0;i<250;i++{
-		item:=savedsql.Entry{ID:string(rune(i+1)),SQL:"SELECT "+string(rune(i+1))}
+		item:=savedsql.Entry{ID:string(rune(i+1)),SQL:fmt.Sprintf("SELECT %d",i)}
 		if _,err:=s.Add(context.Background(),item);err!=nil{t.Fatalf("第 %d 条收藏失败: %v",i,err)}
 	}
 	if len(repo.items)!=250{t.Fatalf("收藏不应被截断，得到 %d 条",len(repo.items))}
