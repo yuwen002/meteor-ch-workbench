@@ -313,13 +313,8 @@ func (s *workspace) reloadSavedSQL() {
 }
 
 func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
-	filtered := make([]savedsqldomain.Entry, 0, len(s.savedSQLItems))
-	needle := strings.ToLower(strings.TrimSpace(s.savedSQLSearch.Text()))
-	for _, item := range s.savedSQLItems {
-		if needle == "" || strings.Contains(strings.ToLower(item.Name), needle) || strings.Contains(strings.ToLower(item.SQL), needle) {
-			filtered = append(filtered, item)
-		}
-	}
+	filtered := filterSavedSQL(s.savedSQLItems, s.savedSQLSearch.Text())
+	needle := strings.TrimSpace(s.savedSQLSearch.Text())
 	height := gtx.Dp(unit.Dp(174))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
 	return s.surface(gtx, colorSurfaceSubtle, radiusS, func(gtx layout.Context) layout.Dimensions {
