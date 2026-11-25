@@ -5,12 +5,11 @@ import (
 	"strings"
 )
 
-// Tab 保存 SQL 标签页的领域状态，不依赖 Gio 控件或 UI 索引。
+// Tab 保存标签页身份与标题；编辑器内容由独立 EditorState 管理。
 type Tab struct {
-	ID    TabID
-	Title string
-	SQL   string
-	Dirty bool
+	ID     TabID
+	Title  string
+	Editor EditorState
 }
 
 // Tabs 管理标签集合与当前活动标签。所有操作均以稳定 TabID 为身份。
@@ -108,24 +107,23 @@ func (t *Tabs) Close(id TabID) (Tab, bool) {
 	return removed, true
 }
 
-// UpdateSQL 更新 SQL 文本，并根据内容变化标记未保存状态。
+// UpdateSQL 更新标签对应的编辑器文本。
 func (t *Tabs) UpdateSQL(id TabID, sql string) bool {
 	index, ok := t.index(id)
 	if !ok {
 		return false
 	}
-	t.items[index].SQL = sql
-	t.items[index].Dirty = true
+	t.items[index].Editor.SetText(sql)
 	return true
 }
 
-// MarkSaved 将标签标记为已保存。
+// MarkSaved 将标签当前编辑器内容标记为已保存。
 func (t *Tabs) MarkSaved(id TabID) bool {
 	index, ok := t.index(id)
 	if !ok {
 		return false
 	}
-	t.items[index].Dirty = false
+	t.items[index].Editor.MarkSaved()
 	return true
 }
 
