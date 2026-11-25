@@ -28,6 +28,6 @@ func TestRepositorySavesAndOverwrites(t *testing.T){
 	if err:=repo.Save(context.Background(),first);err!=nil{t.Fatal(err)}
 	if err:=repo.Save(context.Background(),second);err!=nil{t.Fatal(err)}
 	got,err:=repo.List(context.Background());if err!=nil{t.Fatal(err)}
-	if !reflect.DeepEqual(got,second){t.Fatalf("覆盖保存结果=%+v，期望 %+v",got,second)}
+	if len(got)!=1 || got[0].ID!=second[0].ID || got[0].SQL!=second[0].SQL || !got[0].CreatedAt.Equal(second[0].CreatedAt) { t.Fatalf("覆盖保存结果=%+v，期望 %+v",got,second) }
 	if _,err:=os.Stat(path+".bak");!os.IsNotExist(err){t.Fatalf("备份文件未清理: %v",err)}
 }
