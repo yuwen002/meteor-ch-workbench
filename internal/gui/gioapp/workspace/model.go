@@ -1,6 +1,9 @@
 package workspace
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Tab 保存 SQL 标签页的领域状态，不依赖 Gio 控件或 UI 索引。
 type Tab struct {
@@ -129,7 +132,7 @@ func (t *Tabs) MarkSaved(id TabID) bool {
 // Rename 修改标签标题；空白标题会被拒绝。
 func (t *Tabs) Rename(id TabID, title string) bool {
 	index, ok := t.index(id)
-	if !ok || title == "" {
+	if !ok || strings.TrimSpace(title) == "" {
 		return false
 	}
 	t.items[index].Title = title
