@@ -75,6 +75,12 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// Reorder 按给定 ID 顺序重排连接；未提供的连接保留原相对顺序。
+func (s *Service) Reorder(ctx context.Context, ids []string) error {
+	if err := ctx.Err(); err != nil { return err }
+	return s.repository.Reorder(ctx, append([]string(nil), ids...))
+}
+
 // Test 在保存前执行连通性测试；不会修改或持久化连接配置。
 func (s *Service) Test(ctx context.Context, item connection.Connection) error {
 	item.Name = strings.TrimSpace(item.Name)
