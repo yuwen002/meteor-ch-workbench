@@ -11,6 +11,23 @@ type sqlTabState struct {
 	Status  string
 }
 
+// Apply 将一个查询事件归档到所属标签页，不依赖当前活动标签。
+func (s *sqlTabState) Apply(result queryEvent) {
+	if s == nil {
+		return
+	}
+	if len(result.columns) > 0 {
+		s.Columns = append([]query.Column(nil), result.columns...)
+		s.Data = nil
+	}
+	if len(result.batch) > 0 {
+		s.Data = append(s.Data, result.batch...)
+	}
+	if result.done {
+		s.Status = queryResultStatus(result, s.Columns)
+	}
+}
+
 func (s *workspace) closeSQLTab(index int) {
 	items := s.sqlWorkspace.Items()
 	if index < 0 || index >= len(items) {
