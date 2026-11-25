@@ -28,6 +28,16 @@ func (s *serviceStub) Save(_ context.Context, item domain.Connection) (domain.Co
 	s.items = append(s.items, item)
 	return item, nil
 }
+func (s *serviceStub) Reorder(_ context.Context, ids []string) error {
+	byID := make(map[string]domain.Connection, len(s.items))
+	for _, item := range s.items { byID[item.ID] = item }
+	seen := map[string]bool{}
+	ordered := make([]domain.Connection, 0, len(s.items))
+	for _, id := range ids { if item, ok := byID[id]; ok && !seen[id] { ordered = append(ordered, item); seen[id] = true } }
+	for _, item := range s.items { if !seen[item.ID] { ordered = append(ordered, item) } }
+	s.items = ordered
+	return nil
+}
 func (s *serviceStub) Delete(_ context.Context, id string) error {
 	if s.deleteErr != nil { return s.deleteErr }
 	for i := range s.items {
@@ -42,6 +52,16 @@ func (s *folderStub) List(context.Context) ([]domain.Folder, error) { return app
 func (s *folderStub) Save(_ context.Context, item domain.Folder) (domain.Folder, error) {
  for i := range s.items { if s.items[i].ID == item.ID { s.items[i] = item; return item, nil } }
  s.items = append(s.items, item); return item, nil
+}
+func (s *folderStub) Reorder(_ context.Context, ids []string) error {
+	byID := make(map[string]domain.Folder, len(s.items))
+	for _, item := range s.items { byID[item.ID] = item }
+	seen := map[string]bool{}
+	ordered := make([]domain.Folder, 0, len(s.items))
+	for _, id := range ids { if item, ok := byID[id]; ok && !seen[id] { ordered = append(ordered, item); seen[id] = true } }
+	for _, item := range s.items { if !seen[item.ID] { ordered = append(ordered, item) } }
+	s.items = ordered
+	return nil
 }
 func (s *folderStub) Delete(_ context.Context, id string) error {
  if s.deleteErr != nil { return s.deleteErr }
