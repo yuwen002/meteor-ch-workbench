@@ -25,6 +25,7 @@ import (
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
+	"github.com/yuwen002/meteor-ch-workbench/internal/domain/queryhistory"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
@@ -56,6 +57,8 @@ type queryEvent struct {
 	columns []queryapp.Column
 	batch   [][]any
 	summary queryapp.Summary
+	sql string
+	connectionID string
 	err     error
 	done    bool
 }
@@ -94,7 +97,7 @@ type objectsResult struct {
 
 // Run 使用新架构服务启动 Gio 窗口，不再依赖旧 internal/app.Service。
 func Run(window *gio.Window, services *bootstrap.Services) error {
-	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil {
+	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil || services.History == nil {
 		return fmt.Errorf("新架构应用服务未初始化")
 	}
 	model, err := connectionui.NewModel(services.Connections, services.Folders)
@@ -419,6 +422,15 @@ func (s *workspace) drainResults() {
 			if !exists {
 				continue // 标签页已关闭，丢弃迟到的查询事件。
 			}
+			if result.done && strings.TrimSpace(result.sql) != "" {
+				entry := queryhistory.Entry{
+					SQL: result.sql,
+					ConnectionID: result.connectionID,
+					DurationMs: float64(result.summary.Elapsed) / float64(time.Millisecond),
+					Success: result.err == nil,
+				}
+				go func() { _, _ = s.services.History.Add(context.Background(), entry) }()
+			}
 			if result.tab != s.sqlWorkspace.ActiveID() {
 				state := s.sqlTabStates[result.tab]
 				state.Apply(result)
@@ -731,7 +743,7 @@ func (s *workspace) executeQuery() {
 			},
 		)
 		select {
-		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, err: err, done: true}:
+		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: s.selectedID, err: err, done: true}:
 		case <-ctx.Done():
 			// 标签页切换或窗口退出后不再等待无人消费的结果事件。
 		}
