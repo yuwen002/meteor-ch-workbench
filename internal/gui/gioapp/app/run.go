@@ -382,16 +382,7 @@ func (s *workspace) drainResults() {
 			}
 			if result.tab != s.sqlWorkspace.ActiveID() {
 				state := s.sqlTabStates[result.tab]
-				if len(result.columns) > 0 {
-					state.Columns = result.columns
-					state.Data = nil
-				}
-				if len(result.batch) > 0 {
-					state.Data = append(state.Data, result.batch...)
-				}
-				if result.done {
-					state.Status = queryResultStatus(result, state.Columns)
-				}
+				state.Apply(result)
 				s.sqlTabStates[result.tab] = state
 				continue
 			}
