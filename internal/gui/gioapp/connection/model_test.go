@@ -142,6 +142,23 @@ func TestModelNewerConnectionTestSupersedesOlderResult(t *testing.T) {
 	}
 }
 
+func TestModelReordersFoldersAndConnections(t *testing.T) {
+	service := &serviceStub{items: []domain.Connection{{ID:"c1"},{ID:"c2"},{ID:"c3"}}}
+	folders := &folderStub{items: []domain.Folder{{ID:"f1",Name:"one"},{ID:"f2",Name:"two"},{ID:"f3",Name:"three"}}}
+	model, err := NewModel(service, folders)
+	if err != nil { t.Fatal(err) }
+	if err := model.Reload(context.Background()); err != nil { t.Fatal(err) }
+	if err := model.ReorderFolders(context.Background(), []string{"f3","f1"}); err != nil { t.Fatal(err) }
+	if err := model.ReorderConnections(context.Background(), []string{"c2","c1"}); err != nil { t.Fatal(err) }
+	state := model.Snapshot()
+	if got, want := []string{state.Folders[0].ID,state.Folders[1].ID,state.Folders[2].ID}, []string{"f3","f1","f2"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("模型分组顺序=%v，期望 %v",got,want)
+	}
+	if got, want := []string{state.Items[0].ID,state.Items[1].ID,state.Items[2].ID}, []string{"c2","c1","c3"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("模型连接顺序=%v，期望 %v",got,want)
+	}
+}
+
 func TestModelFolderCRUD(t *testing.T) {
  folders := &folderStub{}
  model, err := NewModel(&serviceStub{}, folders)
