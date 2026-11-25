@@ -709,6 +709,7 @@ func (s *workspace) executeQuery() {
 		s.queryCancelFunc()
 	}
 	tab := s.sqlWorkspace.ActiveID()
+	connectionID := s.selectedID
 	seq := s.queryExecution.Start(tab)
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	s.queryCancelFunc = cancel
@@ -717,7 +718,7 @@ func (s *workspace) executeQuery() {
 	s.clearQueryCellSelection()
 	s.resetResultWidgets(nil)
 	s.queryStatus = "正在执行 SQL…"
-	request := queryapp.Request{ConnectionID: s.selectedID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: 10000, BatchSize: 128, Timeout: 30 * time.Second}
+	request := queryapp.Request{ConnectionID: connectionID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: 10000, BatchSize: 128, Timeout: 30 * time.Second}
 	go func() {
 		defer cancel()
 		summary, err := s.services.Queries.Execute(ctx, request,
@@ -743,7 +744,7 @@ func (s *workspace) executeQuery() {
 			},
 		)
 		select {
-		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: s.selectedID, err: err, done: true}:
+		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: connectionID, err: err, done: true}:
 		case <-ctx.Done():
 			// 标签页切换或窗口退出后不再等待无人消费的结果事件。
 		}
