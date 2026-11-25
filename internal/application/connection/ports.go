@@ -13,6 +13,7 @@ type Repository interface {
 	List(ctx context.Context) ([]connection.Connection, error)
 	Save(ctx context.Context, item connection.Connection) error
 	Delete(ctx context.Context, id string) error
+	Reorder(ctx context.Context, ids []string) error
 }
 
 // Tester 执行真实连通性检查。实现负责连接池、超时与资源释放。
