@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"reflect"
 	"testing"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
@@ -101,6 +102,30 @@ func TestImportLegacyJSONIsAtomicOnInvalidEntry(t *testing.T) {
 	items, err := repo.List(context.Background())
 	if err != nil { t.Fatal(err) }
 	if len(items) != 0 { t.Fatalf("校验失败不应写入部分连接: %+v", items) }
+}
+
+
+func TestRepositoryReordersFoldersAndConnections(t *testing.T) {
+	repo, _ := testRepository(t)
+	ctx := context.Background()
+	for _, folder := range []connection.Folder{{ID:"f1",Name:"生产"},{ID:"f2",Name:"测试"},{ID:"f3",Name:"开发"}} {
+		if err := repo.SaveFolder(ctx, folder); err != nil { t.Fatal(err) }
+	}
+	for _, item := range []connection.Connection{sampleConnection("c1"),sampleConnection("c2"),sampleConnection("c3")} {
+		if err := repo.Save(ctx, item); err != nil { t.Fatal(err) }
+	}
+	if err := repo.ReorderFolders(ctx, []string{"f3","f1"}); err != nil { t.Fatal(err) }
+	if err := repo.Reorder(ctx, []string{"c2","c1"}); err != nil { t.Fatal(err) }
+	folders, err := repo.ListFolders(ctx)
+	if err != nil { t.Fatal(err) }
+	items, err := repo.List(ctx)
+	if err != nil { t.Fatal(err) }
+	if got, want := []string{folders[0].ID,folders[1].ID,folders[2].ID}, []string{"f3","f1","f2"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("分组顺序=%v，期望 %v",got,want)
+	}
+	if got, want := []string{items[0].ID,items[1].ID,items[2].ID}, []string{"c2","c1","c3"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("连接顺序=%v，期望 %v",got,want)
+	}
 }
 
 func TestRandomIDGenerator(t *testing.T) {
