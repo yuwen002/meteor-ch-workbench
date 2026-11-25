@@ -1,0 +1,60 @@
+internal/gui/gioapp/app/style.go
+  s_ccf92b4113fd4a::t_16ed7664271eb5 27-28,31-53
+  h_a3f313f3d96276 122,132-139
+  s_ccf92b4113fd4a::t_6c25dceed8d90c 6
+internal/gui/gioapp/app/run.go
+  s_ccf92b4113fd4a::t_c002ba3ec33804 1196-1197,1199,1202-1204,1212,1215-1216,1271,1286-1287,1289-1290,1292-1296,1298,1301,1307-1308,1315
+  s_ccf92b4113fd4a::t_f95dc9c5f2053d 125
+  s_ccf92b4113fd4a::t_72e4e3d9cb4192 1201,1211,1214,1220-1242,1245,1250-1267,1283-1284,1305
+  s_ccf92b4113fd4a::t_2f0ee3f69e5f05 145
+  s_ccf92b4113fd4a::t_0ef2947e058f7f 239
+  s_ccf92b4113fd4a::t_116fae996373d3 1334-1336
+  s_ccf92b4113fd4a::t_45fa683c290a40 196-198,203-223
+  s_ccf92b4113fd4a::t_1e5be593cbee68 985,987
+  s_ccf92b4113fd4a::t_f7527cc516008e 224-238,240-249
+  s_ccf92b4113fd4a::t_d797c435457869 155
+  s_ccf92b4113fd4a::t_f23021b1a061f6 14,106-121,124,126-131
+  s_ccf92b4113fd4a::t_667093a7d091d0 184
+  s_ccf92b4113fd4a::t_4ecb8ad4d81b11 813
+  s_ccf92b4113fd4a::t_2c290a73b9cb6d 1378-1379
+  h_a3f313f3d96276 104,199-202,484-488,491,505-508,513-514,590-594,596-598,606-616,619-625,627-635,637-644,646-648,650-654,657-660,662,667-668
+  s_ccf92b4113fd4a::t_dba6e7670e3721 758-759
+  s_ccf92b4113fd4a::t_2f35b738f25dce 1567
+  s_ccf92b4113fd4a::t_a9df646b15dd9b 1070,1073,1098-1183
+  s_ccf92b4113fd4a::t_4a950b10118acf 1091-1092
+  s_ccf92b4113fd4a::t_baed5461520712 549
+  s_ccf92b4113fd4a::t_b9695425b30d51 23
+  s_ccf92b4113fd4a::t_fea8a43e2596f6 432,436
+  s_ccf92b4113fd4a::t_63a32d0abbd869 1614
+  s_ccf92b4113fd4a::t_4e4140c8d2e1c9 706
+  s_ccf92b4113fd4a::t_4989ace8b0ace8 122-123
+internal/gui/gioapp/app/result_layout.go
+  s_ccf92b4113fd4a::t_52f1069eb0401c 79,82
+  s_ccf92b4113fd4a::t_84910271e1abe8 69-72,77-78,80-81,83-86
+  s_ccf92b4113fd4a::t_8717a54e964945 46-51,54-56
+internal/gui/gioapp/app/sql_tabs.go
+  h_a3f313f3d96276 73
+  s_ccf92b4113fd4a::t_028da198d93e1f 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "4c12220bede69b8f1f864970cea80aa7bda22754",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  },
+  "sessions": {
+    "s_ccf92b4113fd4a": {
+      "agent_id": {
+        "tool": "codebuddy",
+        "id": "785bddbeadcb49c6ba3027c2269122d6",
+        "model": "hy4flash-free"
+      },
+      "human_author": "liuxingyu <yuwen002@163.com>",
+      "generated_lines": 1082
+    }
+  }
+}
