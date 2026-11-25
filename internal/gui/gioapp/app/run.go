@@ -74,6 +74,10 @@ type deleteResult struct {
 	err error
 }
 
+type historySaveResult struct {
+	err error
+}
+
 type saveResult struct {
 	item connection.Connection
 	err  error
@@ -171,6 +175,7 @@ type workspace struct {
 	checkResults      chan connectionCheck
 	saveResults       chan saveResult
 	deleteResults     chan deleteResult
+	historyResults    chan historySaveResult
 	objectResults     chan objectsResult
 	schemaResults     chan schemaResult
 	queryResults      chan queryEvent
@@ -374,6 +379,10 @@ func (s *workspace) drainResults() {
 			}
 			s.status = "连接已保存，正在测试连接…"
 			s.selectConnection(result.item)
+		case result := <-s.historyResults:
+			if result.err != nil {
+				s.status = "保存查询历史失败：" + result.err.Error()
+			}
 		case result := <-s.deleteResults:
 			if result.err != nil {
 				s.status = "删除连接失败：" + result.err.Error()
@@ -429,7 +438,16 @@ func (s *workspace) drainResults() {
 					DurationMs: float64(result.summary.Elapsed) / float64(time.Millisecond),
 					Success: result.err == nil,
 				}
-				go func() {\n\t\t\t\tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)\n\t\t\t\tdefer cancel()\n\t\t\t\t_, err := s.services.History.Add(ctx, entry)\n\t\t\t\tselect {\n\t\t\t\tcase s.historyResults <- historySaveResult{err: err}:\n\t\t\t\tdefault:\n\t\t\t\t}\n\t\t\t\ts.window.Invalidate()\n\t\t\t}()
+				go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_, err := s.services.History.Add(ctx, entry)
+				select {
+				case s.historyResults <- historySaveResult{err: err}:
+				default:
+				}
+				s.window.Invalidate()
+			}()
 			}
 			if result.tab != s.sqlWorkspace.ActiveID() {
 				state := s.sqlTabStates[result.tab]
