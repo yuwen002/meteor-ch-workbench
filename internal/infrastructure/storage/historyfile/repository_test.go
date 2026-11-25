@@ -37,3 +37,18 @@ func TestRepositoryMissingFileReturnsEmptyList(t *testing.T){
 	got,err:=repo.List(context.Background());if err!=nil{t.Fatal(err)}
 	if got==nil||len(got)!=0{t.Fatalf("缺失文件应返回空列表: %#v",got)}
 }
+
+
+func TestRepositoryOverwritesExistingHistoryFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	repo, err := New(path)
+	if err != nil { t.Fatal(err) }
+	first := []queryhistory.Entry{{ID:"first",SQL:"SELECT 1"}}
+	second := []queryhistory.Entry{{ID:"second",SQL:"SELECT 2"}}
+	if err := repo.Save(context.Background(), first); err != nil { t.Fatal(err) }
+	if err := repo.Save(context.Background(), second); err != nil { t.Fatal(err) }
+	got, err := repo.List(context.Background())
+	if err != nil { t.Fatal(err) }
+	if !reflect.DeepEqual(got, second) { t.Fatalf("重复写入后内容=%+v，期望 %+v",got,second) }
+	if _, err := os.Stat(path+".bak"); !os.IsNotExist(err) { t.Fatalf("临时备份应被清理，stat err=%v",err) }
+}
