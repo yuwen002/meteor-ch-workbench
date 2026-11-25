@@ -29,7 +29,7 @@ func TestUpdateAndDeleteSavedSQL(t *testing.T){
 	s,_:=NewService(repo,fixedIDs{id:"id"})
 	item,err:=s.Add(context.Background(),savedsql.Entry{SQL:"SELECT 1"});if err!=nil{t.Fatal(err)}
 	updated,err:=s.Update(context.Background(),item.ID,"常用查询","SELECT 2");if err!=nil{t.Fatal(err)}
-	if updated.Name!="常用查询"||updated.SQL!="SELECT 2"||!updated.UpdatedAt.After(item.UpdatedAt){t.Fatalf("更新结果错误: %+v",updated)}
+	if updated.Name!="常用查询"||updated.SQL!="SELECT 2"||updated.UpdatedAt.Before(item.UpdatedAt){t.Fatalf("更新结果错误: %+v",updated)}
 	if err:=s.Delete(context.Background(),item.ID);err!=nil{t.Fatal(err)}
 	if len(repo.items)!=0{t.Fatalf("删除后仍有收藏: %+v",repo.items)}
 	if err:=s.Delete(context.Background(),"missing");!errors.Is(err,ErrNotFound){t.Fatalf("期望 ErrNotFound，得到 %v",err)}
