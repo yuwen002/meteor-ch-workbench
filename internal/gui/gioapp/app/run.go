@@ -26,6 +26,7 @@ import (
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/queryhistory"
+	savedsqldomain "github.com/yuwen002/meteor-ch-workbench/internal/domain/savedsql"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
@@ -78,6 +79,11 @@ type historySaveResult struct {
 	err error
 }
 
+type savedSQLResult struct {
+	name string
+	err  error
+}
+
 type saveResult struct {
 	item connection.Connection
 	err  error
@@ -119,6 +125,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		saveResults:      make(chan saveResult, 2),
 		deleteResults:    make(chan deleteResult, 4),
 		historyResults:   make(chan historySaveResult, 16),
+		savedSQLResults:  make(chan savedSQLResult, 4),
 		objectResults:    make(chan objectsResult, 8),
 		schemaResults:    make(chan schemaResult, 4),
 		queryResults:     make(chan queryEvent, 128),
@@ -177,6 +184,8 @@ type workspace struct {
 	saveResults       chan saveResult
 	deleteResults     chan deleteResult
 	historyResults    chan historySaveResult
+	savedSQLResults   chan savedSQLResult
+	saveSQL           widget.Clickable
 	objectResults     chan objectsResult
 	schemaResults     chan schemaResult
 	queryResults      chan queryEvent
@@ -267,6 +276,27 @@ func (s *workspace) saveConnection(item connection.Connection) {
 		select {
 		case s.saveResults <- result:
 		default:
+		}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *workspace) saveCurrentSQL() {
+	sqlText := strings.TrimSpace(s.queryEditor.Text())
+	if sqlText == "" || !s.connected || s.selectedID == "" {
+		return
+	}
+	connectionID := s.selectedID
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		item, err := s.services.SavedSQL.Add(ctx, savedsqldomain.Entry{
+			SQL:          sqlText,
+			ConnectionID: connectionID,
+		})
+		select {
+		case s.savedSQLResults <- savedSQLResult{name: item.Name, err: err}:
+		case <-ctx.Done():
 		}
 		s.window.Invalidate()
 	}()
@@ -384,6 +414,12 @@ func (s *workspace) drainResults() {
 			if result.err != nil {
 				s.status = "保存查询历史失败：" + result.err.Error()
 			}
+		case result := <-s.savedSQLResults:
+			if result.err != nil {
+				s.status = "收藏 SQL 失败：" + result.err.Error()
+			} else {
+				s.status = "已收藏 SQL：" + result.name
+			}
 		case result := <-s.deleteResults:
 			if result.err != nil {
 				s.status = "删除连接失败：" + result.err.Error()
@@ -445,7 +481,8 @@ func (s *workspace) drainResults() {
 				_, err := s.services.History.Add(ctx, entry)
 				select {
 				case s.historyResults <- historySaveResult{err: err}:
-				default:
+				case <-ctx.Done():
+					// 窗口退出或反馈队列持续拥塞时，最多等待本次保存超时。
 				}
 				s.window.Invalidate()
 			}()
@@ -962,6 +999,13 @@ func (s *workspace) layoutQueryToolbar(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(styledText(s.theme, "执行中…", unit.Sp(11), colorTextMuted)),
 				)
 			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.saveSQL.Clicked(gtx) && !s.queryRunning {
+					s.saveCurrentSQL()
+				}
+				return s.smallButton(gtx, &s.saveSQL, "收藏 SQL", s.queryRunning || strings.TrimSpace(s.queryEditor.Text()) == "" || !s.connected)
+			}),
+			layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if s.queryRun.Clicked(gtx) && !s.queryRunning {
 					s.executeQuery()
