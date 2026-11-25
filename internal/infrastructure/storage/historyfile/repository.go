@@ -62,7 +62,7 @@ func (r *Repository) Save(ctx context.Context, entries []queryhistory.Entry) err
 	if err := file.Sync(); err != nil { _ = file.Close(); return err }
 	if err := file.Close(); err != nil { return err }
 	if err := ctx.Err(); err != nil { return err }
-	if err := os.Rename(temp, r.path); err != nil { return fmt.Errorf("替换查询历史文件: %w", err) }
+	if err := replaceFile(temp, r.path); err != nil { return fmt.Errorf("替换查询历史文件: %w", err) }
 	return nil
 }
 
@@ -73,4 +73,21 @@ func (RandomIDGenerator) NewID() (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil { return "", err }
 	return hex.EncodeToString(raw[:]), nil
+}
+
+// replaceFile 在支持覆盖重命名的平台上使用原子替换；Windows 目标文件已存在时，
+// 先保留备份再替换，失败则恢复旧文件，避免多次写入历史时丢失数据。
+func replaceFile(temp, target string) error {
+	if err := os.Rename(temp, target); err == nil { return nil }
+	backup := target + ".bak"
+	_ = os.Remove(backup)
+	if err := os.Rename(target, backup); err != nil { return err }
+	if err := os.Rename(temp, target); err != nil {
+		if restoreErr := os.Rename(backup, target); restoreErr != nil {
+			return fmt.Errorf("替换失败: %v；恢复旧文件失败: %w", err, restoreErr)
+		}
+		return err
+	}
+	_ = os.Remove(backup)
+	return nil
 }
