@@ -6,7 +6,7 @@
 
 本轮已删除根目录 Wails 启动入口 `main.go`、旧前端绑定门面 `app.go`、对应平台行为测试、`internal/platform/wailsadapter` 和 `wails.json`，并从 `go.mod` 移除 Wails v3 直接依赖。Gio 唯一桌面启动入口为 `cmd/meteor-ch-gio`。旧 `frontend/` 目录暂作为功能盘点与交互参考资料，不参与新应用启动和发布；待 Gio 功能逐项替代并完成验收后再整体删除。
 
-`internal/app.Service`、`internal/clickhouse.Service` 和部分 `internal/config` 目前仍被 Gio 使用，是过渡中的旧 Go 业务实现，不是最终架构。后续必须按领域边界重写并迁移调用方，完成后删除旧实现及无用抽象。ClickHouse 官方驱动及必要底层协议库属于基础设施依赖，不属于需要删除的旧业务逻辑。
+`cmd/meteor-ch-gio` 当前已通过 `internal/bootstrap.NewDefault` 装配新架构，并由 `internal/gui/gioapp/app` 作为实际运行中的 Gio 界面。旧 `internal/gui/gioapp/window.go` 仍引用 `internal/app.Service`、`internal/config` 和 `internal/clickhouse`，但不属于新入口的运行链路；这些旧包和旧窗口代码暂留作功能迁移参考。后续必须逐项迁移并验收历史、收藏、设置、导入导出和结果导出等能力，再删除旧实现。ClickHouse 官方驱动及必要底层协议库属于基础设施依赖，不属于需要删除的旧业务逻辑。
 
 ## 目标与约束
 
@@ -17,24 +17,23 @@
 - 不使用 Go `plugin` 作为跨平台扩展机制。
 - 不以未经实测的框架宣传数据作为启动速度、内存或安装包体积结论。
 
-## 目标分层
+## 目标分层（当前实际结构）
 
 ```text
-Gio GUI
-          |
-          v
-internal/app          GUI 无关的应用用例
-          |
-          +---- internal/config
-          |
-          +---- internal/clickhouse
-          |
-          +---- internal/platform（文件对话框、系统操作）
-          |
-          +---- internal/edition（后续：Community / Pro 能力接口）
+cmd/meteor-ch-gio
+  ├─ internal/bootstrap
+  │    ├─ internal/application
+  │    ├─ internal/domain
+  │    ├─ internal/infrastructure
+  │    └─ internal/platform
+  └─ internal/gui/gioapp/app
+       ├─ internal/gui/gioapp/connection
+       └─ internal/gui/gioapp/workspace
 ```
 
-## 当前落地
+依赖方向为 GUI → bootstrap / application → domain 与端口 ← infrastructure。旧 `internal/app` / `internal/config` / `internal/clickhouse` 不应再成为新功能的依赖。
+
+## 历史迁移记录（下列早期批次描述仅用于追溯，不代表当前运行时依赖）
 
 ### 第一批：数据库与查询用例
 
