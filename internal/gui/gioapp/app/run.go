@@ -178,7 +178,7 @@ type workspace struct {
 	queryDetailCopy   widget.Clickable
 	queryRun          widget.Clickable
 	queryCancel       widget.Clickable
-	querySeq          uint64
+	queryExecution    workspaceui.QueryExecution
 	queryCancelFunc   context.CancelFunc
 	queryColumns      []queryapp.Column
 	queryData         [][]any
@@ -373,7 +373,7 @@ func (s *workspace) drainResults() {
 			s.tables, s.views = result.tables, result.views
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
 		case result := <-s.queryResults:
-			if result.seq != s.querySeq {
+			if !s.queryExecution.IsCurrent(result.seq, result.tab) {
 				continue
 			}
 			_, exists := s.sqlWorkspace.Get(result.tab)
@@ -404,6 +404,7 @@ func (s *workspace) drainResults() {
 				s.queryData = append(s.queryData, result.batch...)
 			}
 			if result.done {
+				s.queryExecution.Finish(result.seq, result.tab)
 				s.queryRunning = false
 				s.queryCancelFunc = nil
 				if result.err != nil {
@@ -635,9 +636,8 @@ func (s *workspace) executeQuery() {
 	if s.queryCancelFunc != nil {
 		s.queryCancelFunc()
 	}
-	s.querySeq++
-	seq := s.querySeq
 	tab := s.sqlWorkspace.ActiveID()
+	seq := s.queryExecution.Start(tab)
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	s.queryCancelFunc = cancel
 	s.queryRunning = true
@@ -687,7 +687,7 @@ func (s *workspace) cancelActiveQuery(reason string) {
 		s.queryCancelFunc()
 		s.queryCancelFunc = nil
 	}
-	s.querySeq++
+	s.queryExecution.Cancel()
 	s.queryRunning = false
 	s.queryStatus = reason
 }
@@ -752,9 +752,8 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, button.Layout)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if s.queryCancel.Clicked(gtx) && s.queryCancelFunc != nil {
-								s.queryCancelFunc()
-								s.queryStatus = "正在取消…"
+							if s.queryCancel.Clicked(gtx) {
+								s.cancelActiveQuery("查询已取消")
 							}
 							button := material.Button(s.theme, &s.queryCancel, "停止")
 							button.TextSize = unit.Sp(13)
