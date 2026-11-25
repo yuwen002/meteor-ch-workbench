@@ -111,10 +111,8 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		objectResults:   make(chan objectsResult, 8),
 		schemaResults:   make(chan schemaResult, 4),
 		queryResults:    make(chan queryEvent, 128),
-		sqlTabs:         []string{"查询 1"},
-		sqlTabIDs:       []workspaceui.TabID{1},
-		nextSQLTabID:    1,
-		sqlTabStates:    map[int]sqlTabState{0: {}},
+		sqlWorkspace:    workspaceui.NewTabs(),
+		sqlTabStates:    map[workspaceui.TabID]sqlTabState{1: {}},
 		queryRows:       widget.List{List: layout.List{Axis: layout.Vertical}},
 		queryHorizontal: widget.List{List: layout.List{Axis: layout.Horizontal}},
 		queryDetailRows: widget.List{List: layout.List{Axis: layout.Vertical}},
@@ -166,14 +164,11 @@ type workspace struct {
 	schemaResults     chan schemaResult
 	queryResults      chan queryEvent
 	queryEditor       widget.Editor
-	sqlTabs           []string
-	sqlTabIDs         []workspaceui.TabID
-	nextSQLTabID      workspaceui.TabID
-	sqlTabStates      map[int]sqlTabState
+	sqlWorkspace      *workspaceui.Tabs
+	sqlTabStates      map[workspaceui.TabID]sqlTabState
 	sqlTabClicks      []*widget.Clickable
 	sqlTabCloseClicks []*widget.Clickable
 	sqlNewTab         widget.Clickable
-	activeSQLTab      int
 	queryRows         widget.List
 	queryHorizontal   widget.List
 	queryDetailRows   widget.List
@@ -381,12 +376,12 @@ func (s *workspace) drainResults() {
 			if result.seq != s.querySeq {
 				continue
 			}
-			resultTabIndex, exists := workspaceui.IndexOf(s.sqlTabIDs, result.tab)
+			_, exists := s.sqlWorkspace.Get(result.tab)
 			if !exists {
 				continue // 标签页已关闭，丢弃迟到的查询事件。
 			}
-			if resultTabIndex != s.activeSQLTab {
-				state := s.sqlTabStates[resultTabIndex]
+			if result.tab != s.sqlWorkspace.ActiveID() {
+				state := s.sqlTabStates[result.tab]
 				if len(result.columns) > 0 {
 					state.Columns = result.columns
 					state.Data = nil
@@ -397,7 +392,7 @@ func (s *workspace) drainResults() {
 				if result.done {
 					state.Status = queryResultStatus(result, state.Columns)
 				}
-				s.sqlTabStates[resultTabIndex] = state
+				s.sqlTabStates[result.tab] = state
 				continue
 			}
 			if len(result.columns) > 0 {
@@ -641,7 +636,7 @@ func (s *workspace) executeQuery() {
 	}
 	s.querySeq++
 	seq := s.querySeq
-	tab := s.sqlTabIDs[s.activeSQLTab]
+	tab := s.sqlWorkspace.ActiveID()
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	s.queryCancelFunc = cancel
 	s.queryRunning = true
@@ -769,31 +764,35 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							for len(s.sqlTabClicks) < len(s.sqlTabs) {
+							items := s.sqlWorkspace.Items()
+							for len(s.sqlTabClicks) < len(items) {
 								s.sqlTabClicks = append(s.sqlTabClicks, new(widget.Clickable))
 							}
-							for len(s.sqlTabCloseClicks) < len(s.sqlTabs) {
+							for len(s.sqlTabCloseClicks) < len(items) {
 								s.sqlTabCloseClicks = append(s.sqlTabCloseClicks, new(widget.Clickable))
 							}
-							children := make([]layout.FlexChild, 0, len(s.sqlTabs))
-							for i, name := range s.sqlTabs {
-								index, label := i, name
+							children := make([]layout.FlexChild, 0, len(items))
+							activeIndex, _ := s.sqlWorkspace.ActiveIndex()
+							for i, tab := range items {
+								index, tabID, label := i, tab.ID, tab.Title
 								children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									click := s.sqlTabClicks[index]
-									if click.Clicked(gtx) && index != s.activeSQLTab {
+									if click.Clicked(gtx) && tabID != s.sqlWorkspace.ActiveID() {
 										s.cancelActiveQuery("查询已取消（切换标签页）")
-										current := s.sqlTabStates[s.activeSQLTab]
-										current.Text = s.queryEditor.Text()
+										activeID := s.sqlWorkspace.ActiveID()
+										current := s.sqlTabStates[activeID]
+										s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
 										current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
-										s.sqlTabStates[s.activeSQLTab] = current
-										s.activeSQLTab = index
-										next := s.sqlTabStates[index]
-										s.queryEditor.SetText(next.Text)
+										s.sqlTabStates[activeID] = current
+										s.sqlWorkspace.Activate(tabID)
+										next := s.sqlTabStates[tabID]
+										nextTab, _ := s.sqlWorkspace.Get(tabID)
+										s.queryEditor.SetText(nextTab.SQL)
 										s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 										s.clearQueryCellSelection()
 									}
-									if index == s.activeSQLTab {
-										label = "● " + name
+									if index == activeIndex {
+										label = "● " + label
 									}
 									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -819,20 +818,18 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if s.sqlNewTab.Clicked(gtx) {
-								if len(s.sqlTabs) >= 12 {
+								if len(s.sqlWorkspace.Items()) >= 12 {
 									s.queryStatus = "查询标签页最多支持 12 个"
 									return material.Button(s.theme, &s.sqlNewTab, "＋").Layout(gtx)
 								}
 								s.cancelActiveQuery("查询已取消（新建标签页）")
-								current := s.sqlTabStates[s.activeSQLTab]
-								current.Text = s.queryEditor.Text()
+								activeID := s.sqlWorkspace.ActiveID()
+								current := s.sqlTabStates[activeID]
+								s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
 								current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
-								s.sqlTabStates[s.activeSQLTab] = current
-								s.nextSQLTabID++
-								s.sqlTabIDs = append(s.sqlTabIDs, s.nextSQLTabID)
-								s.sqlTabs = append(s.sqlTabs, fmt.Sprintf("查询 %d", len(s.sqlTabs)+1))
-								s.activeSQLTab = len(s.sqlTabs) - 1
-								s.sqlTabStates[s.activeSQLTab] = sqlTabState{Status: "新查询标签页已创建"}
+								s.sqlTabStates[activeID] = current
+								created := s.sqlWorkspace.Create()
+								s.sqlTabStates[created.ID] = sqlTabState{Status: "新查询标签页已创建"}
 								s.queryEditor.SetText("")
 								s.queryColumns, s.queryData = nil, nil
 								s.clearQueryCellSelection()
