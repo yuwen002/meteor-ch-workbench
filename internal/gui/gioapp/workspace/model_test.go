@@ -65,8 +65,11 @@ func TestTabsEditAndReorder(t *testing.T) {
 	if !tabs.Rename(first, "查询报表") {
 		t.Fatal("expected rename to succeed")
 	}
-	if tabs.Rename(first, " ") {
-		t.Fatal("blank title must be rejected")
+	if tabs.Rename(first, " \t\n") || tabs.Rename(first, "\u00a0") {
+		t.Fatal("blank or whitespace-only title must be rejected")
+	}
+	if tab, _ := tabs.Get(first); tab.Title != "查询报表" {
+		t.Fatalf("rejected rename changed title to %q", tab.Title)
 	}
 	if !tabs.Reorder(second.ID, 0) {
 		t.Fatal("expected reorder to succeed")
