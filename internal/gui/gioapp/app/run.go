@@ -429,7 +429,7 @@ func (s *workspace) drainResults() {
 					DurationMs: float64(result.summary.Elapsed) / float64(time.Millisecond),
 					Success: result.err == nil,
 				}
-				go func() { _, _ = s.services.History.Add(context.Background(), entry) }()
+				go func() {\n\t\t\t\tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)\n\t\t\t\tdefer cancel()\n\t\t\t\t_, err := s.services.History.Add(ctx, entry)\n\t\t\t\tselect {\n\t\t\t\tcase s.historyResults <- historySaveResult{err: err}:\n\t\t\t\tdefault:\n\t\t\t\t}\n\t\t\t\ts.window.Invalidate()\n\t\t\t}()
 			}
 			if result.tab != s.sqlWorkspace.ActiveID() {
 				state := s.sqlTabStates[result.tab]
