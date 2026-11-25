@@ -332,8 +332,8 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 						layout.Rigid(styledText(s.theme, fmt.Sprintf("收藏 SQL（%d）", len(s.savedSQLItems)), unit.Sp(11), colorTextPrimary)),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								s.savedSQLSearch.SingleLine = true
 								editor := material.Editor(s.theme, &s.savedSQLSearch, "搜索名称或 SQL")
-								editor.SingleLine = true
 							editor.TextSize = unit.Sp(11)
 								return editor.Layout(gtx)
 							})
@@ -348,8 +348,8 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 					if s.savedSQLRenameID == "" { return layout.Dimensions{} }
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							s.savedSQLRenameEditor.SingleLine = true
 							editor := material.Editor(s.theme, &s.savedSQLRenameEditor, "输入新的收藏名称")
-							editor.SingleLine = true
 							editor.TextSize = unit.Sp(11)
 							return editor.Layout(gtx)
 						}),
