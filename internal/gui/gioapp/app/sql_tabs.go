@@ -49,7 +49,7 @@ func (s *workspace) closeSQLTab(index int) {
 		nextID := s.sqlWorkspace.ActiveID()
 		nextTab, _ := s.sqlWorkspace.Get(nextID)
 		next := s.sqlTabStates[nextID]
-		s.queryEditor.SetText(nextTab.SQL)
+		s.queryEditor.SetText(nextTab.Editor.Text())
 		s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 		s.clearQueryCellSelection()
 	}
