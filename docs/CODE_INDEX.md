@@ -17,14 +17,18 @@ cmd/meteor-ch-gio
 ```
 
 - `cmd/meteor-ch-gio/main.go`：唯一桌面启动入口，创建 Gio 窗口并装配新架构服务。
-- `internal/bootstrap`：组合根，创建连接仓库、连接 / 分组 / 查询 / 元数据服务及 ClickHouse 连接池；负责旧连接配置迁移。
+- `internal/bootstrap`：组合根，创建连接仓库、连接 / 分组 / 查询 / 元数据 / 查询历史 / 收藏 SQL 服务及 ClickHouse 连接池；负责旧连接配置迁移。
 - `internal/domain/connection`：连接、分组等领域实体与规则。
 - `internal/application/connection`：连接列表、保存、删除、测试等用例及端口。
-- `internal/application/folder`：连接分组用例。
+- `internal/application/folder`：连接分组 CRUD 与排序用例。
+- `internal/application/history`、`internal/domain/queryhistory`：查询历史用例与领域记录，最新优先、最多保留 200 条。
+- `internal/application/savedsql`、`internal/domain/savedsql`：收藏 SQL 用例，无条数上限，支持重命名 / 修改 / 删除和重复 SQL 检查。
 - `internal/application/query`：查询执行用例、结果批次与执行摘要。
 - `internal/application/metadata`：数据库、表、视图、字段和表详情用例。
 - `internal/infrastructure/clickhouse`：Native / HTTP / TLS 连接、连接池、查询执行、元数据读取。
-- `internal/infrastructure/storage/connectionfile`：版本化连接 JSON 仓库、原子写入、旧格式导入。
+- `internal/infrastructure/storage/connectionfile`：版本化连接 JSON 仓库、原子写入、旧格式导入及排序持久化。
+- `internal/infrastructure/storage/historyfile`：兼容旧 `history.json` 数组格式的查询历史仓库。
+- `internal/infrastructure/storage/savedsqlfile`：兼容旧 `saved_sql.json` 数组格式的收藏 SQL 仓库。
 - `internal/platform/osfs`：本地文件系统适配。
 - `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口、查询交互、SQL 标签页与结果布局。
 - `internal/gui/gioapp/connection`：连接侧栏模型、样式和视图。
@@ -57,7 +61,7 @@ cmd/meteor-ch-gio
 1. **先迁移功能，再删除旧代码**：连接分组、配置导入导出、查询历史、收藏 SQL、标签持久化、设置、结果导出等功能逐项迁入新架构并补测试。
 2. **旧实现隔离**：在迁移验收前，旧目录只作为参考，不再增加新功能；后续以单独清理提交删除旧 Gio 原型和旧业务包。
 3. **整理 Gio 目录**：当前 `internal/gui/gioapp/app` 的 `app` 层级略显重复。待当前窗口代码稳定后，可把主窗口实现收敛到 `internal/gui/gioapp`，保留 `connection`、`workspace` 子包；移动前先检查包内引用和测试。
-4. **补齐基础设施边界**：未来增加历史、收藏、设置和导出时，按 `internal/application/<领域>` + `internal/infrastructure/storage/<实现>` 的模式组织，不要重新塞回旧 `internal/config`。
+4. **补齐基础设施边界**：历史与收藏 SQL 的应用服务和文件仓库已迁入；接下来补齐 Gio 历史 / 收藏面板、标签页快照和设置持久化，再迁移配置导入导出与结果导出，不要重新塞回旧 `internal/config`。
 5. **文档同步**：目录或入口变更时同步更新本索引和架构迁移文档。
 
 ## 依赖规则
@@ -71,7 +75,7 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 当前 head（本索引更新前）：`0ffb3f5e45989f7b2015a98dff952f6a4c2f4302`
+- 当前 head（本索引更新前）：`1ba3192b187e097827d39ddf9d84dc9e239dc7a8`
 - PR #1：Open / Draft / 未合并，base 为 `main`。
 - 对应 Go CI Run `45527241563`：Linux 测试、vet、构建及 Windows 测试、vet、构建均成功。
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
