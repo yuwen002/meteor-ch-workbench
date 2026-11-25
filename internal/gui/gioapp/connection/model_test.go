@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	domain "github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
