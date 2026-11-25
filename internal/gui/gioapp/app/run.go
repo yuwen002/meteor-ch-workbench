@@ -58,7 +58,6 @@ type queryEvent struct {
 	done    bool
 }
 
-
 type queryCellSelection struct {
 	row    int
 	column queryapp.Column
@@ -168,6 +167,7 @@ type workspace struct {
 	sqlTabStates      map[workspaceui.TabID]sqlTabState
 	sqlTabClicks      []*widget.Clickable
 	sqlTabCloseClicks []*widget.Clickable
+	sqlTabList        widget.List
 	sqlNewTab         widget.Clickable
 	queryRows         widget.List
 	queryHorizontal   widget.List
@@ -465,11 +465,7 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 						if !s.connected {
 							return s.layoutWelcome(gtx)
 						}
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Flexed(0.44, s.layoutExplorer),
-							layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-							layout.Flexed(0.56, s.layoutQueryWorkspace),
-						)
+						return s.layoutWorkbench(gtx)
 					}),
 				)
 			})
@@ -725,213 +721,402 @@ func (s *workspace) layoutQueryCellDetail(gtx layout.Context) layout.Dimensions 
 	})
 }
 
-
 // closeSQLTab 关闭指定 SQL 标签；最后一个标签关闭时重置为空白查询页。
-func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
-	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Top: unit.Dp(14), Bottom: unit.Dp(12), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Flexed(1, material.Subtitle1(s.theme, "SQL 查询").Layout),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if s.queryRun.Clicked(gtx) && !s.queryRunning {
-								s.executeQuery()
-							}
-							button := material.Button(s.theme, &s.queryRun, "执行 SQL")
-							button.TextSize = unit.Sp(13)
-							return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, button.Layout)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if s.queryCancel.Clicked(gtx) {
-								s.cancelActiveQuery("查询已取消")
-							}
-							button := material.Button(s.theme, &s.queryCancel, "停止")
-							button.TextSize = unit.Sp(13)
-							return button.Layout(gtx)
-						}),
-					)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							items := s.sqlWorkspace.Items()
-							for len(s.sqlTabClicks) < len(items) {
-								s.sqlTabClicks = append(s.sqlTabClicks, new(widget.Clickable))
-							}
-							for len(s.sqlTabCloseClicks) < len(items) {
-								s.sqlTabCloseClicks = append(s.sqlTabCloseClicks, new(widget.Clickable))
-							}
-							children := make([]layout.FlexChild, 0, len(items))
-							for i, tab := range items {
-								index, tabID, label := i, tab.ID, tab.Title
-								children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									click := s.sqlTabClicks[index]
-									if click.Clicked(gtx) && tabID != s.sqlWorkspace.ActiveID() {
-										s.cancelActiveQuery("查询已取消（切换标签页）")
-										activeID := s.sqlWorkspace.ActiveID()
-										current := s.sqlTabStates[activeID]
-										s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
-										current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
-										s.sqlTabStates[activeID] = current
-										s.sqlWorkspace.Activate(tabID)
-										next := s.sqlTabStates[tabID]
-										nextTab, _ := s.sqlWorkspace.Get(tabID)
-										s.queryEditor.SetText(nextTab.Editor.Text())
-										s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
-										s.clearQueryCellSelection()
-									}
-									if tabID == s.sqlWorkspace.ActiveID() {
-										label = "● " + label
-									}
-									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											button := material.Button(s.theme, click, label)
-											button.TextSize = unit.Sp(12)
-											return button.Layout(gtx)
-										}),
-										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											closeClick := s.sqlTabCloseClicks[index]
-											if closeClick.Clicked(gtx) {
-												s.closeSQLTab(index)
-											}
-											closeButton := material.Button(s.theme, closeClick, "×")
-											closeButton.TextSize = unit.Sp(11)
-											closeButton.Inset = layout.Inset{Left: unit.Dp(5), Right: unit.Dp(5), Top: unit.Dp(4), Bottom: unit.Dp(4)}
-											return closeButton.Layout(gtx)
-										}),
-										layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
-									)
-								}))
-							}
-							return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if s.sqlNewTab.Clicked(gtx) {
-								if len(s.sqlWorkspace.Items()) >= 12 {
-									s.queryStatus = "查询标签页最多支持 12 个"
-									return material.Button(s.theme, &s.sqlNewTab, "＋").Layout(gtx)
-								}
-								s.cancelActiveQuery("查询已取消（新建标签页）")
-								activeID := s.sqlWorkspace.ActiveID()
-								current := s.sqlTabStates[activeID]
-								s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
-								current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
-								s.sqlTabStates[activeID] = current
-								created := s.sqlWorkspace.Create()
-								s.sqlTabStates[created.ID] = sqlTabState{Status: "新查询标签页已创建"}
-								s.queryEditor.SetText("")
-								s.queryColumns, s.queryData = nil, nil
-								s.clearQueryCellSelection()
-								s.queryStatus = "新查询标签页已创建"
-							}
-							button := material.Button(s.theme, &s.sqlNewTab, "＋")
-							button.TextSize = unit.Sp(12)
-							return button.Layout(gtx)
-						}),
-					)
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-				layout.Flexed(0.42, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						paint.FillShape(gtx.Ops, color.NRGBA{R: 247, G: 249, B: 252, A: 255}, clip.Rect{Max: gtx.Constraints.Max}.Op())
-						return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, material.Editor(s.theme, &s.queryEditor, "输入 SQL，例如 SELECT 1").Layout)
-					})
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					message := s.queryStatus
-					if message == "" {
-						message = "结果将在这里显示"
-					}
-					return material.Caption(s.theme, message).Layout(gtx)
-				}),
-				layout.Flexed(0.58, func(gtx layout.Context) layout.Dimensions {
-					if len(s.queryColumns) == 0 {
-						return material.Body2(s.theme, "暂无查询结果").Layout(gtx)
-					}
-					columnWeights := resultColumnFlexWeights(s.queryColumns, s.queryData, 40)
-					if len(s.queryCellClicks) > 4096 {
-						s.queryCellClicks = make(map[string]*widget.Clickable)
-					}
-					columnWidths := make([]int, len(columnWeights))
-					totalWidth := 0
-					for i, weight := range columnWeights {
-						width := int(weight * 9)
-						if width < 112 {
-							width = 112
+// layoutSchemaStrip 是右列上方的表结构摘要条，选中表后横向展示字段，避免与编辑器争抢横向空间。
+func (s *workspace) layoutSchemaStrip(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: spaceM, Bottom: spaceXS, Left: spaceL, Right: spaceL}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						title := s.selectedTable
+						if s.selectedDatabase != "" && title != "" {
+							title = s.selectedDatabase + "." + title
 						}
-						if width > 320 {
-							width = 320
-						}
-						columnWidths[i] = gtx.Dp(unit.Dp(width))
-						totalWidth += columnWidths[i]
+						label := material.Label(s.theme, unit.Sp(12), title)
+						label.Color = colorTextPrimary
+						label.MaxLines = 1
+						return label.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						label := material.Label(s.theme, unit.Sp(11), s.tableDetails.Engine)
+						label.Color = colorTextSecondary
+						return layout.Inset{Right: spaceS}.Layout(gtx, label.Layout)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						label := material.Label(s.theme, unit.Sp(11), fmt.Sprintf("字段 %d", len(s.columns)))
+						label.Color = colorTextMuted
+						return label.Layout(gtx)
+					}),
+				)
+			})
+		}),
+		layout.Rigid(s.divider),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if len(s.columns) == 0 {
+				message := "选择左侧表对象以查看字段"
+				if s.loading != "" {
+					message = s.loading
+				}
+				return layout.Inset{Top: spaceS, Left: spaceL, Right: spaceL}.Layout(gtx, styledText(s.theme, message, unit.Sp(11), colorTextMuted))
+			}
+			s.columnList.Axis = layout.Vertical
+			return layout.Inset{Top: spaceXS, Bottom: spaceXS, Left: spaceS, Right: spaceS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return material.List(s.theme, &s.columnList).Layout(gtx, len(s.columns), func(gtx layout.Context, index int) layout.Dimensions {
+					column := s.columns[index]
+					detail := column.Type
+					if column.IsPrimary {
+						detail += " · PK"
 					}
-					return material.List(s.theme, &s.queryHorizontal).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-						gtx.Constraints.Min.X = totalWidth
-						gtx.Constraints.Max.X = totalWidth
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									children := make([]layout.FlexChild, 0, len(s.queryColumns))
-									for i, col := range s.queryColumns {
-										name, databaseType, width := col.Name, col.DatabaseType, columnWidths[i]
-										children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
-											return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-												layout.Rigid(material.Body2(s.theme, name).Layout),
-												layout.Rigid(material.Caption(s.theme, databaseType).Layout),
-											)
-										}))
-									}
-									return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
-								})
+					if column.HasDefault {
+						detail += " · 默认值"
+					}
+					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3), Left: spaceXS, Right: spaceXS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(0.4, func(gtx layout.Context) layout.Dimensions {
+								label := material.Label(s.theme, unit.Sp(11), column.Name)
+								label.Color = colorTextPrimary
+								label.MaxLines = 1
+								return label.Layout(gtx)
 							}),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if s.selectedQueryCell == nil {
-									return layout.Dimensions{}
-								}
-								gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(112)), gtx.Dp(unit.Dp(112))
-								return s.layoutQueryCellDetail(gtx)
-							}),
-							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								return material.List(s.theme, &s.queryRows).Layout(gtx, len(s.queryData), func(gtx layout.Context, index int) layout.Dimensions {
-									row := s.queryData[index]
-									return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										children := make([]layout.FlexChild, 0, len(s.queryColumns))
-										for i := range s.queryColumns {
-											var cell any
-											if i < len(row) {
-												cell = row[i]
-											}
-											value, width := formatResultCell(cell), columnWidths[i]
-											cellIndex := i
-											cellKey := fmt.Sprintf("%d:%d", index, cellIndex)
-											click := s.queryCellClicks[cellKey]
-											if click == nil {
-												click = new(widget.Clickable)
-												s.queryCellClicks[cellKey] = click
-											}
-											if click.Clicked(gtx) {
-												column := s.queryColumns[cellIndex]
-												s.selectedQueryCell = &queryCellSelection{row: index + 1, column: column, value: resultCellRawValue(cell)}
-											}
-											children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-												gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
-												return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-													return material.Caption(s.theme, value).Layout(gtx)
-												})
-											}))
-										}
-										return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
-									})
-								})
+							layout.Flexed(0.6, func(gtx layout.Context) layout.Dimensions {
+								label := material.Label(s.theme, unit.Sp(11), detail)
+								label.Color = colorTextMuted
+								label.MaxLines = 1
+								return label.Layout(gtx)
 							}),
 						)
 					})
-				}),
-			)
+				})
+			})
+		}),
+	)
+}
+
+func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if s.selectedTable == "" && len(s.columns) == 0 {
+				return layout.Dimensions{}
+			}
+			height := gtx.Dp(unit.Dp(150))
+			if height > gtx.Constraints.Max.Y/3 {
+				height = gtx.Constraints.Max.Y / 3
+			}
+			gtx.Constraints.Min.Y = height
+			gtx.Constraints.Max.Y = height
+			return s.panel(gtx, s.layoutSchemaStrip)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if s.selectedTable == "" && len(s.columns) == 0 {
+				return layout.Dimensions{}
+			}
+			return layout.Spacer{Height: unit.Dp(10)}.Layout(gtx)
+		}),
+		layout.Flexed(1, s.layoutQueryPanel),
+	)
+}
+
+func (s *workspace) layoutQueryPanel(gtx layout.Context) layout.Dimensions {
+	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(s.layoutQueryToolbar),
+			layout.Rigid(s.divider),
+			layout.Rigid(s.layoutTabStrip),
+			layout.Rigid(s.divider),
+			layout.Flexed(0.45, s.layoutSQLEditor),
+			layout.Rigid(s.divider),
+			layout.Flexed(0.55, s.layoutResultsPanel),
+		)
+	})
+}
+
+// layoutQueryToolbar 是编辑器上方的一行紧凑工具条：左侧标题与运行状态，右侧为执行 / 停止操作。
+func (s *workspace) layoutQueryToolbar(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: spaceS, Bottom: spaceS, Left: spaceL, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				label := material.Label(s.theme, unit.Sp(12), "SQL 编辑器")
+				label.Color = colorTextPrimary
+				return label.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				if !s.queryRunning {
+					return layout.Dimensions{}
+				}
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						size := image.Pt(gtx.Dp(unit.Dp(6)), gtx.Dp(unit.Dp(6)))
+						fillRounded(gtx, size, unit.Dp(3), colorWarning)
+						return layout.Dimensions{Size: size}
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceXS}.Layout),
+					layout.Rigid(styledText(s.theme, "执行中…", unit.Sp(11), colorTextMuted)),
+				)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.queryRun.Clicked(gtx) && !s.queryRunning {
+					s.executeQuery()
+				}
+				return s.primaryButton(gtx, &s.queryRun, "执行 SQL", s.queryRunning)
+			}),
+			layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.queryCancel.Clicked(gtx) {
+					s.cancelActiveQuery("查询已取消")
+				}
+				return s.smallButton(gtx, &s.queryCancel, "停止", !s.queryRunning)
+			}),
+		)
+	})
+}
+
+// layoutTabStrip 是查询标签页栏：标签之间用细缝分隔，末尾固定一个新建按钮。
+func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
+	items := s.sqlWorkspace.Items()
+	for len(s.sqlTabClicks) < len(items) {
+		s.sqlTabClicks = append(s.sqlTabClicks, new(widget.Clickable))
+	}
+	for len(s.sqlTabCloseClicks) < len(items) {
+		s.sqlTabCloseClicks = append(s.sqlTabCloseClicks, new(widget.Clickable))
+	}
+	return layout.Inset{Top: spaceXS, Bottom: spaceXS, Left: spaceS, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				s.sqlTabList.Axis = layout.Horizontal
+				return material.List(s.theme, &s.sqlTabList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
+					return layout.Inset{Right: spaceXS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return s.layoutSQLTab(gtx, items[index], index)
+					})
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.sqlNewTab.Clicked(gtx) {
+					if len(items) >= 12 {
+						s.queryStatus = "查询标签页最多支持 12 个"
+					} else {
+						s.cancelActiveQuery("查询已取消（新建标签页）")
+						activeID := s.sqlWorkspace.ActiveID()
+						current := s.sqlTabStates[activeID]
+						s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
+						current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
+						s.sqlTabStates[activeID] = current
+						created := s.sqlWorkspace.Create()
+						s.sqlTabStates[created.ID] = sqlTabState{Status: "新查询标签页已创建"}
+						s.queryEditor.SetText("")
+						s.queryColumns, s.queryData = nil, nil
+						s.clearQueryCellSelection()
+						s.queryStatus = "新查询标签页已创建"
+					}
+				}
+				return s.smallButton(gtx, &s.sqlNewTab, "＋ 新建查询", false)
+			}),
+		)
+	})
+}
+
+// layoutSQLTab 绘制单个查询标签页：整块可点击切换，关闭按钮嵌在标签内部。
+func (s *workspace) layoutSQLTab(gtx layout.Context, tab workspaceui.Tab, index int) layout.Dimensions {
+	active := tab.ID == s.sqlWorkspace.ActiveID()
+	click := s.sqlTabClicks[index]
+	if click.Clicked(gtx) && !active {
+		s.switchSQLTab(tab.ID)
+	}
+	closeClick := s.sqlTabCloseClicks[index]
+	marker := colorTextMuted
+	if active {
+		marker = colorAccent
+	}
+	return s.surface(gtx, func() color.NRGBA {
+		if active {
+			return colorAccentSoft
+		}
+		return color.NRGBA{}
+	}(), radiusS, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5), Left: spaceS, Right: spaceXS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								size := image.Pt(gtx.Dp(unit.Dp(6)), gtx.Dp(unit.Dp(6)))
+								fillRounded(gtx, size, unit.Dp(3), marker)
+								return layout.Dimensions{Size: size}
+							}),
+							layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								label := material.Label(s.theme, unit.Sp(12), tab.Title)
+								label.Color = colorTextSecondary
+								if active {
+									label.Color = colorTextPrimary
+								}
+								label.MaxLines = 1
+								return label.Layout(gtx)
+							}),
+						)
+					})
+				})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if closeClick.Clicked(gtx) {
+					s.closeSQLTab(index)
+				}
+				return closeClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(2), Right: spaceS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						label := material.Label(s.theme, unit.Sp(11), "×")
+						label.Color = colorTextMuted
+						return label.Layout(gtx)
+					})
+				})
+			}),
+		)
+	})
+}
+
+// layoutSQLEditor 是 SQL 输入区：圆角内凹背景 + 等宽字体，把编辑区与结果区明确分开。
+func (s *workspace) layoutSQLEditor(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: spaceS, Bottom: spaceS, Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return s.surface(gtx, colorSurfaceSubtle, radiusS, func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(spaceM).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				editor := material.Editor(s.theme, &s.queryEditor, "输入 SQL，例如 SELECT 1")
+				editor.TextSize = unit.Sp(13)
+				editor.Color = colorTextPrimary
+				editor.HintColor = colorTextMuted
+				return editor.Layout(gtx)
+			})
 		})
+	})
+}
+
+func (s *workspace) layoutResultsPanel(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: spaceS, Bottom: spaceS, Left: spaceL, Right: spaceL}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						label := material.Label(s.theme, unit.Sp(12), "查询结果")
+						label.Color = colorTextPrimary
+						return label.Layout(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						message := s.queryStatus
+						if message == "" {
+							if len(s.queryColumns) == 0 {
+								message = "尚未执行查询"
+							} else {
+								message = fmt.Sprintf("%d 行 · %d 列", len(s.queryData), len(s.queryColumns))
+							}
+						}
+						label := material.Label(s.theme, unit.Sp(11), message)
+						label.Color = colorTextMuted
+						label.MaxLines = 1
+						return label.Layout(gtx)
+					}),
+				)
+			})
+		}),
+		layout.Rigid(s.divider),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if len(s.queryColumns) == 0 {
+				return layout.Inset{Top: spaceL, Left: spaceL, Right: spaceL}.Layout(gtx, styledText(s.theme, "执行 SQL 后结果将显示在此处", unit.Sp(11), colorTextMuted))
+			}
+			return layout.Inset{Top: spaceXS}.Layout(gtx, s.layoutResultGrid)
+		}),
+	)
+}
+
+func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
+	columnWeights := resultColumnFlexWeights(s.queryColumns, s.queryData, 40)
+	if len(s.queryCellClicks) > 4096 {
+		s.queryCellClicks = make(map[string]*widget.Clickable)
+	}
+	columnWidths := make([]int, len(columnWeights))
+	totalWidth := 0
+	for i, weight := range columnWeights {
+		width := int(weight * 9)
+		if width < 112 {
+			width = 112
+		}
+		if width > 320 {
+			width = 320
+		}
+		columnWidths[i] = gtx.Dp(unit.Dp(width))
+		totalWidth += columnWidths[i]
+	}
+	return material.List(s.theme, &s.queryHorizontal).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		gtx.Constraints.Min.X = totalWidth
+		gtx.Constraints.Max.X = totalWidth
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					children := make([]layout.FlexChild, 0, len(s.queryColumns))
+					for i, col := range s.queryColumns {
+						name, databaseType, width := col.Name, col.DatabaseType, columnWidths[i]
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									label := material.Label(s.theme, unit.Sp(12), name)
+									label.Color = colorTextPrimary
+									label.MaxLines = 1
+									return label.Layout(gtx)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									label := material.Label(s.theme, unit.Sp(10), databaseType)
+									label.Color = colorTextMuted
+									label.MaxLines = 1
+									return label.Layout(gtx)
+								}),
+							)
+						}))
+					}
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+				})
+			}),
+			layout.Rigid(s.divider),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.selectedQueryCell == nil {
+					return layout.Dimensions{}
+				}
+				gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(112)), gtx.Dp(unit.Dp(112))
+				return s.layoutQueryCellDetail(gtx)
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return material.List(s.theme, &s.queryRows).Layout(gtx, len(s.queryData), func(gtx layout.Context, index int) layout.Dimensions {
+					row := s.queryData[index]
+					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						children := make([]layout.FlexChild, 0, len(s.queryColumns))
+						for i := range s.queryColumns {
+							var cell any
+							if i < len(row) {
+								cell = row[i]
+							}
+							value, width := formatResultCell(cell), columnWidths[i]
+							cellIndex := i
+							cellKey := fmt.Sprintf("%d:%d", index, cellIndex)
+							click := s.queryCellClicks[cellKey]
+							if click == nil {
+								click = new(widget.Clickable)
+								s.queryCellClicks[cellKey] = click
+							}
+							if click.Clicked(gtx) {
+								column := s.queryColumns[cellIndex]
+								s.selectedQueryCell = &queryCellSelection{row: index + 1, column: column, value: resultCellRawValue(cell)}
+							}
+							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+								return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return material.Caption(s.theme, value).Layout(gtx)
+								})
+							}))
+						}
+						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+					})
+				})
+			}),
+		)
 	})
 }
 
@@ -984,159 +1169,265 @@ func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimens
 	)
 }
 
-// layoutExplorer 使用单一对象树呈现数据库、表和视图，右侧显示选中对象结构。
-func (s *workspace) layoutExplorer(gtx layout.Context) layout.Dimensions {
+// layoutWorkbench 按 DBeaver / Navicat 的主界面组织右侧工作区：
+// 左列是 Navigator 对象树（数据库 → 表 / 视图），右列是 SQL 编辑器与查询结果。
+func (s *workspace) layoutWorkbench(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-		layout.Flexed(0.40, func(gtx layout.Context) layout.Dimensions {
-			return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Flexed(0.42, s.layoutDatabasePanel),
-					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-					layout.Flexed(0.58, s.layoutTablePanel),
-				)
-			})
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			width := gtx.Dp(unit.Dp(300))
+			if gtx.Constraints.Max.X < gtx.Dp(unit.Dp(980)) {
+				width = gtx.Dp(unit.Dp(256))
+			}
+			if width > gtx.Constraints.Max.X {
+				width = gtx.Constraints.Max.X
+			}
+			gtx.Constraints.Min = image.Pt(width, gtx.Constraints.Max.Y)
+			gtx.Constraints.Max = image.Pt(width, gtx.Constraints.Max.Y)
+			return s.panel(gtx, s.layoutNavigator)
 		}),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
-		layout.Flexed(0.60, func(gtx layout.Context) layout.Dimensions {
-			return s.panel(gtx, s.layoutSchemaPanel)
-		}),
+		layout.Flexed(1, s.layoutQueryWorkspace),
 	)
 }
 
-func (s *workspace) layoutTablePanel(gtx layout.Context) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+// layoutNavigator 是单一对象树：连接下的数据库可展开，展开后按“表 / 视图”分组列出对象。
+func (s *workspace) layoutNavigator(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: spaceM, Bottom: spaceS, Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, material.Subtitle1(s.theme, "表与视图").Layout),
-					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d 张表 · %d 个视图", len(s.tables), len(s.views))).Layout),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						label := material.Label(s.theme, unit.Sp(12), "对象导航")
+						label.Color = colorTextPrimary
+						return label.Layout(gtx)
+					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if s.refreshObjects.Clicked(gtx) && s.selectedDatabase != "" {
 							s.selectDatabase(s.selectedDatabase)
 						}
-						button := material.Button(s.theme, &s.refreshObjects, "刷新")
-						button.TextSize = unit.Sp(12)
-						return button.Layout(gtx)
+						return s.smallButton(gtx, &s.refreshObjects, "刷新", s.selectedDatabase == "")
 					}),
 				)
-			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				if s.selectedDatabase == "" {
-					return material.Body2(s.theme, "选择数据库以加载表和视图").Layout(gtx)
+			})
+		}),
+		layout.Rigid(s.divider),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if len(s.databases) == 0 {
+				message := "该连接没有可见数据库"
+				if s.loading != "" {
+					message = s.loading
 				}
-				items := make([]structObject, 0, len(s.tables)+len(s.views))
-				items = append(items, s.tables...)
-				items = append(items, s.views...)
-				if len(items) == 0 && s.loading == "" {
-					return material.Body2(s.theme, "该数据库没有可显示的表或视图").Layout(gtx)
-				}
-				return material.List(s.theme, &s.objectList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
-					item := items[index]
-					key := s.selectedDatabase + "." + item.Name
-					click := s.objectClicks[key]
-					if click == nil {
-						click = new(widget.Clickable)
-						s.objectClicks[key] = click
-					}
-					if click.Clicked(gtx) {
-						s.selectedObject = key
-						s.loadTableSchema(item.Name)
-					}
-					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							kind := "表"
-							if index >= len(s.tables) {
-								kind = "视图"
-							}
-							title := item.Name
-							if key == s.selectedObject {
-								title = "● " + title
-							}
-							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-								layout.Rigid(material.Body1(s.theme, title).Layout),
-								layout.Rigid(material.Caption(s.theme, kind+" · "+item.Engine).Layout),
-							)
-						})
-					})
-				})
-			}),
-		)
-	})
-}
-
-func (s *workspace) layoutSchemaPanel(gtx layout.Context) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(material.Subtitle1(s.theme, "表结构 / DDL").Layout),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				if s.selectedTable == "" {
-					return material.Body2(s.theme, "选择一张表查看字段、引擎和建表语句").Layout(gtx)
-				}
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("引擎：%s · 主键：%s", s.tableDetails.Engine, s.tableDetails.PrimaryKey)).Layout),
-					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("分区：%s · 排序：%s", s.tableDetails.PartitionKey, s.tableDetails.SortingKey)).Layout),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return material.List(s.theme, &s.columnList).Layout(gtx, len(s.columns), func(gtx layout.Context, index int) layout.Dimensions {
-							column := s.columns[index]
-							marker := ""
-							if column.IsPrimary {
-								marker += " · 主键"
-							}
-							if column.HasDefault {
-								marker += " · 默认值"
-							}
-							return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, material.Body2(s.theme, fmt.Sprintf("%s  %s%s", column.Name, column.Type, marker)).Layout)
-						})
-					}),
-					layout.Rigid(material.Caption(s.theme, s.tableDetails.TTLExpression).Layout),
-				)
-			}),
-		)
-	})
-}
-
-func (s *workspace) layoutDatabasePanel(gtx layout.Context) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, material.Subtitle1(s.theme, "数据库").Layout),
-					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d", len(s.databases))).Layout),
-				)
-			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				if s.selectedID == "" {
-					return material.Body2(s.theme, "先从左侧选择一个连接").Layout(gtx)
-				}
-				if len(s.databases) == 0 && s.loading == "" {
-					return material.Body2(s.theme, "没有数据库，或尚未加载").Layout(gtx)
-				}
+				return layout.Inset{Top: spaceM, Left: spaceM, Right: spaceM}.Layout(gtx, styledText(s.theme, message, unit.Sp(11), colorTextMuted))
+			}
+			return layout.Inset{Top: spaceXS, Bottom: spaceXS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				s.databaseList.Axis = layout.Vertical
 				return material.List(s.theme, &s.databaseList).Layout(gtx, len(s.databases), func(gtx layout.Context, index int) layout.Dimensions {
-					name := s.databases[index]
-					click := s.databaseClicks[name]
-					if click == nil {
-						click = new(widget.Clickable)
-						s.databaseClicks[name] = click
-					}
-					if click.Clicked(gtx) {
-						s.selectDatabase(name)
-					}
-					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							label := "▸  " + name
-							if name == s.selectedDatabase {
-								label = "▾  " + name
-							}
-							return material.Body2(s.theme, label).Layout(gtx)
-						})
-					})
+					return s.layoutDatabaseNode(gtx, s.databases[index])
 				})
-			}),
-		)
+			})
+		}),
+	)
+}
+
+// layoutDatabaseNode 渲染一个可折叠的数据库节点及其下属表与视图。
+func (s *workspace) layoutDatabaseNode(gtx layout.Context, name string) layout.Dimensions {
+	click := s.databaseClicks[name]
+	if click == nil {
+		click = new(widget.Clickable)
+		s.databaseClicks[name] = click
+	}
+	if click.Clicked(gtx) {
+		if name == s.selectedDatabase {
+			s.selectedDatabase = ""
+			s.selectedTable = ""
+			s.selectedObject = ""
+			s.tables, s.views = nil, nil
+			s.columns = nil
+			s.tableDetails = metadataapp.TableDetails{}
+		} else {
+			s.selectDatabase(name)
+		}
+	}
+	expanded := name == s.selectedDatabase
+	dot := colorTextMuted
+	if expanded {
+		dot = colorAccent
+	}
+	children := []layout.FlexChild{
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return s.treeRow(gtx, click, dot, treeRow{label: name, expandable: true, expanded: expanded})
+		}),
+	}
+	if expanded {
+		if s.loading != "" && len(s.tables)+len(s.views) == 0 {
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: spaceXL, Right: spaceM, Top: spaceXS, Bottom: spaceXS}.Layout(gtx, styledText(s.theme, "正在加载对象…", unit.Sp(11), colorTextMuted))
+			}))
+		}
+		if len(s.tables) > 0 {
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return s.treeGroupLabel(gtx, fmt.Sprintf("表（%d）", len(s.tables)))
+			}))
+			for _, table := range s.tables {
+				children = append(children, layout.Rigid(s.layoutObjectNode(gtx, name, table, "T")))
+			}
+		}
+		if len(s.views) > 0 {
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return s.treeGroupLabel(gtx, fmt.Sprintf("视图（%d）", len(s.views)))
+			}))
+			for _, view := range s.views {
+				children = append(children, layout.Rigid(s.layoutObjectNode(gtx, name, view, "V")))
+			}
+		}
+		if s.loading == "" && len(s.tables)+len(s.views) == 0 {
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: spaceXL, Right: spaceM, Top: spaceXS, Bottom: spaceXS}.Layout(gtx, styledText(s.theme, "此数据库没有表或视图", unit.Sp(11), colorTextMuted))
+			}))
+		}
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+// layoutObjectNode 渲染树中的表 / 视图行，点击即加载结构并同步到表结构面板。
+func (s *workspace) layoutObjectNode(gtx layout.Context, database string, object metadataapp.Object, kind string) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		key := database + "." + object.Name
+		click := s.objectClicks[key]
+		if click == nil {
+			click = new(widget.Clickable)
+			s.objectClicks[key] = click
+		}
+		if click.Clicked(gtx) {
+			s.selectedObject = key
+			s.loadTableSchema(object.Name)
+		}
+		active := key == s.selectedObject
+		dot := colorTextMuted
+		if active {
+			dot = colorAccent
+		}
+		return s.treeRow(gtx, click, dot, treeRow{label: object.Name, badge: kind, detail: object.Engine, active: active, indent: 1})
+	}
+}
+
+// treeRow 描述资源树中一行需要展示的信息。
+type treeRow struct {
+	label      string
+	badge      string
+	detail     string
+	active     bool
+	expandable bool
+	expanded   bool
+	indent     int
+}
+
+// treeRow 绘制资源树的一行：缩进 + 类型标记 + 名称 + 次要信息。
+func (s *workspace) treeRow(gtx layout.Context, click *widget.Clickable, marker color.NRGBA, row treeRow) layout.Dimensions {
+	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		background := color.NRGBA{}
+		if row.active {
+			background = colorSurfaceSelected
+		}
+		return s.surface(gtx, background, radiusS, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(6) + unit.Dp(14*row.indent), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						glyph := "•"
+						size := unit.Sp(10)
+						switch {
+						case row.badge != "":
+							glyph = row.badge
+						case row.expandable && row.expanded:
+							glyph = "▾"
+							size = unit.Sp(11)
+						case row.expandable:
+							glyph = "▸"
+							size = unit.Sp(11)
+						}
+						label := material.Label(s.theme, size, glyph)
+						label.Color = marker
+						slot := gtx
+						slot.Constraints.Min = image.Pt(gtx.Dp(unit.Dp(14)), gtx.Dp(unit.Dp(16)))
+						slot.Constraints.Max = slot.Constraints.Min
+						return layout.W.Layout(slot, label.Layout)
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						size := unit.Sp(12)
+						if row.expandable {
+							size = unit.Sp(13)
+						}
+						foreground := colorTextSecondary
+						if row.active || row.expanded {
+							foreground = colorTextPrimary
+						}
+						label := material.Label(s.theme, size, row.label)
+						label.Color = foreground
+						label.MaxLines = 1
+						return label.Layout(gtx)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if row.detail == "" {
+							return layout.Dimensions{}
+						}
+						label := material.Label(s.theme, unit.Sp(10), row.detail)
+						label.Color = colorTextMuted
+						label.MaxLines = 1
+						return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, label.Layout)
+					}),
+				)
+			})
+		})
 	})
+}
+
+// primaryButton 用于主操作（执行查询），用强调色与次要按钮区分开。
+func (s *workspace) primaryButton(gtx layout.Context, click *widget.Clickable, label string, disabled bool) layout.Dimensions {
+	button := material.Button(s.theme, click, label)
+	button.TextSize = unit.Sp(12)
+	button.Inset = layout.Inset{Left: unit.Dp(14), Right: unit.Dp(14), Top: unit.Dp(5), Bottom: unit.Dp(5)}
+	button.CornerRadius = radiusS
+	button.Background = colorAccent
+	button.Color = s.theme.Palette.ContrastFg
+	if disabled {
+		button.Background = colorSurfaceSubtle
+		button.Color = colorTextSecondary
+	}
+	return button.Layout(gtx)
+}
+
+// switchSQLTab 在标签之间切换时保存当前编辑内容与查询结果，并载入目标标签的状态。
+func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
+	s.cancelActiveQuery("查询已取消（切换标签页）")
+	activeID := s.sqlWorkspace.ActiveID()
+	current := s.sqlTabStates[activeID]
+	s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
+	current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
+	s.sqlTabStates[activeID] = current
+	s.sqlWorkspace.Activate(tabID)
+	next := s.sqlTabStates[tabID]
+	nextTab, _ := s.sqlWorkspace.Get(tabID)
+	s.queryEditor.SetText(nextTab.Editor.Text())
+	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
+	s.clearQueryCellSelection()
+}
+func (s *workspace) treeGroupLabel(gtx layout.Context, title string) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(2), Left: unit.Dp(26), Right: unit.Dp(8)}.Layout(gtx, styledText(s.theme, title, unit.Sp(10), colorTextMuted))
+}
+
+// smallButton 统一小尺寸次要按钮，避免各处手写字号与内边距。
+func (s *workspace) smallButton(gtx layout.Context, click *widget.Clickable, label string, disabled bool) layout.Dimensions {
+	button := material.Button(s.theme, click, label)
+	button.TextSize = unit.Sp(11)
+	button.Inset = layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(3), Bottom: unit.Dp(3)}
+	button.CornerRadius = radiusS
+	button.Background = colorSurfaceSubtle
+	button.Color = colorTextSecondary
+	if disabled {
+		button.Color = colorTextMuted
+	}
+	return button.Layout(gtx)
 }
 
 func (s *workspace) loadTableSchema(table string) {
@@ -1167,92 +1458,4 @@ func (s *workspace) loadTableSchema(table string) {
 		}
 		s.window.Invalidate()
 	}()
-}
-
-func (s *workspace) layoutObjectsPanel(gtx layout.Context) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(8), Left: unit.Dp(14), Right: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, material.Subtitle1(s.theme, "表与视图").Layout),
-					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("%d 张表 · %d 个视图", len(s.tables), len(s.views))).Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if s.refreshObjects.Clicked(gtx) && s.selectedDatabase != "" {
-							s.selectDatabase(s.selectedDatabase)
-						}
-						button := material.Button(s.theme, &s.refreshObjects, "刷新")
-						button.TextSize = unit.Sp(12)
-						return button.Layout(gtx)
-					}),
-				)
-			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-			layout.Flexed(0.48, func(gtx layout.Context) layout.Dimensions {
-				if s.selectedDatabase == "" {
-					return material.Body2(s.theme, "选择左侧数据库以加载对象").Layout(gtx)
-				}
-				items := make([]structObject, 0, len(s.tables)+len(s.views))
-				items = append(items, s.tables...)
-				items = append(items, s.views...)
-				if len(items) == 0 && s.loading == "" {
-					return material.Body2(s.theme, "该数据库没有可显示的表或视图").Layout(gtx)
-				}
-				return material.List(s.theme, &s.objectList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
-					item := items[index]
-					key := s.selectedDatabase + "." + item.Name
-					click := s.objectClicks[key]
-					if click == nil {
-						click = new(widget.Clickable)
-						s.objectClicks[key] = click
-					}
-					if click.Clicked(gtx) {
-						s.selectedObject = key
-						s.loadTableSchema(item.Name)
-					}
-					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							kind := "表"
-							if index >= len(s.tables) {
-								kind = "视图"
-							}
-							title := item.Name
-							if key == s.selectedObject {
-								title = "● " + title
-							}
-							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-								layout.Rigid(material.Body1(s.theme, title).Layout),
-								layout.Rigid(material.Caption(s.theme, kind+" · "+item.Engine).Layout),
-							)
-						})
-					})
-				})
-			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-			layout.Rigid(material.Subtitle1(s.theme, "表结构 / DDL").Layout),
-			layout.Flexed(0.52, func(gtx layout.Context) layout.Dimensions {
-				if s.selectedTable == "" {
-					return material.Body2(s.theme, "选择一张表查看字段、引擎和建表语句").Layout(gtx)
-				}
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("引擎：%s · 主键：%s", s.tableDetails.Engine, s.tableDetails.PrimaryKey)).Layout),
-					layout.Rigid(material.Caption(s.theme, fmt.Sprintf("分区：%s · 排序：%s", s.tableDetails.PartitionKey, s.tableDetails.SortingKey)).Layout),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return material.List(s.theme, &s.columnList).Layout(gtx, len(s.columns), func(gtx layout.Context, index int) layout.Dimensions {
-							column := s.columns[index]
-							marker := ""
-							if column.IsPrimary {
-								marker += " · 主键"
-							}
-							if column.HasDefault {
-								marker += " · 默认值"
-							}
-							return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx,
-								material.Body2(s.theme, fmt.Sprintf("%s  %s%s", column.Name, column.Type, marker)).Layout)
-						})
-					}),
-					layout.Rigid(material.Caption(s.theme, s.tableDetails.TTLExpression).Layout),
-				)
-			}),
-		)
-	})
 }
