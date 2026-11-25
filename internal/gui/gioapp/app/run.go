@@ -86,6 +86,7 @@ type savedSQLResult struct {
 }
 
 type savedSQLListResult struct {
+	seq   uint64
 	items []savedsqldomain.Entry
 	err   error
 }
@@ -204,6 +205,7 @@ type workspace struct {
 	savedSQLClicks    []widget.Clickable
 	savedSQLDelete    []widget.Clickable
 	savedSQLDeleteID  string
+	savedSQLListSeq   uint64
 	objectResults     chan objectsResult
 	schemaResults     chan schemaResult
 	queryResults      chan queryEvent
@@ -300,12 +302,14 @@ func (s *workspace) saveConnection(item connection.Connection) {
 }
 
 func (s *workspace) reloadSavedSQL() {
+	s.savedSQLListSeq++
+	seq := s.savedSQLListSeq
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		items, err := s.services.SavedSQL.List(ctx)
 		select {
-		case s.savedSQLListResults <- savedSQLListResult{items: items, err: err}:
+		case s.savedSQLListResults <- savedSQLListResult{seq: seq, items: items, err: err}:
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
@@ -536,6 +540,7 @@ func (s *workspace) drainResults() {
 				s.reloadSavedSQL()
 			}
 		case result := <-s.savedSQLListResults:
+			if result.seq != s.savedSQLListSeq { continue }
 			if result.err != nil {
 				s.status = "读取收藏 SQL 失败：" + result.err.Error()
 			} else {
