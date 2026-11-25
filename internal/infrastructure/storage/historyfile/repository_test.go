@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func TestRepositorySaveAndReload(t *testing.T){
 	got,err:=repo.List(context.Background());if err!=nil{t.Fatal(err)}
 	if !reflect.DeepEqual(got,want){t.Fatalf("保存后读取不一致: got=%+v want=%+v",got,want)}
 	info,err:=os.Stat(path);if err!=nil{t.Fatal(err)}
-	if info.Mode().Perm()!=0o600{t.Fatalf("history.json 权限=%o，期望 600",info.Mode().Perm())}
+	if runtime.GOOS != "windows" && info.Mode().Perm()!=0o600{t.Fatalf("history.json 权限=%o，期望 600",info.Mode().Perm())}
 }
 
 func TestRepositoryMissingFileReturnsEmptyList(t *testing.T){
