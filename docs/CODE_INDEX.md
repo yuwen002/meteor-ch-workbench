@@ -75,7 +75,7 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 当前 head（本索引更新前）：`1ba3192b187e097827d39ddf9d84dc9e239dc7a8`
+- 当前 head（本索引更新前）：`bb9677b7f821db9894fbb2b88897077a5d52beb8`
 - PR #1：Open / Draft / 未合并，base 为 `main`。
 - 对应 Go CI Run `45527241563`：Linux 测试、vet、构建及 Windows 测试、vet、构建均成功。
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
