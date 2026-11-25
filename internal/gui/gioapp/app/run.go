@@ -631,6 +631,7 @@ func (s *workspace) executeQuery() {
 		s.queryStatus = "请输入 SQL 语句"
 		return
 	}
+	s.sqlWorkspace.UpdateSQL(s.sqlWorkspace.ActiveID(), s.queryEditor.Text())
 	if s.queryCancelFunc != nil {
 		s.queryCancelFunc()
 	}
@@ -772,7 +773,6 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 								s.sqlTabCloseClicks = append(s.sqlTabCloseClicks, new(widget.Clickable))
 							}
 							children := make([]layout.FlexChild, 0, len(items))
-							activeIndex, _ := s.sqlWorkspace.ActiveIndex()
 							for i, tab := range items {
 								index, tabID, label := i, tab.ID, tab.Title
 								children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -791,7 +791,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 										s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 										s.clearQueryCellSelection()
 									}
-									if index == activeIndex {
+									if tabID == s.sqlWorkspace.ActiveID() {
 										label = "● " + label
 									}
 									return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
