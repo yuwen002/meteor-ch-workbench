@@ -386,17 +386,9 @@ func (s *workspace) deleteSavedSQL(id string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		err := s.services.SavedSQL.Delete(ctx, id)
-		if err == nil {
-			items, listErr := s.services.SavedSQL.List(ctx)
-			if listErr != nil { err = listErr } else {
-				select {
-				case s.savedSQLListResults <- savedSQLListResult{items: items}:
-				case <-ctx.Done():
-				}
-			}
-		}
-		if err != nil {
-			select { case s.savedSQLResults <- savedSQLResult{action: "删除收藏", err: err}: case <-ctx.Done(): }
+		select {
+		case s.savedSQLResults <- savedSQLResult{action: "删除收藏", err: err}:
+		case <-ctx.Done():
 		}
 		s.window.Invalidate()
 	}()
