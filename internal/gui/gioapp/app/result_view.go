@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/csv"
 	"fmt"
+	"image"
 	"io"
 	"sort"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"gioui.org/gesture"
 	"gioui.org/io/pointer"
+	"gioui.org/op/clip"
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -256,22 +258,17 @@ func (s *workspace) layoutResultColumnResizeHandle(gtx layout.Context, index int
 		return layout.Dimensions{}
 	}
 	drag := &s.columnDrags[index]
-	size := gtx.Constraints.Max
-	if size.Y <= 0 {
-		size.Y = gtx.Dp(unit.Dp(28))
-	}
-	size.X = gtx.Dp(unit.Dp(8))
+	size := image.Pt(gtx.Dp(unit.Dp(8)), gtx.Dp(unit.Dp(36)))
 	gtx.Constraints.Min = size
 	gtx.Constraints.Max = size
+	defer clip.Rect{Max: size}.Push(gtx.Ops).Pop()
 	pointer.CursorColResize.Add(gtx.Ops)
-	defer func() {
-		drag.Add(gtx.Ops)
-	}()
+	drag.Add(gtx.Ops)
 	if event, ok := drag.Update(gtx.Metric, gtx.Source, gesture.Horizontal); ok && event.Kind == pointer.Drag {
 		x := float32(event.Position.X)
 		if s.columnDragActive[index] {
 			delta := x - s.columnDragLastX[index]
-			width := s.columnWidths[index] + unit.Dp(delta/gtx.Metric.PxPerDp)
+			width := s.columnWidths[index] + gtx.Metric.PxToDp(int(delta))
 			if width < 72 {
 				width = 72
 			}
