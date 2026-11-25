@@ -299,3 +299,15 @@ Gio 编辑区读取并恢复 `TabsManager` 保存的标签快照，支持新建�
 - 删除分组仍将其连接移回未分组，不删除连接数据。
 
 测试覆盖旧 JSON 迁移后的分组顺序、连接顺序和归属关系，以及排序后的存储读取、应用服务和 GUI 状态同步。当前 Gio 版以显式上移 / 下移操作替代旧 Vue 的拖放排序手势，排序结果和持久化语义保持一致；拖放手势本身尚未迁移。
+
+
+## 2026-11-26：查询历史与收藏 SQL 存储迁移
+
+查询历史和收藏 SQL 已从旧 `internal/config` 迁入新分层，数据文件路径与旧版本保持一致（`history.json`、`saved_sql.json`），文件结构沿用原有 JSON 数组字段，因此可直接读取已有记录，不需要重新导入。
+
+- 查询历史：新增 `domain/queryhistory`、`application/history`、`infrastructure/storage/historyfile`。自动记录 Gio 查询完成事件（SQL、连接 ID、耗时、成功状态），最新记录置顶，最多保留 200 条；支持读取、删除和清空。并发写入在应用服务层串行化，文件重复写入兼容 Windows。
+- 收藏 SQL：新增 `domain/savedsql`、`application/savedsql`、`infrastructure/storage/savedsqlfile`。支持读取、新增、重命名 / 修改 SQL、删除和重复语句校验；不设置条数上限，保留创建与更新时间。
+- `bootstrap.Services` 已装配 `History` 与 `SavedSQL` 服务；Gio 查询完成后自动写入历史。
+- 新增测试覆盖旧 JSON 兼容、排序 / 数量上限、重复语句、增删改、并发写入串行化和文件重复覆盖。
+
+**尚未完成**：Gio 查询历史面板和收藏 SQL 面板尚未接入新服务；本轮完成的是领域 / 应用 / 存储迁移及查询历史自动记录，不将界面迁移计入完成。下一步先接入历史与收藏面板，再迁移标签页快照和设置。
