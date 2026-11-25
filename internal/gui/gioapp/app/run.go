@@ -787,7 +787,7 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 										s.sqlWorkspace.Activate(tabID)
 										next := s.sqlTabStates[tabID]
 										nextTab, _ := s.sqlWorkspace.Get(tabID)
-										s.queryEditor.SetText(nextTab.SQL)
+										s.queryEditor.SetText(nextTab.Editor.Text())
 										s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 										s.clearQueryCellSelection()
 									}
