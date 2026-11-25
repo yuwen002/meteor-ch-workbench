@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"context"
 	"path/filepath"
-	"testing"
+	"testing"\n\t"errors"\n\n\t"github.com/yuwen002/meteor-ch-workbench/internal/domain/savedsql"
 )
 
 func TestNewBuildsApplicationServices(t *testing.T) {
@@ -13,7 +13,7 @@ func TestNewBuildsApplicationServices(t *testing.T) {
 	}
 	defer services.Close()
 
-	if services.Connections == nil || services.Folders == nil || services.Queries == nil || services.Metadata == nil {
+	if services.Connections == nil || services.Folders == nil || services.History == nil || services.SavedSQL == nil || services.Queries == nil || services.Metadata == nil {
 
 		t.Fatal("新架构应用服务未完整装配")
 	}
