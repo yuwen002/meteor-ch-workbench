@@ -118,6 +118,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		checkResults:     make(chan connectionCheck, 4),
 		saveResults:      make(chan saveResult, 2),
 		deleteResults:    make(chan deleteResult, 4),
+		historyResults:   make(chan historySaveResult, 16),
 		objectResults:    make(chan objectsResult, 8),
 		schemaResults:    make(chan schemaResult, 4),
 		queryResults:     make(chan queryEvent, 128),
