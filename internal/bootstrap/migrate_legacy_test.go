@@ -2,6 +2,10 @@ package bootstrap
 
 import (
 	"os"
+	"context"
+	"reflect"
+
+	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/connectionfile"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -170,5 +174,30 @@ func TestMigrateLegacyConnectionsKeepsOriginalWhenLegacyDataInvalid(t *testing.T
 	}
 	if string(got) != legacy {
 		t.Fatalf("原始配置被修改: %s", got)
+	}
+}
+
+
+func TestMigrateLegacyConnectionsPreservesFolderAndConnectionOrder(t *testing.T) {
+	dataDir := t.TempDir()
+	target := filepath.Join(dataDir, "connections.json")
+	legacy := `{"folders":[{"id":"f-prod","name":"生产"},{"id":"f-test","name":"测试"},{"id":"f-dev","name":"开发"}],"connections":[{"id":"c1","folder_id":"f-test","name":"测试库","host":"test.local","port":9000,"protocol":"native"},{"id":"c2","folder_id":"f-prod","name":"生产库","host":"prod.local","port":9000,"protocol":"native"},{"id":"c3","folder_id":"f-test","name":"测试只读","host":"test-ro.local","port":9000,"protocol":"native"}]}`
+	if err := os.WriteFile(target, []byte(legacy), 0o600); err != nil { t.Fatal(err) }
+	if err := migrateLegacyConnections(dataDir, filepath.Join(dataDir, "missing", "connections.json")); err != nil { t.Fatal(err) }
+
+	repository, err := connectionfile.New(target)
+	if err != nil { t.Fatal(err) }
+	folders, err := repository.ListFolders(context.Background())
+	if err != nil { t.Fatal(err) }
+	connections, err := repository.List(context.Background())
+	if err != nil { t.Fatal(err) }
+	if got, want := []string{folders[0].ID,folders[1].ID,folders[2].ID}, []string{"f-prod","f-test","f-dev"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("迁移后分组顺序=%v，期望 %v",got,want)
+	}
+	if got, want := []string{connections[0].ID,connections[1].ID,connections[2].ID}, []string{"c1","c2","c3"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("迁移后连接顺序=%v，期望 %v",got,want)
+	}
+	if connections[0].FolderID != "f-test" || connections[1].FolderID != "f-prod" || connections[2].FolderID != "f-test" {
+		t.Fatalf("迁移后连接所属分组被改变: %+v",connections)
 	}
 }
