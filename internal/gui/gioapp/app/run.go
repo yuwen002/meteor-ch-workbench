@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"sync"
 	"time"
 
 	gio "gioui.org/app"
@@ -159,7 +160,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 	state.connectionView.SetOnSave(state.saveConnection)
 	state.connectionView.SetOnDelete(state.deleteConnection)
 	state.queryEditor.SingleLine = false
-	go state.reloadConnections()
+	state.goWorker(state.reloadConnections)
 
 	var ops op.Ops
 	for {
@@ -172,8 +173,12 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 			}
 			if state.cancelRequest != nil {
 				state.cancelRequest()
+				state.cancelRequest = nil
 			}
 			state.cancelActiveQuery("窗口已关闭")
+			// 所有后台任务都继承生命周期 Context；等待它们退出后再返回，
+			// 确保 main 中的 services.Close 不会与仍在运行的请求竞争。
+			state.workers.Wait()
 			return e.Err
 		case gio.FrameEvent:
 			gtx := gio.NewContext(&ops, e)
@@ -189,6 +194,7 @@ type workspace struct {
 	window            *gio.Window
 	lifecycleCtx      context.Context
 	cancelLifecycle   context.CancelFunc
+	workers           sync.WaitGroup
 	services          *bootstrap.Services
 	connections       *connectionui.Model
 	connectionView    *connectionui.View
@@ -309,8 +315,8 @@ type workspace struct {
 }
 
 func (s *workspace) saveConnection(item connection.Connection) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 10*time.Second)
 		defer cancel()
 		saved, err := s.connections.Save(ctx, item)
 		result := saveResult{item: saved, err: err}
@@ -319,14 +325,14 @@ func (s *workspace) saveConnection(item connection.Connection) {
 		default:
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) reloadSavedSQL() {
 	s.savedSQLListSeq++
 	seq := s.savedSQLListSeq
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
 		defer cancel()
 		items, err := s.services.SavedSQL.List(ctx)
 		select {
@@ -334,7 +340,7 @@ func (s *workspace) reloadSavedSQL() {
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
@@ -429,8 +435,8 @@ func (s *workspace) renameSavedSQL(id string) {
 		if saved.ID == id { item = saved; break }
 	}
 	if item.ID == "" { return }
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
 		defer cancel()
 		updated, err := s.services.SavedSQL.Update(ctx, id, name, item.SQL)
 		select {
@@ -438,12 +444,12 @@ func (s *workspace) renameSavedSQL(id string) {
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) deleteSavedSQL(id string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
 		defer cancel()
 		err := s.services.SavedSQL.Delete(ctx, id)
 		select {
@@ -451,7 +457,7 @@ func (s *workspace) deleteSavedSQL(id string) {
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) saveCurrentSQL() {
@@ -460,8 +466,8 @@ func (s *workspace) saveCurrentSQL() {
 		return
 	}
 	connectionID := s.selectedID
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
 		defer cancel()
 		item, err := s.services.SavedSQL.Add(ctx, savedsqldomain.Entry{
 			SQL:          sqlText,
@@ -472,12 +478,12 @@ func (s *workspace) saveCurrentSQL() {
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) deleteConnection(id string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 10*time.Second)
 		defer cancel()
 		err := s.connections.Delete(ctx, id)
 		select {
@@ -485,11 +491,11 @@ func (s *workspace) deleteConnection(id string) {
 		default:
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) reloadConnections() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 10*time.Second)
 	defer cancel()
 	if err := s.connections.Reload(ctx); err != nil {
 		// 配置读取失败时不能静默显示空侧栏；侧栏空状态直接展示实际路径和错误。
@@ -538,9 +544,9 @@ func (s *workspace) selectConnectionForTab(item connection.Connection, preserveD
 	}
 	s.requestSeq++
 	seq := s.requestSeq
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 15*time.Second)
 	s.cancelRequest = cancel
-	go func() {
+	s.goWorker(func() {
 		defer cancel()
 		err := s.connections.Test(ctx, item)
 		var databases []string
@@ -553,7 +559,7 @@ func (s *workspace) selectConnectionForTab(item connection.Connection, preserveD
 			// 新请求会使旧结果失效；队列满时丢弃即可，避免窗口退出后阻塞后台 goroutine。
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) selectDatabase(name string) {
@@ -576,9 +582,9 @@ func (s *workspace) selectDatabase(name string) {
 	}
 	s.requestSeq++
 	seq, connectionID := s.requestSeq, s.selectedID
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 20*time.Second)
 	s.cancelRequest = cancel
-	go func() {
+	s.goWorker(func() {
 		defer cancel()
 		tables, err := s.services.Metadata.ListTables(ctx, connectionID, name)
 		var views []structObject
@@ -592,7 +598,7 @@ func (s *workspace) selectDatabase(name string) {
 			// 数据库切换时旧结果已失效，队列满时不阻塞后台请求。
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func databaseNameExists(items []string, target string) bool {
@@ -1549,9 +1555,9 @@ func (s *workspace) loadTableSchema(table string) {
 	s.columns = nil
 	s.tableDetails = metadataapp.TableDetails{}
 	s.loading = "正在读取表结构与 DDL…"
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 20*time.Second)
 	s.cancelRequest = cancel
-	go func() {
+	s.goWorker(func() {
 		defer cancel()
 		columns, err := s.services.Metadata.GetTableSchema(ctx, connectionID, database, table)
 		var details metadataapp.TableDetails
@@ -1563,5 +1569,5 @@ func (s *workspace) loadTableSchema(table string) {
 		default:
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
