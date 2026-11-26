@@ -337,7 +337,7 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 ### 窗口关闭竞态加固（2026-11-26）
 - 后台任务注册现在由 `lifecycleMu` 保护：检查窗口关闭状态与 `WaitGroup.Add` 在同一临界区内完成。
 - `shutdownWorkers` 先关闭新任务入口并取消窗口生命周期，再等待已登记任务全部退出，避免 `WaitGroup.Wait` 与并发 `Add` 在计数归零时发生竞态。
-- DestroyEvent 先取消当前请求和活动查询，再关闭任务入口并等待任务退出，随后 Run 才返回；main 的 `runDone` 同步保证服务容器在窗口 Run 结束后关闭。
+- DestroyEvent 先取消当前请求和活动查询，再关闭任务入口并等待任务退出，随后 `gioapp.Run` 返回；当前 Windows 入口在窗口 goroutine 中关闭服务容器并显式结束进程，不再依赖 `runDone` 或 `gio.Main()` 返回。
 - 新增并发注册 / 关闭交错测试。CI 通过仍不替代 Windows、macOS、Linux 实机关闭与进程退出验证。
 
 
@@ -362,3 +362,10 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - Gio 0.10.3 的 Windows `app.Main` 进入主线程的永久等待；窗口 DestroyEvent 后，窗口事件循环返回时必须完成服务关闭并主动结束进程，否则主 goroutine 仍停在 `app.Main`，可能触发 runtime deadlock fatal error。
 - 启动 goroutine 现在在 `gioapp.Run` 返回后显式关闭服务，再按正常关闭 / 错误退出码结束进程；不得依赖 `app.Main()` 返回后再执行清理。
 - 仍需 Windows 实机验证正常关闭、启动初始化失败和窗口创建失败三种退出路径。
+
+
+### 收藏 SQL 面板拆分与控件身份修复（2026-11-26）
+- 收藏 SQL 的加载、保存、重命名、删除和面板布局从 `run.go` 拆分至 `saved_sql_view.go`，让窗口入口文件继续聚焦事件循环和页面组合。
+- 收藏列表的打开 / 改名 / 删除控件由按可见索引访问的切片改为按稳定收藏 ID 维护的控件映射。
+- 修复搜索过滤后使用过滤索引访问原始控件切片造成的错绑问题；刷新列表时保留仍存在条目的控件身份，并清理已删除条目的控件引用。
+- 新增控件身份稳定与已删除条目清理测试；最新 head CI 尚在执行，未提前标记通过。
