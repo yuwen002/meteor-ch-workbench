@@ -16,7 +16,7 @@ func TestExplorerSelectionSelectDatabaseClearsPreviousObjects(t *testing.T) {
 		tables: []metadataapp.Object{{Name: "events"}},
 		views: []metadataapp.Object{{Name: "events_view"}},
 		columns: []metadataapp.Column{{Name: "id"}},
-		tableDetails: metadataapp.TableDetails{CreateStatement: "CREATE TABLE events"},
+		tableDetails: metadataapp.TableDetails{CreateTableQuery: "CREATE TABLE events"},
 	}
 
 	state.SelectDatabase("analytics")
@@ -44,7 +44,7 @@ func TestExplorerSelectionResetConnectionClearsAllNavigationState(t *testing.T) 
 		tables: []metadataapp.Object{{Name: "events"}},
 		views: []metadataapp.Object{{Name: "events_view"}},
 		columns: []metadataapp.Column{{Name: "id"}},
-		tableDetails: metadataapp.TableDetails{CreateStatement: "CREATE TABLE events"},
+		tableDetails: metadataapp.TableDetails{CreateTableQuery: "CREATE TABLE events"},
 	}
 
 	state.ResetConnection()
@@ -63,7 +63,7 @@ func TestExplorerSelectionResetConnectionClearsAllNavigationState(t *testing.T) 
 func TestExplorerSelectionSetSchemaAndClearSchema(t *testing.T) {
 	state := explorerSelection{}
 	columns := []metadataapp.Column{{Name: "id"}}
-	details := metadataapp.TableDetails{CreateStatement: "CREATE TABLE events"}
+	details := metadataapp.TableDetails{CreateTableQuery: "CREATE TABLE events"}
 
 	state.SetSchema(columns, details)
 	if !reflect.DeepEqual(state.columns, columns) || !reflect.DeepEqual(state.tableDetails, details) {
