@@ -1019,7 +1019,7 @@ func (s *workspace) executeQuery() {
 	s.queryRunning = true
 	s.queryColumns, s.queryData = nil, nil
 	// 新查询开始后，释放当前标签缓存的上一轮结果，避免旧切片继续占用内存。
-	activeState := s.sqlTabStates[tab]
+	activeState = s.sqlTabStates[tab]
 	activeState.Columns, activeState.Data = nil, nil
 	activeState.Status = "正在执行 SQL…"
 	s.sqlTabStates[tab] = activeState
