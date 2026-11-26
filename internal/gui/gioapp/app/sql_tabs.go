@@ -9,7 +9,6 @@ import (
 	"gioui.org/widget"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
-	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
