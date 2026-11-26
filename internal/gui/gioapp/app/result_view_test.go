@@ -92,3 +92,44 @@ func resultCompareSign(value int) int {
 		return 0
 	}
 }
+
+func TestExtendResultSortKeysReusesExistingAndAppendsNewRows(t *testing.T) {
+	rows := [][]any{{"first", 3}, {"second", 1}}
+	keys := extendResultSortKeys(rows, 1, nil)
+	if len(keys) != 2 {
+		t.Fatalf("initial key count = %d, want 2", len(keys))
+	}
+	first := keys[0]
+
+	rows = append(rows, []any{"third", 2})
+	keys = extendResultSortKeys(rows, 1, keys)
+	if len(keys) != 3 {
+		t.Fatalf("extended key count = %d, want 3", len(keys))
+	}
+	if compareResultSortKeys(keys[0], first) != 0 {
+		t.Fatal("existing sort key changed while appending a result row")
+	}
+	view := buildResultRowViewWithPreparedSortKeys(rows, "", nil, 1, false, keys)
+	want := []int{1, 2, 0}
+	for i, index := range want {
+		if i >= len(view) || view[i].Index != index {
+			t.Fatalf("sorted view = %#v, want row indexes %v", view, want)
+		}
+	}
+}
+
+func TestExtendResultSortKeysHandlesMissingSortColumn(t *testing.T) {
+	rows := [][]any{{"value"}}
+	if got := extendResultSortKeys(rows, -1, []resultSortKey{{text: "stale"}}); got != nil {
+		t.Fatalf("keys for disabled sorting = %#v, want nil", got)
+	}
+}
+
+func TestBuildResultRowViewWithPreparedSortKeysExtendsShortCache(t *testing.T) {
+	rows := [][]any{{"a", 2}, {"b", 1}}
+	keys := extendResultSortKeys(rows[:1], 1, nil)
+	view := buildResultRowViewWithPreparedSortKeys(rows, "", nil, 1, false, keys)
+	if len(view) != 2 || view[0].Index != 1 || view[1].Index != 0 {
+		t.Fatalf("view with short cache = %#v", view)
+	}
+}
