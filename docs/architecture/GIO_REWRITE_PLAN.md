@@ -418,3 +418,10 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 提供连接重置、数据库切换、数据库折叠、表选择、对象选中、表结构设置 / 清理等显式状态转换，避免切换数据库后继续显示旧对象或旧字段。
 - workspace 嵌入该模型以保持现有 UI 访问点兼容；后续可继续将数据库树控件与交互协调器迁出 workspace，但不应把 Gio Clickable 放入纯状态模型。
 - 新增状态模型单元测试；仍需通过当前 head CI，并补充快速切换、迟到响应、空数据库和窄窗口的 UI 回归测试。
+
+
+### Explorer 状态职责拆分（2026-11-27）
+
+- Explorer 当前拆分为视图（`explorer_view.go`）、导航数据与选中上下文（`explorer_selection.go`）、请求生命周期（`explorer_request_state.go`）和异步响应有效性判断（`explorer_state.go`）。
+- `workspace` 通过嵌入状态对象暂时保持原有 UI 访问方式；Gio Clickable / List 控件仍由窗口层持有，避免领域状态依赖 UI 控件。
+- 后续应补充快速切换连接 / 数据库 / 表、刷新与迟到响应的组合回归测试，再继续拆分 SQL 编辑器和结果视图状态。
