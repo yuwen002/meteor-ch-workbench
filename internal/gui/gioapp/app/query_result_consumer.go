@@ -28,8 +28,8 @@ func (s *workspace) handleQueryResult(result queryEvent) {
 			DurationMs: float64(result.summary.Elapsed) / float64(time.Millisecond),
 			Success: result.err == nil,
 		}
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		s.goWorker(func() {
+			ctx, cancel := context.WithTimeout(s.lifecycleParent(), 5*time.Second)
 			defer cancel()
 			_, err := s.services.History.Add(ctx, entry)
 			select {
@@ -37,7 +37,7 @@ func (s *workspace) handleQueryResult(result queryEvent) {
 			case <-ctx.Done():
 			}
 			s.window.Invalidate()
-		}()
+		})
 	}
 	if result.tab != s.sqlWorkspace.ActiveID() {
 		state := s.sqlTabStates[result.tab]
