@@ -281,7 +281,11 @@ func (filter preparedResultColumnFilter) matches(value any) bool {
 		actual = fmt.Sprint(value)
 	}
 	if filter.kind == resultColumnFilterContains {
-		return strings.Contains(strings.ToLower(actual), filter.expectedLower)
+		matched := strings.Contains(strings.ToLower(actual), filter.expectedLower)
+		if filter.operator == "!" {
+			return !matched
+		}
+		return matched
 	}
 	if filter.kind == resultColumnFilterBetween {
 		if value == nil {
