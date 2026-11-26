@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -48,6 +49,41 @@ func TestGoWorkerDoesNotStartAfterLifecycleCancellation(t *testing.T) {
 	state.workers.Wait()
 	if started {
 		t.Fatal("background task started after lifecycle cancellation")
+	}
+}
+
+func TestShutdownWorkersRejectsNewTasks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	state := &workspace{lifecycleCtx: ctx, cancelLifecycle: cancel}
+	state.shutdownWorkers()
+
+	started := false
+	state.goWorker(func() { started = true })
+	state.workers.Wait()
+	if started {
+		t.Fatal("background task started after shutdown began")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("shutdown did not cancel the lifecycle context")
+	}
+}
+
+func TestGoWorkerRegistrationDoesNotRaceWithShutdown(t *testing.T) {
+	for iteration := 0; iteration < 50; iteration++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		state := &workspace{lifecycleCtx: ctx, cancelLifecycle: cancel}
+		var callers sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			callers.Add(1)
+			go func() {
+				defer callers.Done()
+				state.goWorker(func() { <-ctx.Done() })
+			}()
+		}
+		state.shutdownWorkers()
+		callers.Wait()
+		cancel()
 	}
 }
 
