@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"testing"
 
@@ -44,6 +45,20 @@ func TestWriteResultExportUsesSourceRowIndexes(t *testing.T) {
 				t.Errorf("record[%d][%d] = %q, want %q", i, j, records[i][j], want[i][j])
 			}
 		}
+	}
+}
+
+func TestWriteResultExportContextStopsBeforeWritingWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var output bytes.Buffer
+	err := writeResultExportContext(ctx, &output, []queryapp.Column{{Name: "value"}}, []resultRowView{{Index: 0}}, [][]any{{"value"}}, "csv")
+	if err != context.Canceled {
+		t.Fatalf("writeResultExportContext() error = %v, want context.Canceled", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("output contains %d bytes after cancellation, want 0", output.Len())
 	}
 }
 
