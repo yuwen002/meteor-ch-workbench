@@ -3,11 +3,11 @@ package app
 import (
 	"testing"
 
-	"github.com/yuwen002/meteor-ch-workbench/internal/domain/savedsql"
+	savedsqldomain "github.com/yuwen002/meteor-ch-workbench/internal/domain/savedsql"
 )
 
 func TestFilterSavedSQL(t *testing.T) {
-	items := []savedsql.Entry{
+	items := []savedsqldomain.Entry{
 		{ID: "1", Name: "日常巡检", SQL: "SELECT 1"},
 		{ID: "2", Name: "订单统计", SQL: "SELECT count() FROM orders"},
 		{ID: "3", Name: "ClickHouse 版本", SQL: "SELECT version()"},
