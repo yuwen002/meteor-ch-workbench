@@ -82,12 +82,6 @@ func (s *workspace) restoreResultViewState(state sqlTabState) {
 	}
 	s.resultViewDirty = true
 	s.queryRows.Position = state.ResultPosition
-	if len(s.resultView) > 0 && s.queryRows.Position.First >= len(s.resultView) {
-		s.queryRows.Position.First = len(s.resultView) - 1
-	}
-	if len(s.resultView) == 0 {
-		s.queryRows.Position = layout.Position{}
-	}
 	s.queryHorizontal.Position = state.HorizontalPosition
 	s.queryDetailRows.Position = state.DetailPosition
 	if state.SelectedCell != nil {
