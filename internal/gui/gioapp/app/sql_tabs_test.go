@@ -50,10 +50,20 @@ func TestSQLTabStateNewColumnsResetPreviousRows(t *testing.T) {
 	}
 }
 
+func TestDatabaseNameExists(t *testing.T) {
+	if !databaseNameExists([]string{"default", "analytics"}, "analytics") {
+		t.Fatal("expected existing database to be found")
+	}
+	if databaseNameExists([]string{"default", "analytics"}, "missing") {
+		t.Fatal("expected missing database not to be found")
+	}
+}
+
 func TestSQLTabStateApplyPreservesConnectionContext(t *testing.T) {
 	state := sqlTabState{
 		ConnectionID:   "connection-a",
 		ConnectionName: "生产集群",
+		Database:       "analytics",
 	}
 	state.Apply(queryEvent{
 		columns: []query.Column{{Name: "value"}},
@@ -61,8 +71,8 @@ func TestSQLTabStateApplyPreservesConnectionContext(t *testing.T) {
 		done:    true,
 		summary: query.Summary{RowCount: 1},
 	})
-	if state.ConnectionID != "connection-a" || state.ConnectionName != "生产集群" {
-		t.Fatalf("query result should not change tab connection context: id=%q name=%q", state.ConnectionID, state.ConnectionName)
+	if state.ConnectionID != "connection-a" || state.ConnectionName != "生产集群" || state.Database != "analytics" {
+		t.Fatalf("query result should not change tab connection context: id=%q name=%q database=%q", state.ConnectionID, state.ConnectionName, state.Database)
 	}
 }
 
