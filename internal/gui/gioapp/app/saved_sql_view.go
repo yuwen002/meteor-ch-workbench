@@ -30,7 +30,6 @@ func filterSavedSQL(items []savedsqldomain.Entry, keyword string) []savedsqldoma
 	return filtered
 }
 
-
 type savedSQLItemControls struct {
 	open   widget.Clickable
 	remove widget.Clickable
@@ -74,8 +73,12 @@ func (s *workspace) reloadSavedSQL() {
 func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 	filtered := filterSavedSQL(s.savedSQLItems, s.savedSQLSearch.Text())
 	needle := strings.TrimSpace(s.savedSQLSearch.Text())
+	if s.savedSQLControls == nil {
+		s.savedSQLControls = make(map[string]*savedSQLItemControls, len(s.savedSQLItems))
+	}
 	height := gtx.Dp(unit.Dp(174))
 	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+
 	return s.surface(gtx, colorSurfaceSubtle, radiusS, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: spaceXS, Bottom: spaceXS, Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -83,21 +86,23 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(styledText(s.theme, fmt.Sprintf("收藏 SQL（%d）", len(s.savedSQLItems)), unit.Sp(11), colorTextPrimary)),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								s.savedSQLSearch.SingleLine = true
-								editor := material.Editor(s.theme, &s.savedSQLSearch, "搜索名称或 SQL")
+							s.savedSQLSearch.SingleLine = true
+							editor := material.Editor(s.theme, &s.savedSQLSearch, "搜索名称或 SQL")
 							editor.TextSize = unit.Sp(11)
-								return editor.Layout(gtx)
-							})
+							return layout.Inset{Left: spaceM, Right: spaceM}.Layout(gtx, editor.Layout)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if s.savedSQLRefresh.Clicked(gtx) { s.reloadSavedSQL() }
+							if s.savedSQLRefresh.Clicked(gtx) {
+								s.reloadSavedSQL()
+							}
 							return s.smallButton(gtx, &s.savedSQLRefresh, "刷新", false)
 						}),
 					)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if s.savedSQLRenameID == "" { return layout.Dimensions{} }
+					if s.savedSQLRenameID == "" {
+						return layout.Dimensions{}
+					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							s.savedSQLRenameEditor.SingleLine = true
@@ -106,7 +111,9 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 							return editor.Layout(gtx)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if s.savedSQLRenameSave.Clicked(gtx) { s.renameSavedSQL(s.savedSQLRenameID) }
+							if s.savedSQLRenameSave.Clicked(gtx) {
+								s.renameSavedSQL(s.savedSQLRenameID)
+							}
 							return s.smallButton(gtx, &s.savedSQLRenameSave, "保存名称", strings.TrimSpace(s.savedSQLRenameEditor.Text()) == "")
 						}),
 					)
@@ -115,7 +122,9 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					if len(filtered) == 0 {
 						message := "暂无收藏 SQL"
-						if needle != "" { message = "没有匹配的收藏 SQL" }
+						if needle != "" {
+							message = "没有匹配的收藏 SQL"
+						}
 						return layout.Center.Layout(gtx, styledText(s.theme, message, unit.Sp(11), colorTextMuted))
 					}
 					s.savedSQLList.Axis = layout.Vertical
@@ -126,19 +135,25 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 							controls = &savedSQLItemControls{}
 							s.savedSQLControls[item.ID] = controls
 						}
-						click := &controls.open
+						open := &controls.open
 						remove := &controls.remove
-						if click.Clicked(gtx) {
+						rename := &controls.rename
+						if open.Clicked(gtx) {
 							s.queryEditor.SetText(item.SQL)
 							s.queryStatus = "已载入收藏 SQL：" + item.Name
 						}
-						if remove.Clicked(gtx) { s.deleteSavedSQL(item.ID) }
-						rename := &controls.rename
-						if rename.Clicked(gtx) { s.savedSQLRenameID = item.ID; s.savedSQLRenameEditor.SetText(item.Name) }
+						if remove.Clicked(gtx) {
+							s.deleteSavedSQL(item.ID)
+						}
+						if rename.Clicked(gtx) {
+							s.savedSQLRenameID = item.ID
+							s.savedSQLRenameEditor.SetText(item.Name)
+						}
+
 						return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-									return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return open.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 											layout.Rigid(styledText(s.theme, item.Name, unit.Sp(11), colorTextPrimary)),
 											layout.Rigid(styledText(s.theme, strings.ReplaceAll(strings.TrimSpace(item.SQL), "\n", " "), unit.Sp(10), colorTextMuted)),
@@ -148,7 +163,7 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return s.smallButton(gtx, rename, "改名", false)
 								}),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return s.smallButton(gtx, remove, "删除", false)
 								}),
 							)
@@ -159,7 +174,6 @@ func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
 		})
 	})
 }
-
 func (s *workspace) renameSavedSQL(id string) {
 	name := strings.TrimSpace(s.savedSQLRenameEditor.Text())
 	if name == "" { return }
