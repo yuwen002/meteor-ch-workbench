@@ -559,6 +559,11 @@ func (s *workspace) selectDatabase(name string) {
 		return
 	}
 	s.selectedDatabase = name
+	if tabID := s.sqlWorkspace.ActiveID(); tabID != 0 {
+		tabState := s.sqlTabStates[tabID]
+		tabState.Database = name
+		s.sqlTabStates[tabID] = tabState
+	}
 	s.selectedTable = ""
 	s.columns = nil
 	s.tableDetails = metadataapp.TableDetails{}
@@ -681,6 +686,16 @@ func (s *workspace) drainResults() {
 				s.connected = true
 				s.databases = result.databases
 				s.status = fmt.Sprintf("连接成功 · %d 个数据库", len(result.databases))
+				if tabID := s.sqlWorkspace.ActiveID(); tabID != 0 {
+					tabState := s.sqlTabStates[tabID]
+					if tabState.ConnectionID == result.id && tabState.Database != "" {
+						if containsString(result.databases, tabState.Database) {
+							s.selectDatabase(tabState.Database)
+						} else {
+							s.queryStatus = "此标签页上次使用的数据库已不存在：" + tabState.Database
+						}
+					}
+				}
 			}
 		case result := <-s.objectResults:
 			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase {
@@ -1987,6 +2002,8 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 		} else {
 			s.selectConnection(*target)
 		}
+	} else if next.ConnectionID != "" && next.ConnectionID == s.selectedID && next.Database != "" && s.connected {
+		s.selectDatabase(next.Database)
 	}
 	s.queryEditor.SetText(nextTab.Editor.Text())
 	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
