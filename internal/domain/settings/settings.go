@@ -6,7 +6,7 @@ const (
 	RowLimitMin = 100
 	RowLimitMax = 1000000
 	DefaultRowLimit = 10000
-	DefaultEditorRatio = 0.62
+	DefaultEditorRatio = 0.45
 	MinEditorRatio = 0.35
 	MaxEditorRatio = 0.80
 )
