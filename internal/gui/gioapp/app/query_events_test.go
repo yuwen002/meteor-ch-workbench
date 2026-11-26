@@ -103,3 +103,24 @@ func TestEnqueueQueryCompletionDeliversTerminalEventAfterQueueUnblocks(t *testin
 		t.Fatalf("terminal event = %+v, want %+v", got, want)
 	}
 }
+
+func TestQueryEventIsApplicableRejectsStaleOrClosedTab(t *testing.T) {
+	tests := []struct {
+		name      string
+		current   bool
+		tabExists bool
+		want      bool
+	}{
+		{name: "current query and existing tab", current: true, tabExists: true, want: true},
+		{name: "stale query", current: false, tabExists: true, want: false},
+		{name: "closed tab", current: true, tabExists: false, want: false},
+		{name: "stale query and closed tab", current: false, tabExists: false, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := queryEventIsApplicable(tc.current, tc.tabExists); got != tc.want {
+				t.Fatalf("queryEventIsApplicable(%t, %t) = %t, want %t", tc.current, tc.tabExists, got, tc.want)
+			}
+		})
+	}
+}
