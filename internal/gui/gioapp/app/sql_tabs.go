@@ -174,5 +174,7 @@ func (s *workspace) closeSQLTab(index int) {
 		s.resetResultWidgets(s.queryColumns)
 		s.restoreResultViewState(next)
 		s.restoreSQLTabConnection(nextID)
+		next = s.sqlTabStates[nextID]
+		s.queryStatus = next.Status
 	}
 }
