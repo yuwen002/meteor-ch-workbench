@@ -75,7 +75,7 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 最近代码变更基线：`cdfe0c14ec401d36d0739bb4ce494c7c38c8d325`，对应 CI Run `45779342076` 的 Linux / Windows 检查均成功。后续文档提交的当前 head CI 仍需单独确认。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
+- 最近确认成功的代码基线：`cdfe0c14ec401d36d0739bb4ce494c7c38c8d325`，对应 CI Run `45779342076` 的 Linux / Windows 检查均成功。后续窗口启动与自适应尺寸改动需等待当前 head CI。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
 - PR #1：Open / Draft / 未合并，base 为 `main`。
 
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
@@ -92,7 +92,7 @@ cmd/meteor-ch-gio
 ## 窗口关闭与后台任务生命周期
 
 - `internal/gui/gioapp/app/lifecycle.go` 提供 `lifecycleParent`、`goWorker` 和 `shutdownWorkers`：后台任务统一继承窗口生命周期 Context，并登记到 `workspace.workers`。`lifecycleMu` 将“检查关闭状态 + WaitGroup.Add”与关闭入口串行化，避免 `Wait` 与并发 `Add` 竞态。
-- `run.go` 收到 `gio.DestroyEvent` 后先取消当前请求和活动查询，再通过 `shutdownWorkers` 原子关闭任务注册入口、取消生命周期并等待已登记任务退出；Run 返回后，窗口 goroutine 关闭 `runDone`；main 在 `gio.Main()` 返回后等待 `runDone`，再由 defer `services.Close()` 关闭 ClickHouse 连接池。
+- `run.go` 收到 `gio.DestroyEvent` 后先取消当前请求和活动查询，再通过 `shutdownWorkers` 原子关闭任务注册入口、取消生命周期并等待已登记任务退出。`cmd/meteor-ch-gio/main.go` 在 `gioapp.Run` 返回后直接调用 `services.Close()`，再通过 `os.Exit` 结束进程；Windows 的 Gio `app.Main` 不会返回，不能依赖其后的代码执行清理。
 - 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果文件写入均纳入后台任务登记。Gio Explorer 的系统保存对话框不纳入关闭等待的 WaitGroup；对话框返回后检查生命周期，窗口已关闭则关闭并尝试清理文件，不启动导出。
 - lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务、并发注册与关闭竞态，以及父 Context 选择；`lifecycleMu` 保证任务入口关闭与 WaitGroup.Add 串行化。
 - result_export.go 的 writeResultExportContext 在每行写入前检查生命周期 Context；窗口关闭后停止继续处理大型 CSV / TSV 导出，关闭文件并尝试清理不完整的本地文件。Gio Explorer 的文件保存对话框不支持 Context 中断，已拆分为独立阶段；窗口关闭不再等待该对话框。
