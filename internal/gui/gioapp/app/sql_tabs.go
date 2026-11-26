@@ -142,6 +142,24 @@ func databaseForConnectedTab(tab sqlTabState, connectionID string, databases []s
 	return tab.Database, false
 }
 
+// saveActiveSQLTabState 将活动编辑器、结果数据和结果视图设置完整归档到当前标签。
+func (s *workspace) saveActiveSQLTabState() {
+	if s == nil || s.sqlWorkspace == nil {
+		return
+	}
+	tabID := s.sqlWorkspace.ActiveID()
+	if tabID == 0 {
+		return
+	}
+	s.sqlWorkspace.UpdateSQL(tabID, s.queryEditor.Text())
+	current := s.sqlTabStates[tabID]
+	current.Columns = append([]query.Column(nil), s.queryColumns...)
+	current.Data = cloneQueryRows(s.queryData)
+	current.Status = s.queryStatus
+	s.saveResultViewState(&current)
+	s.sqlTabStates[tabID] = current
+}
+
 func (s *workspace) closeSQLTab(index int) {
 	items := s.sqlWorkspace.Items()
 	if index < 0 || index >= len(items) {
@@ -151,11 +169,7 @@ func (s *workspace) closeSQLTab(index int) {
 	activeID := s.sqlWorkspace.ActiveID()
 	if tabID == activeID {
 		s.cancelActiveQuery("查询已取消（关闭标签页）")
-		current := s.sqlTabStates[tabID]
-		s.sqlWorkspace.UpdateSQL(tabID, s.queryEditor.Text())
-		current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
-		s.saveResultViewState(&current)
-		s.sqlTabStates[tabID] = current
+		s.saveActiveSQLTabState()
 	}
 
 	if len(items) == 1 {
@@ -200,11 +214,7 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 		return
 	}
 	s.cancelActiveQuery("查询已取消（切换标签页）")
-	current := s.sqlTabStates[activeID]
-	s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
-	current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
-	s.saveResultViewState(&current)
-	s.sqlTabStates[activeID] = current
+	s.saveActiveSQLTabState()
 	s.sqlWorkspace.Activate(tabID)
 	next := s.sqlTabStates[tabID]
 	nextTab, _ := s.sqlWorkspace.Get(tabID)
