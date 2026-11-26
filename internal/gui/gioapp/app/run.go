@@ -251,9 +251,7 @@ type workspace struct {
 	queryCancel       widget.Clickable
 	queryRuntimeState
 
-	queryColumns      []queryapp.Column
-	queryData         [][]any
-	queryStatus       string
+	queryResultState
 	queryRowLimit     int
 	settingsToggle    widget.Clickable
 	settingsVisible   bool
