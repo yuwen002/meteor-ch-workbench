@@ -56,7 +56,7 @@ func (s *workspace) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
 	maxWidth := gtx.Constraints.Max.X - gtx.Dp(unit.Dp(32))
 	if width > maxWidth { width = maxWidth }
 	if width < gtx.Dp(unit.Dp(260)) { width = maxWidth }
-	height := gtx.Dp(unit.Dp(310))
+	height := gtx.Dp(unit.Dp(400))
 	if height > gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32)) { height = gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32)) }
 	if width < 1 || height < 1 { return layout.Dimensions{} }
 	gtx.Constraints.Min = image.Pt(width, height)
