@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
+	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
 
 func TestEnqueueQueryEventAppliesBackpressure(t *testing.T) {
@@ -124,3 +127,76 @@ func TestQueryEventIsApplicableRejectsStaleOrClosedTab(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleQueryResultIgnoresEventForClosedTab(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	closed := tabs.ActiveID()
+	active := tabs.Create()
+	if _, ok := tabs.Close(closed); !ok {
+		t.Fatal("expected the original tab to close")
+	}
+	var execution workspaceui.QueryExecution
+	seq := execution.Start(closed)
+	state := &workspace{
+		sqlWorkspace: tabs,
+		sqlTabStates: map[workspaceui.TabID]sqlTabState{
+			closed: {Status: "关闭前状态", Data: [][]any{{"keep"}}},
+		},
+		queryExecution: execution,
+		queryStatus: "当前标签状态",
+		queryColumns: []queryapp.Column{{Name: "keep"}},
+		queryData: [][]any{{"active"}},
+	}
+	state.handleQueryResult(queryEvent{
+		seq: seq, tab: closed, done: true, sql: "SELECT 1",
+		columns: []queryapp.Column{{Name: "stale"}},
+		batch: [][]any{{"stale"}},
+	})
+
+	if tabs.ActiveID() != active {
+		t.Fatalf("active tab = %d, want %d", tabs.ActiveID(), active)
+	}
+	if state.queryStatus != "当前标签状态" || len(state.queryColumns) != 1 || state.queryColumns[0].Name != "keep" {
+		t.Fatalf("closed-tab event changed active result state: status=%q columns=%v", state.queryStatus, state.queryColumns)
+	}
+	if got := state.sqlTabStates[closed].Status; got != "关闭前状态" {
+		t.Fatalf("closed tab status = %q, want unchanged", got)
+	}
+	if state.queryExecution.IsCurrent(seq, closed) != true {
+		t.Fatal("test setup should retain the generation; tab existence alone must reject the event")
+	}
+}
+
+func TestHandleQueryResultIgnoresSupersededGeneration(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	var execution workspaceui.QueryExecution
+	oldSeq := execution.Start(tabID)
+	currentSeq := execution.Start(tabID)
+	state := &workspace{
+		sqlWorkspace: tabs,
+		sqlTabStates: map[workspaceui.TabID]sqlTabState{
+			tabID: {Status: "当前标签状态"},
+		},
+		queryExecution: execution,
+		queryStatus: "当前查询状态",
+		queryColumns: []queryapp.Column{{Name: "current"}},
+		queryData: [][]any{{"current"}},
+	}
+	state.handleQueryResult(queryEvent{
+		seq: oldSeq, tab: tabID, done: true, sql: "SELECT 'old'",
+		columns: []queryapp.Column{{Name: "old"}},
+		batch: [][]any{{"old"}},
+	})
+
+	if !state.queryExecution.IsCurrent(currentSeq, tabID) {
+		t.Fatal("stale completion must not finish the newer query")
+	}
+	if state.queryStatus != "当前查询状态" || len(state.queryColumns) != 1 || state.queryColumns[0].Name != "current" {
+		t.Fatalf("stale event changed current query state: status=%q columns=%v", state.queryStatus, state.queryColumns)
+	}
+	if got := state.sqlTabStates[tabID].Status; got != "当前标签状态" {
+		t.Fatalf("tab status = %q, want unchanged", got)
+	}
+}
+
