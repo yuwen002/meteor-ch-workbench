@@ -343,3 +343,11 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - `goWorker` 通过 `lifecycleMu` 将关闭状态检查和 `WaitGroup.Add` 串行化；`shutdownWorkers` 关闭任务入口、取消 Context 后等待已登记任务。
 - 最新代码验收基线：`280e603b05a7d245a6ea039fb87f02be320d7a46`；CI Run `45778693845` 的 Linux / Windows 测试、vet 与预览构建均成功。
 - 导出数据写入阶段响应生命周期取消；系统文件保存对话框仍不能由 Context 主动中断，桌面端关闭行为待实机验证。
+
+
+### 保存对话框与窗口关闭解耦（2026-11-26）
+- Gio Explorer 的原生 CreateFile 不提供 Context 取消能力，因此不能放入 shutdownWorkers 的 WaitGroup，否则窗口关闭会等待用户完成对话框操作。
+- 保存对话框调用拆为独立等待阶段；返回后先检查窗口生命周期，若窗口已关闭则关闭并尝试删除目标文件，不再启动写入任务。
+- goWorker 返回是否成功登记，处理“文件对话框返回时窗口已开始关闭”的竞态；登记失败会关闭并清理刚创建的文件。
+- invalidateIfActive 在生命周期锁内检查关闭状态并调用窗口 Invalidate，避免独立对话框 goroutine 在窗口销毁后访问窗口。
+- 当前仍需目标桌面平台验证原生对话框是否随父窗口正常关闭；CI 不能替代此项验证。
