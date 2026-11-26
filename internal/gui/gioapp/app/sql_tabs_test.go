@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/unit"
+	"gioui.org/widget"
+
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
@@ -113,5 +116,48 @@ func TestCancelActiveQueryInvalidatesPendingEvents(t *testing.T) {
 	}
 	if state.queryCancelFunc != nil {
 		t.Fatal("query cancel function should be cleared")
+	}
+}
+
+func TestSQLTabResultViewStateRoundTrip(t *testing.T) {
+	columns := []query.Column{{Name: "name"}, {Name: "count"}}
+	state := &workspace{
+		queryColumns:        columns,
+		queryData:           [][]any{{"alpha", int64(2)}},
+		resultFilter:        widget.Editor{},
+		resultSortColumn:    1,
+		resultSortDescending: true,
+		columnWidths:        []unit.Dp{140, 220},
+		columnFilterEditors: make([]widget.Editor, 2),
+	}
+	state.resultFilter.SetText("alpha")
+	state.columnFilterEditors[0].SetText("alpha")
+	state.columnFilterEditors[1].SetText(">1")
+
+	var tab sqlTabState
+	state.saveResultViewState(&tab)
+
+	// 修改原始切片，确保归档状态不与工作区共享底层数组。
+	state.columnWidths[0] = 300
+	state.columnFilterEditors[0].SetText("changed")
+
+	state.queryColumns = columns
+	state.resetResultWidgets(columns)
+	state.restoreResultViewState(tab)
+
+	if got := state.resultFilter.Text(); got != "alpha" {
+		t.Fatalf("global filter = %q, want alpha", got)
+	}
+	if got := state.columnFilterEditors[0].Text(); got != "alpha" {
+		t.Fatalf("first column filter = %q, want alpha", got)
+	}
+	if got := state.columnFilterEditors[1].Text(); got != ">1" {
+		t.Fatalf("second column filter = %q, want >1", got)
+	}
+	if state.resultSortColumn != 1 || !state.resultSortDescending {
+		t.Fatalf("sort = (%d, %t), want (1, true)", state.resultSortColumn, state.resultSortDescending)
+	}
+	if len(state.columnWidths) != 2 || state.columnWidths[0] != 140 || state.columnWidths[1] != 220 {
+		t.Fatalf("column widths = %v, want [140 220]", state.columnWidths)
 	}
 }
