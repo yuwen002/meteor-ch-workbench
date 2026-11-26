@@ -13,7 +13,7 @@ func TestNewBuildsApplicationServices(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	defer services.Close()
 
-	if services.Connections == nil || services.Folders == nil || services.History == nil || services.SavedSQL == nil || services.Queries == nil || services.Metadata == nil {
+	if services.Connections == nil || services.Folders == nil || services.History == nil || services.SavedSQL == nil || services.Settings == nil || services.Queries == nil || services.Metadata == nil {
 		t.Fatal("新架构应用服务未完整装配")
 	}
 	if services.ConfigPath == "" || !filepath.IsAbs(services.ConfigPath) { t.Fatalf("连接配置路径应为绝对路径，得到 %q", services.ConfigPath) }
@@ -46,4 +46,23 @@ func TestDefaultDataDirUsesLegacyCompatibleDirectoryName(t *testing.T) {
 	configDir := filepath.Join("user", "config")
 	want := filepath.Join(configDir, "meteor-ch-workbench")
 	if got := defaultDataDir(configDir); got != want { t.Fatalf("默认配置目录 = %q，期望 %q", got, want) }
+}
+
+func TestSettingsPreferencesPersistInApplicationDataDirectory(t *testing.T) {
+	dataDir := t.TempDir()
+	services, err := New(dataDir)
+	if err != nil { t.Fatal(err) }
+	preferences, err := services.Settings.Load(context.Background())
+	if err != nil { t.Fatal(err) }
+	if preferences.QueryRowLimit != 10000 { t.Fatalf("default query row limit = %d, want 10000", preferences.QueryRowLimit) }
+	preferences.QueryRowLimit = 25000
+	if _, err := services.Settings.Save(context.Background(), preferences); err != nil { t.Fatal(err) }
+	if err := services.Close(); err != nil { t.Fatal(err) }
+
+	reloaded, err := New(dataDir)
+	if err != nil { t.Fatal(err) }
+	defer reloaded.Close()
+	got, err := reloaded.Settings.Load(context.Background())
+	if err != nil { t.Fatal(err) }
+	if got.QueryRowLimit != 25000 { t.Fatalf("persisted row limit = %d, want 25000", got.QueryRowLimit) }
 }
