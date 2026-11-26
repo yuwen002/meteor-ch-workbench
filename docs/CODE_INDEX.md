@@ -30,7 +30,7 @@ cmd/meteor-ch-gio
 - `internal/infrastructure/storage/historyfile`：兼容旧 `history.json` 数组格式的查询历史仓库。
 - `internal/infrastructure/storage/savedsqlfile`：兼容旧 `saved_sql.json` 数组格式的收藏 SQL 仓库。
 - `internal/platform/osfs`：本地文件系统适配。
-- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口、查询交互、SQL 标签页与结果布局。
+- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口与交互；`run.go` 负责主事件循环和布局编排，SQL 标签生命周期在 `sql_tabs.go`，查询事件生产/消费在 `query_events.go` / `query_result_consumer.go`，结果展示与筛选在 `result_view.go` / `result_panel.go`。
 - `internal/gui/gioapp/connection`：连接侧栏模型、样式和视图。
 - `internal/gui/gioapp/workspace`：与 Gio 控件解耦的 SQL 标签工作区模型。
 
@@ -75,7 +75,7 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 当前 head（本索引更新前）：`bb9677b7f821db9894fbb2b88897077a5d52beb8`
+- 当前 head（本索引更新前）：`328c7ac17fea0f63dc29f3ea715a6cc9087ca50e`
 - PR #1：Open / Draft / 未合并，base 为 `main`。
-- 对应 Go CI Run `45527241563`：Linux 测试、vet、构建及 Windows 测试、vet、构建均成功。
+- 对应 Go CI Run `45772171047`：Linux 与 Windows 均在 `go test ./...` 阶段失败，原因是 `sql_tabs.go` 调用了未定义的 `cloneQueryRows`；本轮已补齐实现和回归测试，修复后的 CI 结果以新 head 对应的 Actions 为准。
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
