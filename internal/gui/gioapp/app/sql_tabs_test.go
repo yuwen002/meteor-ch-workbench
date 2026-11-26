@@ -369,3 +369,40 @@ func TestSQLTabResultViewIgnoresChangedColumnType(t *testing.T) {
 		t.Fatal("column width from a different column type must not be restored")
 	}
 }
+
+func TestSaveActiveSQLTabStatePersistsEditorAndResultView(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	state := &workspace{
+		sqlWorkspace: tabs,
+		sqlTabStates: map[workspaceui.TabID]sqlTabState{tabID: {SortColumn: -1}},
+		queryEditor: widget.Editor{},
+		queryColumns: []query.Column{{Name: "name", DatabaseType: "String"}},
+		queryData: [][]any{{"alpha"}},
+		queryStatus: "查询完成",
+		resultFilter: widget.Editor{},
+		columnFilterEditors: []widget.Editor{{}},
+		resultSortColumn: 0,
+		resultSortDescending: true,
+		columnWidths: []unit.Dp{180},
+	}
+	state.queryEditor.SetText("SELECT name FROM users")
+	state.resultFilter.SetText("alpha")
+	state.columnFilterEditors[0].SetText("=alpha")
+	state.saveActiveSQLTabState()
+
+	tab, ok := tabs.Get(tabID)
+	if !ok || tab.Editor.Text() != "SELECT name FROM users" {
+		t.Fatalf("saved editor SQL = %q, want saved query", tab.Editor.Text())
+	}
+	saved := state.sqlTabStates[tabID]
+	if saved.Status != "查询完成" || len(saved.Columns) != 1 || len(saved.Data) != 1 {
+		t.Fatalf("saved result = status %q, columns %d, rows %d", saved.Status, len(saved.Columns), len(saved.Data))
+	}
+	if saved.FilterText != "alpha" || len(saved.ColumnFilters) != 1 || saved.ColumnFilters[0] != "=alpha" {
+		t.Fatalf("saved filters = %q / %v", saved.FilterText, saved.ColumnFilters)
+	}
+	if saved.SortColumn != 0 || !saved.SortDescending || len(saved.ColumnWidths) != 1 || saved.ColumnWidths[0] != 180 {
+		t.Fatalf("saved table preferences = sort(%d,%t) widths %v", saved.SortColumn, saved.SortDescending, saved.ColumnWidths)
+	}
+}
