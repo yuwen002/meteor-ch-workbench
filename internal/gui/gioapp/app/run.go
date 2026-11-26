@@ -593,6 +593,15 @@ func (s *workspace) selectDatabase(name string) {
 	}()
 }
 
+func databaseNameExists(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *workspace) drainResults() {
 	for {
 		select {
@@ -689,7 +698,7 @@ func (s *workspace) drainResults() {
 				if tabID := s.sqlWorkspace.ActiveID(); tabID != 0 {
 					tabState := s.sqlTabStates[tabID]
 					if tabState.ConnectionID == result.id && tabState.Database != "" {
-						if containsString(result.databases, tabState.Database) {
+						if databaseNameExists(result.databases, tabState.Database) {
 							s.selectDatabase(tabState.Database)
 						} else {
 							s.queryStatus = "此标签页上次使用的数据库已不存在：" + tabState.Database
