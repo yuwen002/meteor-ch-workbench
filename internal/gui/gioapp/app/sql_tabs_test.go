@@ -231,3 +231,24 @@ func TestSQLTabResultNavigationStateRoundTrip(t *testing.T) {
 		t.Fatal("selected cell pointer must be copied when restoring")
 	}
 }
+
+func TestSQLTabResultViewDoesNotRestoreStaleCellDetail(t *testing.T) {
+	columns := []query.Column{{Name: "new_payload", DatabaseType: "String"}}
+	state := &workspace{queryColumns: columns}
+	state.resetResultWidgets(columns)
+	state.restoreResultViewState(sqlTabState{
+		ColumnNames: []string{"old_payload"},
+		SelectedCell: &queryCellSelection{
+			row: 2,
+			column: query.Column{Name: "old_payload", DatabaseType: "String"},
+			value: "stale value",
+		},
+		DetailPosition: layout.Position{First: 4, Offset: 2},
+	})
+	if state.selectedQueryCell != nil {
+		t.Fatalf("stale selected cell should not be restored: %+v", state.selectedQueryCell)
+	}
+	if state.queryDetailRows.Position != (layout.Position{}) {
+		t.Fatalf("stale detail scroll position should be reset: %+v", state.queryDetailRows.Position)
+	}
+}
