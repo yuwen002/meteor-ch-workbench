@@ -143,9 +143,11 @@ func TestHandleQueryResultIgnoresEventForClosedTab(t *testing.T) {
 			closed: {Status: "关闭前状态", Data: [][]any{{"keep"}}},
 		},
 		queryRuntimeState: queryRuntimeState{queryExecution: execution},
-		queryStatus: "当前标签状态",
-		queryColumns: []queryapp.Column{{Name: "keep"}},
-		queryData: [][]any{{"active"}},
+		queryResultState: queryResultState{
+			queryStatus: "当前标签状态",
+			queryColumns: []queryapp.Column{{Name: "keep"}},
+			queryData: [][]any{{"active"}},
+		},
 	}
 	state.handleQueryResult(queryEvent{
 		seq: seq, tab: closed, done: true, sql: "SELECT 1",
@@ -179,9 +181,11 @@ func TestHandleQueryResultIgnoresSupersededGeneration(t *testing.T) {
 			tabID: {Status: "当前标签状态"},
 		},
 		queryRuntimeState: queryRuntimeState{queryExecution: execution},
-		queryStatus: "当前查询状态",
-		queryColumns: []queryapp.Column{{Name: "current"}},
-		queryData: [][]any{{"current"}},
+		queryResultState: queryResultState{
+			queryStatus: "当前查询状态",
+			queryColumns: []queryapp.Column{{Name: "current"}},
+			queryData: [][]any{{"current"}},
+		},
 	}
 	state.handleQueryResult(queryEvent{
 		seq: oldSeq, tab: tabID, done: true, sql: "SELECT 'old'",
@@ -209,8 +213,10 @@ func TestHandleQueryResultAppendsBatchesAndFinishesActiveQuery(t *testing.T) {
 	state := &workspace{
 		sqlWorkspace: tabs,
 		queryRuntimeState: queryRuntimeState{queryExecution: execution, queryRunning: true},
-		queryStatus: "正在执行 SQL…",
-		queryData: [][]any{{"first"}},
+		queryResultState: queryResultState{
+			queryStatus: "正在执行 SQL…",
+			queryData: [][]any{{"first"}},
+		},
 	}
 
 	state.handleQueryResult(queryEvent{
@@ -278,7 +284,9 @@ func TestDrainQueryResultsRespectsPerFrameBudget(t *testing.T) {
 		sqlWorkspace: tabs,
 		queryRuntimeState: queryRuntimeState{queryExecution: execution},
 		queryResults: make(chan queryEvent, queryResultQueueCapacity),
-		queryStatus: "保持当前查询状态",
+		queryResultState: queryResultState{
+			queryStatus: "保持当前查询状态",
+		},
 	}
 	for i := 0; i < queryResultQueueCapacity; i++ {
 		state.queryResults <- queryEvent{seq: uint64(i + 1), tab: tabID}
