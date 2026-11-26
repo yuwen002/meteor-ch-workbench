@@ -160,6 +160,49 @@ func TestExtendResultSortKeysGrowsCapacityGeometrically(t *testing.T) {
 	}
 }
 
+func TestPreparedResultColumnFiltersPreserveColumnPositions(t *testing.T) {
+	rows := [][]any{{"alpha", 3}, {"beta", 8}, {"gamma", 5}}
+	filters := prepareResultColumnFilters([]string{"", ">=5"})
+	if len(filters) != 2 {
+		t.Fatalf("prepared filter count = %d, want 2", len(filters))
+	}
+	if resultRowMatchesPreparedColumnFilters(rows[0], filters) {
+		t.Fatal("row below numeric threshold should not match")
+	}
+	if !resultRowMatchesPreparedColumnFilters(rows[1], filters) || !resultRowMatchesPreparedColumnFilters(rows[2], filters) {
+		t.Fatal("rows meeting numeric threshold should match")
+	}
+}
+
+func TestPreparedResultColumnFiltersKeepTextNumericTimeAndNullSemantics(t *testing.T) {
+	cases := []struct {
+		name string
+		value any
+		expression string
+		want bool
+	}{
+		{name: "text equal", value: "ClickHouse", expression: "=clickhouse", want: true},
+		{name: "text contains", value: "ClickHouse Server", expression: "click", want: true},
+		{name: "text not contains", value: "ClickHouse", expression: "!mysql", want: true},
+		{name: "numeric greater", value: int64(12), expression: ">=10", want: true},
+		{name: "numeric between", value: int64(12), expression: "between:10..15", want: true},
+		{name: "numeric reversed range", value: int64(12), expression: "between:15..10", want: false},
+		{name: "timestamp greater", value: "2026-11-26 12:00:00", expression: ">2026-11-26 11:00:00", want: true},
+		{name: "timestamp between", value: "2026-11-26", expression: "between:2026-11-25..2026-11-27", want: true},
+		{name: "null", value: nil, expression: "is:null", want: true},
+		{name: "not null", value: "x", expression: "is:not-null", want: true},
+		{name: "invalid range", value: 12, expression: "between:bad", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := preparedResultColumnFilterFor(tc.expression).matches(tc.value)
+			if got != tc.want {
+				t.Fatalf("matches(%#v, %q) = %v, want %v", tc.value, tc.expression, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResultRowMatchesLowerFilter(t *testing.T) {
 	row := []any{"ClickHouse", int64(42), nil}
 	if !resultRowMatchesLowerFilter(row, "click") {
