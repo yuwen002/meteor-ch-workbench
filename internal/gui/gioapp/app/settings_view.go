@@ -19,7 +19,7 @@ func (s *workspace) openSettings() {
 	s.settingsVisible = true
 	s.settingsStatus = ""
 	s.settingsRowLimitEditor.SetText(strconv.Itoa(s.queryRowLimit))
-	s.settingsRatioEditor.SetText(strconv.FormatFloat(s.settingsPreferences.EditorRatio, "f", 2, 64))
+	s.settingsRatioEditor.SetText(strconv.FormatFloat(s.settingsPreferences.EditorRatio, 'f', 2, 64))
 }
 
 func (s *workspace) saveSettings() {
