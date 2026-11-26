@@ -75,9 +75,9 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 当前 head（本索引更新前）：`97babdddccb81c71a386a4c5d40b7475e635d0b6`
+- 当前代码验收基线：`a3394899ae7e6ce87f0e7794ce8ceefdfc10087d`（窗口关闭任务入口竞态修复与并发测试）
 - PR #1：Open / Draft / 未合并，base 为 `main`。
-- 对应 Go CI Run `45773594090`：Linux 测试、vet、Gio 预览构建和 Artifact 上传成功；Windows 测试在当时检查时仍在执行。后续 `cloneQueryRows` 修复及本轮标签控件变更已触发新的 CI，验收必须以 `97babdd` 或其后最新 head 的 Actions 为准。
+- 对应 Go CI Run `45778582177`：该代码验收基线的 Linux / Windows 检查已触发，检查结果以 Actions 页面为准；文档提交后仍需以新 head 的 CI 作为最终验收。
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
 
 
@@ -94,6 +94,8 @@ cmd/meteor-ch-gio
 - internal/gui/gioapp/app/lifecycle.go 提供 lifecycleParent 和 goWorker：后台任务统一继承窗口生命周期 Context，并登记到 workspace.workers。
 - run.go 收到 gio.DestroyEvent 后先取消生命周期和当前请求，再等待已登记任务退出；Run 返回后，窗口 goroutine 关闭 runDone；main 在 gio.Main() 返回后等待 runDone，再由 defer services.Close() 关闭 ClickHouse 连接池。
 - 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果导出均纳入后台任务登记。文件选择器由 Gio Explorer 提供，关闭行为仍需在目标桌面平台实测。
-- lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务，以及父 Context 选择。
+- lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务、并发注册与关闭竞态，以及父 Context 选择；`lifecycleMu` 保证任务入口关闭与 WaitGroup.Add 串行化。
 - result_export.go 的 writeResultExportContext 在每行写入前检查生命周期 Context；窗口关闭后停止继续处理大型 CSV / TSV 导出，关闭文件并尝试清理不完整的本地文件。Gio Explorer 的文件保存对话框本身仍需用户关闭或返回，当前 API 不支持由 Context 主动打断对话框。
 - result_export_test.go 覆盖已取消 Context 下不写出表头或数据。
+
+- `internal/infrastructure/clickhouse/pool_test.go` 验证 `PoolManager.Close()` 会关闭已创建的 `sql.DB`，关闭后不能再获取连接，且重复调用关闭保持幂等。
