@@ -108,4 +108,4 @@ cmd/meteor-ch-gio
 - `cmd/meteor-ch-gio/screen_size.go` 提供工作区尺寸到 Gio Dp 尺寸的限幅计算；`screen_size_windows.go` 读取 Windows 主显示器工作区和系统 DPI；`screen_size_other.go` 为非 Windows 暂提供保守默认值。
 - `screen_size_test.go` 覆盖大屏、标准屏、小屏和无效输入回退。Windows / macOS / Linux 实机显示比例仍需验收。
 
-- `internal/gui/gioapp/app/settings_view.go`：工作台设置面板，目前提供查询结果行数上限、侧栏折叠和编辑器高度比例设置。
+- `internal/gui/gioapp/app/settings_view.go`：工作台设置面板，提供深浅色主题切换、查询结果行数上限、侧栏折叠和编辑器高度比例设置；主题令牌集中在 `theme.go`，由 `setPalette` 统一切换。
