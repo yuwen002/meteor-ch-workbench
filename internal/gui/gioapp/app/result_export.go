@@ -50,7 +50,7 @@ func (s *workspace) startExport(format string) {
 	s.exportRunning = true
 	s.queryStatus = "正在导出当前结果…"
 
-	go func() {
+	s.goWorker(func() {
 		file, err := s.explorer.CreateFile("query-result." + format)
 		if err != nil {
 			s.exportResults <- exportResult{format: format, err: err, canceled: errors.Is(err, gioexplorer.ErrUserDecline)}
@@ -84,7 +84,7 @@ func (s *workspace) startExport(format string) {
 		default:
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func writeResultExport(w io.Writer, columns []queryapp.Column, rows []resultRowView, sourceRows [][]any, format string) error {
