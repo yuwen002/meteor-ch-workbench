@@ -929,9 +929,9 @@ func (s *workspace) layoutQueryPanel(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(s.divider),
 			layout.Rigid(s.layoutTabStrip),
 			layout.Rigid(s.divider),
-			layout.Flexed(s.settingsPreferences.EditorRatio, s.layoutSQLEditor),
+			layout.Flexed(float32(s.settingsPreferences.EditorRatio), s.layoutSQLEditor),
 			layout.Rigid(s.divider),
-			layout.Flexed(1-s.settingsPreferences.EditorRatio, s.layoutResultsPanel),
+			layout.Flexed(float32(1-s.settingsPreferences.EditorRatio), s.layoutResultsPanel),
 		)
 	})
 }
