@@ -200,6 +200,7 @@ func TestSQLTabResultNavigationStateRoundTrip(t *testing.T) {
 		value: "{\"ok\":true}",
 	}
 	state := &workspace{
+		queryColumns: []query.Column{{Name: "payload", DatabaseType: "String"}},
 		queryRows: widget.List{List: layout.List{Position: layout.Position{First: 12, Offset: 8}}},
 		queryHorizontal: widget.List{List: layout.List{Position: layout.Position{First: 0, Offset: -24}}},
 		queryDetailRows: widget.List{List: layout.List{Position: layout.Position{First: 3, Offset: 5}}},
