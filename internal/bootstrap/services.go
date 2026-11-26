@@ -11,12 +11,14 @@ import (
 	folderapp "github.com/yuwen002/meteor-ch-workbench/internal/application/folder"
 	historyapp "github.com/yuwen002/meteor-ch-workbench/internal/application/history"
 	savedsqlapp "github.com/yuwen002/meteor-ch-workbench/internal/application/savedsql"
+	settingsapp "github.com/yuwen002/meteor-ch-workbench/internal/application/settings"
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	chinfra "github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/connectionfile"
 	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/historyfile"
 	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/savedsqlfile"
+	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/settingsfile"
 )
 
 // Services 是新架构的应用服务容器。GUI 只需依赖这些应用层服务，不直接创建基础设施对象。
@@ -27,6 +29,7 @@ type Services struct {
 	Folders *folderapp.Service
 	History *historyapp.Service
 	SavedSQL *savedsqlapp.Service
+	Settings *settingsapp.Service
 	Queries     *queryapp.Service
 	Metadata    *metadataapp.Service
 	pools       *chinfra.PoolManager
@@ -70,6 +73,11 @@ func New(dataDir string) (*Services, error) {
 	savedSQL, err := savedsqlapp.NewService(savedSQLRepository, savedsqlfile.RandomIDGenerator{})
 	if err != nil { return fail(err) }
 
+	settingsRepository, err := settingsfile.New(filepath.Join(dataDir, "settings.json"))
+	if err != nil { return fail(err) }
+	settings, err := settingsapp.NewService(settingsRepository)
+	if err != nil { return fail(err) }
+
 	executor, err := chinfra.NewQueryExecutor(pools)
 	if err != nil {
 		return fail(err)
@@ -93,6 +101,7 @@ func New(dataDir string) (*Services, error) {
 		Folders: folders,
 		History: history,
 		SavedSQL: savedSQL,
+		Settings: settings,
 		Queries: queries,
 		Metadata: metadata,
 		pools: pools,
