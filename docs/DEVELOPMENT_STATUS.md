@@ -3,7 +3,7 @@
 > 本文是当前开发状态的快速入口，按代码是否接入、是否测试、是否完成桌面验收分开记录。
 > 最后更新：2026-11-27
 > 当前分支：`feat/native-gui-foundation`
-> 最近代码变更基线：Explorer 请求状态协调后发现 `sql_tabs.go` 遗留旧请求字段，导致 Run `45857092505` 的 Linux / Windows `go test ./...` 均失败；已修复调用并继续抽取 Explorer 选中状态，最新 head CI 结果待确认。
+> 最近代码变更基线：Explorer 选中状态已抽取；Run `45857969115` 的 Linux `go test ./...` 发现 `sql_tabs_test.go` 仍引用旧 workspace 字段，已在提交 `eb3f575` 修正，当前 head 的 CI Run `45858167585` 排队中。
 >
 > **统计规则：**「已实现」只表示代码路径已完成并接入，不自动等于本地测试通过或真实桌面验收通过。没有对应证据的项目不得标记为验收完成。本文不使用容易失真的单一迁移百分比。
 
@@ -162,3 +162,12 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 连接切换 / 删除时重置整个 Explorer 选择状态；数据库切换 / 折叠时清理上一个数据库的表、视图、表选择和表结构；选择表时清理旧结构，异步响应成功后再统一写入新结构。
 - 新增 3 组纯状态测试，覆盖数据库切换清理、连接重置、表结构设置与清理。当前尚未有本地 gofmt / test / vet / build 记录，等待最新 head CI 验证。
 - CI Run `45857092505` 的 Linux / Windows `go test ./...` 均失败，根因为 `sql_tabs.go` 两个重置方法仍引用已移除的 `requestSeq/cancelRequest`；已改为调用 `explorerRequests.Cancel()`，并统一使用 Explorer 状态模型清理选中上下文。后续提交 CI 尚待确认。
+
+
+## 10. 2026-11-27：修复 Explorer 状态拆分后的标签回归测试
+
+- CI Run [45857969115](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45857969115) 的 Linux `Test and build` 在 `go test ./...` 阶段失败；失败点不是生产代码，而是 `sql_tabs_test.go` 两个测试仍使用已嵌入 `explorerSelection` / `explorerRequestState` 取代的旧 workspace 字段。
+- 将测试初始化改为显式构造 `explorerSelection` 与 `explorerRequestState`，断言同步改为检查新状态对象；保留连接清理、数据库对象清理、取消函数释放和请求序号递增的原有验证意图。
+- 修复提交：`eb3f5754444193a418f0a7d83127e37a3ef29bf1`（`test(explorer): 同步标签连接测试与导航状态模型`）。
+- 新 head CI Run [45858167585](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45858167585) 已排队，尚无测试 / vet / build 通过结论；未执行本地 Go 命令，也未进行真实桌面验收。
+- PR #1 仍保持 Open / Draft / 未合并，base 为 `main`。
