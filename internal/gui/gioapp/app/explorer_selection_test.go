@@ -75,3 +75,25 @@ func TestExplorerSelectionSetSchemaAndClearSchema(t *testing.T) {
 		t.Fatalf("ClearSchema did not clear schema: columns=%#v details=%#v", state.columns, state.tableDetails)
 	}
 }
+
+func TestExplorerSelectionSelectTableClearsPreviousSchema(t *testing.T) {
+	state := explorerSelection{
+		selectedDatabase: "analytics",
+		selectedTable: "old_events",
+		selectedObject: "analytics.old_events",
+		columns: []metadataapp.Column{{Name: "old_id"}},
+		tableDetails: metadataapp.TableDetails{CreateTableQuery: "CREATE TABLE old_events"},
+	}
+
+	state.SelectTable("new_events")
+
+	if state.selectedTable != "new_events" {
+		t.Fatalf("selectedTable = %q, want new_events", state.selectedTable)
+	}
+	if state.columns != nil || !reflect.DeepEqual(state.tableDetails, metadataapp.TableDetails{}) {
+		t.Fatalf("previous table schema was not cleared: columns=%#v details=%#v", state.columns, state.tableDetails)
+	}
+	if state.selectedDatabase != "analytics" {
+		t.Fatalf("database selection changed unexpectedly: %q", state.selectedDatabase)
+	}
+}
