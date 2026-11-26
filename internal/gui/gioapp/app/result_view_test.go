@@ -133,3 +133,29 @@ func TestBuildResultRowViewWithPreparedSortKeysExtendsShortCache(t *testing.T) {
 		t.Fatalf("view with short cache = %#v", view)
 	}
 }
+
+func TestExtendResultSortKeysGrowsCapacityGeometrically(t *testing.T) {
+	rows := make([][]any, 128)
+	for i := range rows {
+		rows[i] = []any{i}
+	}
+	keys := extendResultSortKeys(rows, 0, nil)
+	if cap(keys) < len(keys) {
+		t.Fatalf("initial capacity %d is smaller than length %d", cap(keys), len(keys))
+	}
+	if cap(keys) == len(keys) {
+		t.Fatalf("expected spare capacity for the next streamed batch, got len=%d cap=%d", len(keys), cap(keys))
+	}
+	firstKey := &keys[0]
+
+	for i := 0; i < 32; i++ {
+		rows = append(rows, []any{128 + i})
+	}
+	keys = extendResultSortKeys(rows, 0, keys)
+	if &keys[0] != firstKey {
+		t.Fatal("cache reallocated before exhausting its reserved capacity")
+	}
+	if len(keys) != len(rows) {
+		t.Fatalf("key count = %d, want %d", len(keys), len(rows))
+	}
+}
