@@ -75,9 +75,9 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 当前代码验收基线：`a3394899ae7e6ce87f0e7794ce8ceefdfc10087d`（窗口关闭任务入口竞态修复与并发测试）
+- 当前代码验收基线：`280e603b05a7d245a6ea039fb87f02be320d7a46`（窗口关闭任务入口竞态修复、并发注册保护及导出取消）
 - PR #1：Open / Draft / 未合并，base 为 `main`。
-- 对应 Go CI Run `45778582177`：该代码验收基线的 Linux / Windows 检查已触发，检查结果以 Actions 页面为准；文档提交后仍需以新 head 的 CI 作为最终验收。
+- 对应 Go CI Run `45778693845`：当前验收基线的 Linux / Windows 测试、go vet 与预览构建均成功。nux / Windows 检查已触发，检查结果以 Actions 页面为准；文档提交后仍需以新 head 的 CI 作为最终验收。
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
 
 
@@ -96,6 +96,7 @@ cmd/meteor-ch-gio
 - 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果导出均纳入后台任务登记。文件选择器由 Gio Explorer 提供，关闭行为仍需在目标桌面平台实测。
 - lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务、并发注册与关闭竞态，以及父 Context 选择；`lifecycleMu` 保证任务入口关闭与 WaitGroup.Add 串行化。
 - result_export.go 的 writeResultExportContext 在每行写入前检查生命周期 Context；窗口关闭后停止继续处理大型 CSV / TSV 导出，关闭文件并尝试清理不完整的本地文件。Gio Explorer 的文件保存对话框本身仍需用户关闭或返回，当前 API 不支持由 Context 主动打断对话框。
-- result_export_test.go 覆盖已取消 Context 下不写出表头或数据。
+- `result_export_test.go` 覆盖已取消 Context 下不写出表头或数据，以及导出过程中取消后提前停止写入。
+- 当前导出限制：Gio Explorer 的 `CreateFile` 系统保存对话框不接受 Context；如果对话框尚未返回，窗口关闭等待仍可能被它延迟，需在 Windows / macOS / Linux 实机确认行为。
 
 - `internal/infrastructure/clickhouse/pool_test.go` 验证 `PoolManager.Close()` 会关闭已创建的 `sql.DB`，关闭后不能再获取连接，且重复调用关闭保持幂等。
