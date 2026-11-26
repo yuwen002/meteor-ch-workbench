@@ -91,7 +91,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, item connection.Connection,
 
 	for rows.Next() {
 		if err := execCtx.Err(); err != nil { return query.Summary{}, err }
-		if summary.RowCount >= int64(maxRows) {
+		if maxRows > 0 && summary.RowCount >= int64(maxRows) {
 			summary.Truncated = true
 			break
 		}
