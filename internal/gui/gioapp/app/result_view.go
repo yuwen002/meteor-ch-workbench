@@ -160,6 +160,7 @@ const (
 )
 
 type preparedResultColumnFilter struct {
+	active        bool
 	kind          resultColumnFilterKind
 	operator      string
 	expected      string
@@ -182,9 +183,10 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 	for _, raw := range filters {
 		expression := strings.TrimSpace(raw)
 		if expression == "" {
+			prepared = append(prepared, preparedResultColumnFilter{})
 			continue
 		}
-		condition := preparedResultColumnFilter{valid: true, expected: expression}
+		condition := preparedResultColumnFilter{active: true, valid: true, expected: expression}
 		if strings.EqualFold(expression, "is:null") || strings.EqualFold(expression, "is:not-null") {
 			condition.kind = resultColumnFilterNull
 			condition.operator = strings.ToLower(expression)
@@ -229,8 +231,10 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 		if condition.kind == resultColumnFilterCompare {
 			condition.number, condition.valid = new(big.Rat).SetString(strings.TrimSpace(condition.expected))
 			if !condition.valid {
-				condition.timestamp, errTime := parseResultTime(condition.expected)
+				parsedTime, errTime := parseResultTime(condition.expected)
+				condition.timestamp = parsedTime
 				condition.timeValid = errTime == nil
+				condition.valid = condition.timeValid
 			}
 		}
 		prepared = append(prepared, condition)
@@ -244,6 +248,9 @@ func resultRowMatchesColumnFilters(row []any, filters []string) bool {
 
 func resultRowMatchesPreparedColumnFilters(row []any, filters []preparedResultColumnFilter) bool {
 	for column, filter := range filters {
+		if !filter.active {
+			continue
+		}
 		if column >= len(row) || !filter.matches(row[column]) {
 			return false
 		}
@@ -252,6 +259,9 @@ func resultRowMatchesPreparedColumnFilters(row []any, filters []preparedResultCo
 }
 
 func (filter preparedResultColumnFilter) matches(value any) bool {
+	if !filter.active {
+		return true
+	}
 	if !filter.valid {
 		return false
 	}
