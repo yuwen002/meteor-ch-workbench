@@ -1,9 +1,9 @@
 # 开发进度与已完成功能
 
 > 本文是当前开发状态的快速入口，按代码是否接入、是否测试、是否完成桌面验收分开记录。
-> 最后更新：2026-11-26
+> 最后更新：2026-11-27
 > 当前分支：`feat/native-gui-foundation`
-> 最近代码变更基线：设置模块、查询行数上限、布局偏好及深浅色主题已通过 Linux / Windows CI；SQL 工作区布局已拆分到 `query_workspace_view.go`，本轮继续将对象导航树拆分到 `explorer_view.go`，最新 Explorer 拆分提交等待新 head CI。
+> 最近代码变更基线：Explorer 视图拆分及请求状态协调已完成代码提交；最新 head CI 正在执行，以最新 SHA 对应的 Actions 结果为准。
 >
 > **统计规则：**「已实现」只表示代码路径已完成并接入，不自动等于本地测试通过或真实桌面验收通过。没有对应证据的项目不得标记为验收完成。本文不使用容易失真的单一迁移百分比。
 
@@ -53,7 +53,8 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] 收藏 SQL 面板拆分与控件稳定绑定：最新提交 `16c0b432` 的 CI Run [45791265139](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45791265139) Linux / Windows 检查成功。
 - [x] 新架构设置模块、设置文件持久化、查询行数 / 侧栏 / 编辑器比例和深浅色主题切换已接入；提交 `ee5ff06` 对应 CI Run [45798026060](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45798026060) 的 Linux / Windows 检查成功。
 - [x] Explorer 视图拆分已通过 CI：提交 `54b10ac` 对应 Run [45855866259](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855866259)，Linux / Windows 测试、vet、预览构建成功。
-- [x] 提取 Explorer 元数据响应有效性判断到 `explorer_state.go`，新增 `explorer_state_test.go`，覆盖过期序号、连接、数据库和表的响应过滤；当前提交待最新 head CI。
+- [x] 提取 Explorer 元数据响应有效性判断到 `explorer_state.go`，覆盖过期序号、连接、数据库和表的响应过滤。
+- [x] 新增 `explorer_request_state.go`，统一管理 Explorer 请求序号与当前取消函数；开始新请求时取消旧请求，关闭窗口时取消并使排队响应失效。
 
 **注意：** GitHub Actions 成功只能证明对应提交在 CI 环境中的测试、静态检查和构建通过，不等于真实桌面交互已验收。
 
@@ -142,3 +143,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] 将表结构响应校验提取为 `isCurrentSchemaResult`，额外检查表名，避免切换表后迟到的旧表结构覆盖新选择。
 - [x] 新增 `explorer_state_test.go`，覆盖当前响应、旧序号、不同连接、不同数据库和不同表等场景。
 - [ ] 最新提交的 Linux / Windows CI 尚待完成；未声称本地测试已执行。
+
+### 2026-11-27：Explorer 请求生命周期状态收敛
+
+- 将 `requestSeq` 与 `cancelRequest` 从 `workspace` 字段收敛到 `explorerRequestState`，由 `Begin`、`Cancel`、`Sequence` 统一管理。
+- 连接测试 / 数据库列表、数据库对象列表、表结构请求均通过同一状态对象生成请求序号并登记取消函数；切换目标时会先取消上一请求。
+- 窗口 DestroyEvent 调用 `Cancel`，既取消当前 Explorer 请求，也递增序号，避免已经进入结果队列的响应在关闭路径继续被当作有效数据。
+- 新增请求状态测试，覆盖新请求取消旧请求、显式取消使序号失效、取消后仍可开始新请求。
+- 本轮代码已提交，最新 head CI 尚待完成；未执行本地 gofmt / go test / go vet / build，也未进行真实桌面验收。
