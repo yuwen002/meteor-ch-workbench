@@ -115,7 +115,10 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		return err
 	}
 	explorer := gioexplorer.NewExplorer(window)
+	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
 	state := &workspace{
+		lifecycleCtx: lifecycleCtx,
+		cancelLifecycle: cancelLifecycle,
 		window:           window,
 		explorer:         explorer,
 		services:         services,
@@ -164,6 +167,9 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		state.explorer.ListenEvents(event)
 		switch e := event.(type) {
 		case gio.DestroyEvent:
+			if state.cancelLifecycle != nil {
+				state.cancelLifecycle()
+			}
 			if state.cancelRequest != nil {
 				state.cancelRequest()
 			}
@@ -181,6 +187,8 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 
 type workspace struct {
 	window            *gio.Window
+	lifecycleCtx      context.Context
+	cancelLifecycle   context.CancelFunc
 	services          *bootstrap.Services
 	connections       *connectionui.Model
 	connectionView    *connectionui.View
