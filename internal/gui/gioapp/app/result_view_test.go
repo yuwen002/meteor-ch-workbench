@@ -159,3 +159,27 @@ func TestExtendResultSortKeysGrowsCapacityGeometrically(t *testing.T) {
 		t.Fatalf("key count = %d, want %d", len(keys), len(rows))
 	}
 }
+
+func TestResultRowMatchesLowerFilter(t *testing.T) {
+	row := []any{"ClickHouse", int64(42), nil}
+	if !resultRowMatchesLowerFilter(row, "click") {
+		t.Fatal("case-insensitive keyword should match string values")
+	}
+	if !resultRowMatchesLowerFilter(row, "42") {
+		t.Fatal("keyword should match formatted numeric values")
+	}
+	if !resultRowMatchesLowerFilter(row, "null") {
+		t.Fatal("keyword should match NULL values")
+	}
+	if resultRowMatchesLowerFilter(row, "missing") {
+		t.Fatal("unmatched keyword should not match the row")
+	}
+}
+
+func TestBuildResultRowViewNormalizesGlobalFilterOnceSemantically(t *testing.T) {
+	rows := [][]any{{"Alpha"}, {"BETA"}, {"gamma"}}
+	got := buildResultRowView(rows, "  bEtA  ", -1, false)
+	if len(got) != 1 || got[0].Index != 1 {
+		t.Fatalf("case-insensitive trimmed filter = %#v, want row 1", got)
+	}
+}
