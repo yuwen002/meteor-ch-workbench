@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
 
@@ -189,5 +190,44 @@ func TestSQLTabResultViewStateIgnoresChangedColumnSchema(t *testing.T) {
 	}
 	if state.columnWidths[0] == 280 || state.columnWidths[1] == 300 {
 		t.Fatalf("column widths from a different result schema must not be restored: %v", state.columnWidths)
+	}
+}
+
+func TestSQLTabResultNavigationStateRoundTrip(t *testing.T) {
+	selection := &queryCellSelection{
+		row: 7,
+		column: query.Column{Name: "payload", DatabaseType: "String"},
+		value: "{\"ok\":true}",
+	}
+	state := &workspace{
+		queryRows: widget.List{Position: layout.Position{First: 12, Offset: 8}},
+		queryHorizontal: widget.List{Position: layout.Position{First: 0, Offset: -24}},
+		queryDetailRows: widget.List{Position: layout.Position{First: 3, Offset: 5}},
+		selectedQueryCell: selection,
+	}
+	var tab sqlTabState
+	state.saveResultViewState(&tab)
+
+	// 后续修改当前工作区，不应污染已保存的标签状态。
+	state.queryRows.Position = layout.Position{}
+	state.queryHorizontal.Position = layout.Position{}
+	state.queryDetailRows.Position = layout.Position{}
+	state.selectedQueryCell.value = "changed"
+
+	state.restoreResultViewState(tab)
+	if state.queryRows.Position != (layout.Position{First: 12, Offset: 8}) {
+		t.Fatalf("result position = %+v", state.queryRows.Position)
+	}
+	if state.queryHorizontal.Position != (layout.Position{First: 0, Offset: -24}) {
+		t.Fatalf("horizontal position = %+v", state.queryHorizontal.Position)
+	}
+	if state.queryDetailRows.Position != (layout.Position{First: 3, Offset: 5}) {
+		t.Fatalf("detail position = %+v", state.queryDetailRows.Position)
+	}
+	if state.selectedQueryCell == nil || state.selectedQueryCell.value != "{\"ok\":true}" {
+		t.Fatalf("selected cell was not restored: %+v", state.selectedQueryCell)
+	}
+	if state.selectedQueryCell == tab.SelectedCell {
+		t.Fatal("selected cell pointer must be copied when restoring")
 	}
 }
