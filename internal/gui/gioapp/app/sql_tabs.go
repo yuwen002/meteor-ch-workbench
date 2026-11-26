@@ -94,6 +94,10 @@ func (s *workspace) restoreResultViewState(state sqlTabState) {
 	}
 }
 
+func shouldPreserveTabDatabase(currentConnectionID, targetConnectionID string, explicitlyPreserve bool) bool {
+	return explicitlyPreserve || (currentConnectionID != "" && currentConnectionID == targetConnectionID)
+}
+
 func resultColumnExists(columns []query.Column, target query.Column) bool {
 	for _, column := range columns {
 		if column.Name == target.Name && column.DatabaseType == target.DatabaseType {
