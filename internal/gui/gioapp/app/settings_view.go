@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/color"
 	"strconv"
 	"strings"
 	"time"
