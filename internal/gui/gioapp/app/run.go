@@ -263,6 +263,8 @@ type workspace struct {
 	settingsVisible   bool
 	settingsRowLimitEditor widget.Editor
 	settingsStatus    string
+	settingsSave      widget.Clickable
+	settingsCancel    widget.Clickable
 	settingsPreferences settingsdomain.Preferences
 
 	resultView           []resultRowView
