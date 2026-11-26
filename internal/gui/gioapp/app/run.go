@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"image/color"
 	"sync"
 	"time"
 
