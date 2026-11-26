@@ -33,9 +33,10 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 // 缓存只包含当前排序列的键，不复制原始结果行。
 func buildResultRowViewWithPreparedSortKeys(rows [][]any, filter string, columnFilters []string, sortColumn int, descending bool, sortKeys []resultSortKey) []resultRowView {
 	filter = strings.TrimSpace(filter)
+	filterNeedle := strings.ToLower(filter)
 	view := make([]resultRowView, 0, len(rows))
 	for i, row := range rows {
-		if filter != "" && !resultRowMatchesFilter(row, filter) {
+		if filterNeedle != "" && !resultRowMatchesLowerFilter(row, filterNeedle) {
 			continue
 		}
 		if !resultRowMatchesColumnFilters(row, columnFilters) {
@@ -273,9 +274,17 @@ func resultValueMatchesFilter(value any, filter string) bool {
 }
 
 func resultRowMatchesFilter(row []any, filter string) bool {
-	needle := strings.ToLower(filter)
+	return resultRowMatchesLowerFilter(row, strings.ToLower(filter))
+}
+
+// resultRowMatchesLowerFilter 接收已标准化的关键词，避免每一行重复转换筛选词大小写。
+func resultRowMatchesLowerFilter(row []any, needle string) bool {
 	for _, value := range row {
-		if resultValueMatchesFilter(value, needle) {
+		text := "NULL"
+		if value != nil {
+			text = fmt.Sprint(value)
+		}
+		if strings.Contains(strings.ToLower(text), needle) {
 			return true
 		}
 	}
