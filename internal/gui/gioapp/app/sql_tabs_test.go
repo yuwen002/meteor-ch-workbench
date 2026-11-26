@@ -50,6 +50,22 @@ func TestSQLTabStateNewColumnsResetPreviousRows(t *testing.T) {
 	}
 }
 
+func TestSQLTabStateApplyPreservesConnectionContext(t *testing.T) {
+	state := sqlTabState{
+		ConnectionID:   "connection-a",
+		ConnectionName: "生产集群",
+	}
+	state.Apply(queryEvent{
+		columns: []query.Column{{Name: "value"}},
+		batch:   [][]any{{int64(1)}},
+		done:    true,
+		summary: query.Summary{RowCount: 1},
+	})
+	if state.ConnectionID != "connection-a" || state.ConnectionName != "生产集群" {
+		t.Fatalf("query result should not change tab connection context: id=%q name=%q", state.ConnectionID, state.ConnectionName)
+	}
+}
+
 func TestSQLTabStateRecordsFailure(t *testing.T) {
 	state := sqlTabState{}
 	state.Apply(queryEvent{done: true, err: errors.New("connection lost")})
