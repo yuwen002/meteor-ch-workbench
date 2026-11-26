@@ -161,6 +161,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		objectTreeList:   widget.List{List: layout.List{Axis: layout.Vertical}},
 		columnList:       widget.List{List: layout.List{Axis: layout.Vertical}},
 	}
+	state.applyTheme(preferences.Theme)
 	state.connectionView, err = connectionui.NewView(model, state.reloadConnections, state.selectConnection)
 	if err != nil {
 		return err
@@ -265,6 +266,7 @@ type workspace struct {
 	settingsRowLimitEditor widget.Editor
 	settingsRatioEditor widget.Editor
 	settingsSidebarToggle widget.Clickable
+	settingsThemeToggle widget.Clickable
 	settingsStatus    string
 	settingsSave      widget.Clickable
 	settingsCancel    widget.Clickable
