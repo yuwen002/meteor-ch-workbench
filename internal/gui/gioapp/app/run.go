@@ -512,6 +512,7 @@ func (s *workspace) drainResults() {
 					s.selectedID = ""
 					s.selectedName = ""
 					s.connected = false
+					s.explorerRequests.Cancel()
 					s.explorerSelection.ResetConnection()
 				}
 				s.status = "连接已删除"
