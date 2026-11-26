@@ -290,13 +290,14 @@ func TestRestoreSQLTabConnectionClearsUnboundTabContext(t *testing.T) {
 		selectedID: "connection-a",
 		selectedName: "生产集群",
 		connected: true,
-		selectedDatabase: "analytics",
-		selectedTable: "events",
-		selectedObject: "events",
-		databases: []string{"analytics"},
+		explorerSelection: explorerSelection{
+			selectedDatabase: "analytics",
+			selectedTable: "events",
+			selectedObject: "events",
+			databases: []string{"analytics"},
+		},
 		loading: "正在读取表和视图…",
-		requestSeq: 7,
-		cancelRequest: cancel,
+		explorerRequests: explorerRequestState{sequence: 7, cancel: cancel},
 	}
 	_ = ctx
 
@@ -305,11 +306,11 @@ func TestRestoreSQLTabConnectionClearsUnboundTabContext(t *testing.T) {
 	if state.selectedID != "" || state.selectedName != "" || state.connected {
 		t.Fatalf("unbound tab retained connection: id=%q name=%q connected=%t", state.selectedID, state.selectedName, state.connected)
 	}
-	if state.selectedDatabase != "" || state.selectedTable != "" || state.selectedObject != "" {
-		t.Fatalf("unbound tab retained database objects: database=%q table=%q object=%q", state.selectedDatabase, state.selectedTable, state.selectedObject)
+	if state.explorerSelection.selectedDatabase != "" || state.explorerSelection.selectedTable != "" || state.explorerSelection.selectedObject != "" {
+		t.Fatalf("unbound tab retained database objects: database=%q table=%q object=%q", state.explorerSelection.selectedDatabase, state.explorerSelection.selectedTable, state.explorerSelection.selectedObject)
 	}
-	if state.loading != "" || state.cancelRequest != nil || state.requestSeq <= 7 {
-		t.Fatalf("pending request was not invalidated: loading=%q cancel=%v seq=%d", state.loading, state.cancelRequest != nil, state.requestSeq)
+	if state.loading != "" || state.explorerRequests.cancel != nil || state.explorerRequests.sequence <= 7 {
+		t.Fatalf("pending request was not invalidated: loading=%q cancel=%v seq=%d", state.loading, state.explorerRequests.cancel != nil, state.explorerRequests.sequence)
 	}
 }
 
@@ -323,19 +324,21 @@ func TestRestoreSQLTabConnectionClearsDatabaseForSameConnection(t *testing.T) {
 		},
 		selectedID: "connection-a",
 		connected: true,
-		selectedDatabase: "analytics",
-		selectedTable: "events",
-		selectedObject: "events",
-		tables: []metadataapp.Object{{Name: "events"}},
-		views: []metadataapp.Object{{Name: "event_view"}},
-		requestSeq: 3,
+		explorerSelection: explorerSelection{
+			selectedDatabase: "analytics",
+			selectedTable: "events",
+			selectedObject: "events",
+			tables: []metadataapp.Object{{Name: "events"}},
+			views: []metadataapp.Object{{Name: "event_view"}},
+		},
+		explorerRequests: explorerRequestState{sequence: 3},
 	}
 	state.restoreSQLTabConnection(tabID)
-	if state.selectedDatabase != "" || state.selectedTable != "" || state.selectedObject != "" {
-		t.Fatalf("tab without saved database retained database context: database=%q table=%q object=%q", state.selectedDatabase, state.selectedTable, state.selectedObject)
+	if state.explorerSelection.selectedDatabase != "" || state.explorerSelection.selectedTable != "" || state.explorerSelection.selectedObject != "" {
+		t.Fatalf("tab without saved database retained database context: database=%q table=%q object=%q", state.explorerSelection.selectedDatabase, state.explorerSelection.selectedTable, state.explorerSelection.selectedObject)
 	}
-	if len(state.tables) != 0 || len(state.views) != 0 || state.requestSeq <= 3 {
-		t.Fatalf("database objects were not cleared: tables=%v views=%v seq=%d", state.tables, state.views, state.requestSeq)
+	if len(state.explorerSelection.tables) != 0 || len(state.explorerSelection.views) != 0 || state.explorerRequests.sequence <= 3 {
+		t.Fatalf("database objects were not cleared: tables=%v views=%v seq=%d", state.explorerSelection.tables, state.explorerSelection.views, state.explorerRequests.sequence)
 	}
 }
 
