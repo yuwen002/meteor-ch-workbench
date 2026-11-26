@@ -331,3 +331,13 @@ Gio 编辑区读取并恢复 `TabsManager` 保存的标签快照，支持新建�
 - CI 基线修正：Run `45772171047` 的 Linux 与 Windows 均在 `go test ./...` 阶段失败，根因是上一轮调用了尚未定义的 `cloneQueryRows`。本轮补齐实现和测试后已触发新 CI；需以新 head 的结果作为验收结论。
 - 同步更新 README、功能说明、代码索引和 API 文档标注，明确旧 Wails 功能清单/API 只作为历史迁移参考，不代表当前 Gio 版均已实现。
 - PR #1 继续保持 Open / Draft / 未合并，base 为 `main`。
+
+
+## 2026-11-26：SQL 标签控件稳定身份与关闭清理
+
+- 将 `sqlTabClicks`、`sqlTabCloseClicks` 从按列表索引排列的切片改为以稳定 `TabID` 为键的映射；布局渲染和关闭回调直接使用标签 ID，不再依赖可能变化的 index。
+- 新增 `ensureSQLTabClickables`，只为新出现的标签创建 Clickable；新增 `discardSQLTabClickables`，在标签关闭后释放对应的切换和关闭控件引用。
+- `closeSQLTab` 改为接收稳定 TabID，并在当前标签集合中解析索引；即使标签顺序发生变化，也不会误关闭其他标签。
+- 新增测试验证标签重排后 Clickable 指针仍与原 TabID 对应，以及删除标签时只清理目标标签控件。
+- 这次改动没有增加新的拖放排序手势；稳定 ID 映射为后续排序交互提供安全基础。现有排序模型测试仍验证活动标签身份在重排后保持不变。
+- CI 以本轮最新 head `97babddd` 对应的 Actions 为准；尚未声称本地桌面交互验收完成。
