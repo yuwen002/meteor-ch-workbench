@@ -219,12 +219,17 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 			continue
 		}
 		condition.kind = resultColumnFilterContains
-		for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<", "!"} {
-			if strings.HasPrefix(expression, candidate) {
-				condition.operator = candidate
-				condition.expected = strings.TrimSpace(strings.TrimPrefix(expression, candidate))
-				condition.kind = resultColumnFilterCompare
-				break
+		if strings.HasPrefix(expression, "!") && !strings.HasPrefix(expression, "!=") {
+			condition.operator = "!"
+			condition.expected = strings.TrimSpace(strings.TrimPrefix(expression, "!"))
+		} else {
+			for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<"} {
+				if strings.HasPrefix(expression, candidate) {
+					condition.operator = candidate
+					condition.expected = strings.TrimSpace(strings.TrimPrefix(expression, candidate))
+					condition.kind = resultColumnFilterCompare
+					break
+				}
 			}
 		}
 		condition.expectedLower = strings.ToLower(condition.expected)
