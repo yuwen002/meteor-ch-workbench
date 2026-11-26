@@ -34,26 +34,19 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 		view = append(view, resultRowView{Index: i})
 	}
 	if sortColumn >= 0 {
+		// 排序比较器会被调用 O(n log n) 次；提前为参与排序的行解析一次
+		// 数值 / 时间 / 文本键，避免在每次比较中重复 fmt.Sprint 和解析。
+		sortKeys := make([]resultSortKey, len(rows))
+		for _, item := range view {
+			row := rows[item.Index]
+			var value any
+			if sortColumn < len(row) {
+				value = row[sortColumn]
+			}
+			sortKeys[item.Index] = newResultSortKey(value)
+		}
 		sort.SliceStable(view, func(i, j int) bool {
-			leftRow := rows[view[i].Index]
-			rightRow := rows[view[j].Index]
-			var left, right any
-			if sortColumn < len(leftRow) {
-				left = leftRow[sortColumn]
-			}
-			if sortColumn < len(rightRow) {
-				right = rightRow[sortColumn]
-			}
-			if left == nil && right != nil {
-				return false
-			}
-			if left != nil && right == nil {
-				return true
-			}
-			if left == nil && right == nil {
-				return false
-			}
-			cmp := compareResultValues(left, right)
+			cmp := compareResultSortKeys(sortKeys[view[i].Index], sortKeys[view[j].Index])
 			if descending {
 				return cmp > 0
 			}
@@ -61,6 +54,62 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 		})
 	}
 	return view
+}
+
+// resultSortKey 将排序值的昂贵转换预计算一次，供稳定排序的比较器复用。
+type resultSortKey struct {
+	null      bool
+	numeric   bool
+	timeValid bool
+	number    big.Rat
+	timestamp time.Time
+	text      string
+}
+
+func newResultSortKey(value any) resultSortKey {
+	if value == nil {
+		return resultSortKey{null: true}
+	}
+	text := fmt.Sprint(value)
+	key := resultSortKey{text: strings.ToLower(text)}
+	_, key.numeric = key.number.SetString(strings.TrimSpace(text))
+	key.timestamp, _ = parseResultTime(text)
+	key.timeValid = !key.timestamp.IsZero()
+	return key
+}
+
+// compareResultSortKeys 保持原有排序语义：NULL 置底，随后依次尝试数值、时间和不区分大小写文本。
+func compareResultSortKeys(left, right resultSortKey) int {
+	if left.null && right.null {
+		return 0
+	}
+	if left.null {
+		return 1
+	}
+	if right.null {
+		return -1
+	}
+	if left.numeric && right.numeric {
+		return left.number.Cmp(&right.number)
+	}
+	if left.timeValid && right.timeValid {
+		switch {
+		case left.timestamp.Before(right.timestamp):
+			return -1
+		case left.timestamp.After(right.timestamp):
+			return 1
+		default:
+			return 0
+		}
+	}
+	switch {
+	case left.text < right.text:
+		return -1
+	case left.text > right.text:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func resultRowMatchesColumnFilters(row []any, filters []string) bool {
