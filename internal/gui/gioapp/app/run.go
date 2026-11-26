@@ -2004,6 +2004,7 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 	next := s.sqlTabStates[tabID]
 	nextTab, _ := s.sqlWorkspace.Get(tabID)
 	s.restoreSQLTabConnection(tabID)
+	next = s.sqlTabStates[tabID]
 	s.queryEditor.SetText(nextTab.Editor.Text())
 	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 	s.clearQueryCellSelection()
