@@ -370,6 +370,20 @@ func TestSQLTabResultViewIgnoresChangedColumnType(t *testing.T) {
 	}
 }
 
+func TestCloneQueryRowsCopiesRowsAndByteValues(t *testing.T) {
+	original := [][]any{{"text", []byte("payload")}}
+	cloned := cloneQueryRows(original)
+	original[0][0] = "changed"
+	original[0][1].([]byte)[0] = 'X'
+
+	if cloned[0][0] != "text" {
+		t.Fatalf("cloned text value = %v, want text", cloned[0][0])
+	}
+	if got := string(cloned[0][1].([]byte)); got != "payload" {
+		t.Fatalf("cloned byte value = %q, want payload", got)
+	}
+}
+
 func TestSaveActiveSQLTabStatePersistsEditorAndResultView(t *testing.T) {
 	tabs := workspaceui.NewTabs()
 	tabID := tabs.ActiveID()
