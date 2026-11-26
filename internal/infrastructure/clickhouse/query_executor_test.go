@@ -107,7 +107,7 @@ func TestQueryExecutorPropagatesBatchErrorAndClosesRows(t *testing.T) {
 	defer pools.Close()
 	queryTestRowsClosed = false
 	want := errors.New("consumer stopped")
-	_, err := executor.Execute(context.Background(), queryTestConnection(), query.Request{SQL: "select 1", BatchSize: 1}, nil, func([][]any) error { return want })
+	_, err := executor.Execute(context.Background(), queryTestConnection(), query.Request{SQL: "select 1", MaxRows: -1, BatchSize: 1}, nil, func([][]any) error { return want })
 	if !errors.Is(err, want) { t.Fatalf("未保留批次错误: %v", err) }
 	if !queryTestRowsClosed { t.Fatal("批次回调失败后必须关闭 rows") }
 }
