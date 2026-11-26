@@ -3,7 +3,7 @@
 > 本文是当前开发状态的快速入口，按代码是否接入、是否测试、是否完成桌面验收分开记录。
 > 最后更新：2026-11-27
 > 当前分支：`feat/native-gui-foundation`
-> 最近代码变更基线：Explorer 视图拆分及请求状态协调已完成代码提交；最新 head CI 正在执行，以最新 SHA 对应的 Actions 结果为准。
+> 最近代码变更基线：Explorer 请求状态协调后发现 `sql_tabs.go` 遗留旧请求字段，导致 Run `45857092505` 的 Linux / Windows `go test ./...` 均失败；已修复调用并继续抽取 Explorer 选中状态，最新 head CI 结果待确认。
 >
 > **统计规则：**「已实现」只表示代码路径已完成并接入，不自动等于本地测试通过或真实桌面验收通过。没有对应证据的项目不得标记为验收完成。本文不使用容易失真的单一迁移百分比。
 
@@ -55,13 +55,16 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] Explorer 视图拆分已通过 CI：提交 `54b10ac` 对应 Run [45855866259](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855866259)，Linux / Windows 测试、vet、预览构建成功。
 - [x] 提取 Explorer 元数据响应有效性判断到 `explorer_state.go`，覆盖过期序号、连接、数据库和表的响应过滤。
 - [x] 新增 `explorer_request_state.go`，统一管理 Explorer 请求序号与当前取消函数；开始新请求时取消旧请求，关闭窗口时取消并使排队响应失效。
+- [x] 新增 `explorer_selection.go`，聚合数据库 / 表 / 视图 / 字段与选中上下文；连接重置、数据库切换、表切换和结构清理通过状态方法完成。
+- [x] 修复 `sql_tabs.go` 仍引用旧 `requestSeq/cancelRequest` 的 CI 编译错误，统一使用 `explorerRequests.Cancel()`。
 
 **注意：** GitHub Actions 成功只能证明对应提交在 CI 环境中的测试、静态检查和构建通过，不等于真实桌面交互已验收。
 
 ## 4. 尚未完成 / 正在推进
 
 ### 高优先级：当前迁移主线
-- [ ] 继续将 Explorer 的请求序号、取消函数和当前导航上下文从 `workspace` 聚合到可独立测试的协调器；本轮仅抽取纯响应有效性判断，尚未迁移请求生命周期和 UI 控件状态。
+- [x] Explorer 请求序号 / 取消函数已聚合到 `explorerRequestState`；数据库 / 表 / 视图 / 字段与选中上下文已聚合到 `explorerSelection`，UI Clickable 仍由 workspace 持有。
+- [ ] 为 Explorer 补充快速切换连接 / 数据库 / 表、迟到响应、空数据库、刷新和窄窗口交互回归测试。
 - [ ] 将 workspace、editor、result、explorer、history、snippets、settings 按职责继续拆分；已有子模块不重复创建。
 - [ ] 检查所有后台 goroutine 和 `goWorker` 调用点，补齐生命周期边界测试。
 - [ ] 验证保存对话框在父窗口销毁后的真实平台行为，以及关闭后进程是否退出。
@@ -99,7 +102,7 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 
 ## 6. 当前开发顺序
 
-1. 等待 SQL 工作区布局拆分后的最新 head CI 完成；若失败，先按失败 job / step / 日志修复。
+1. 等待 Explorer 状态模型拆分后的最新 head CI 完成；若失败，先按失败 job / step / 日志修复。
 2. Windows 实机验收 app.Main 退出修复和不同 DPI / 屏幕尺寸下的初始窗口。
 3. 补充保存对话框返回、窗口关闭、任务登记失败等生命周期边界测试。
 4. 全量检查后台任务入口及窗口关闭后回调，排除遗漏的 goroutine 和窗口访问。
@@ -151,3 +154,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 窗口 DestroyEvent 调用 `Cancel`，既取消当前 Explorer 请求，也递增序号，避免已经进入结果队列的响应在关闭路径继续被当作有效数据。
 - 新增请求状态测试，覆盖新请求取消旧请求、显式取消使序号失效、取消后仍可开始新请求。
 - 本轮代码已提交，最新 head CI 尚待完成；未执行本地 gofmt / go test / go vet / build，也未进行真实桌面验收。
+
+
+## 9. 本轮开发记录：Explorer 选中上下文拆分（2026-11-27）
+
+- 新增 `explorer_selection.go`，聚合数据库列表、当前数据库 / 表 / 对象、表 / 视图列表、字段和表详情；workspace 通过嵌入该状态模型保持现有视图访问方式，避免一次性大范围改动控件引用。
+- 连接切换 / 删除时重置整个 Explorer 选择状态；数据库切换 / 折叠时清理上一个数据库的表、视图、表选择和表结构；选择表时清理旧结构，异步响应成功后再统一写入新结构。
+- 新增 3 组纯状态测试，覆盖数据库切换清理、连接重置、表结构设置与清理。当前尚未有本地 gofmt / test / vet / build 记录，等待最新 head CI 验证。
+- CI Run `45857092505` 的 Linux / Windows `go test ./...` 均失败，根因为 `sql_tabs.go` 两个重置方法仍引用已移除的 `requestSeq/cancelRequest`；已改为调用 `explorerRequests.Cancel()`，并统一使用 Explorer 状态模型清理选中上下文。后续提交 CI 尚待确认。
