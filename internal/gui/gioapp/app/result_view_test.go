@@ -12,8 +12,10 @@ import (
 func TestReleaseResultCellCachesKeepsArchivedQueryData(t *testing.T) {
 	rows := [][]any{{"retained", int64(7)}}
 	state := &workspace{
-		queryColumns: []queryapp.Column{{Name: "value"}},
-		queryData: rows,
+		queryResultState: queryResultState{
+			queryColumns: []queryapp.Column{{Name: "value"}},
+			queryData: rows,
+		},
 		queryCellClicks: map[int64]*widget.Clickable{1: new(widget.Clickable)},
 		resultCellText: map[int64]string{1: "cached"},
 		resultHeaderChildren: make([]layout.FlexChild, 0, 8),
