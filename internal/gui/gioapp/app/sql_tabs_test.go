@@ -20,7 +20,7 @@ func TestSwitchingToActiveSQLTabDoesNotCancelQuery(t *testing.T) {
 	activeID := tabs.ActiveID()
 	state := &workspace{
 		sqlWorkspace: tabs,
-		queryRunning: true,
+		queryRuntimeState: queryRuntimeState{queryRunning: true},
 		queryStatus: "正在执行 SQL…",
 	}
 	state.switchSQLTab(activeID)
@@ -121,10 +121,11 @@ func TestCancelActiveQueryInvalidatesPendingEvents(t *testing.T) {
 	seq := execution.Start(tabID)
 	cancelCalled := false
 	state := &workspace{
-		queryExecution: execution,
-		queryRunning: true,
-		queryStatus: "正在执行 SQL…",
-		queryCancelFunc: func() { cancelCalled = true },
+		queryRuntimeState: queryRuntimeState{
+			queryExecution: execution,
+			queryRunning: true,
+			queryCancelFunc: func() { cancelCalled = true },
+		},
 	}
 
 	state.cancelActiveQuery("查询已取消（切换连接）")
