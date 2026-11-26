@@ -8,6 +8,7 @@ import (
 type sqlTabState struct {
 	ConnectionID   string
 	ConnectionName string
+	Database       string
 	Columns        []query.Column
 	Data           [][]any
 	Status         string
