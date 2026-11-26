@@ -14,6 +14,19 @@ import (
 // 每个批次最多 128 行，因此容量为 8 时最多缓存约 1024 行结果。
 const queryResultQueueCapacity = 8
 
+// queryEvent 是 SQL 执行器向 Gio 工作区投递的不可变结果消息。
+type queryEvent struct {
+	seq     uint64
+	tab     workspaceui.TabID
+	columns []queryapp.Column
+	batch   [][]any
+	summary queryapp.Summary
+	sql string
+	connectionID string
+	err     error
+	done    bool
+}
+
 // enqueueQueryEvent 在队列有空间时写入事件；队列满时等待消费者，取消后立即返回。
 func enqueueQueryEvent(ctx context.Context, queue chan<- queryEvent, event queryEvent) error {
 	select {
