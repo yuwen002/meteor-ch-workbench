@@ -7,6 +7,7 @@ import (
 	"time"
 
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
+	"github.com/yuwen002/meteor-ch-workbench/internal/domain/queryhistory"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
 
