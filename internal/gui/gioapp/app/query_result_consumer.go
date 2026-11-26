@@ -62,3 +62,19 @@ func (s *workspace) handleQueryResult(result queryEvent) {
 		s.queryStatus = queryResultStatus(result, s.queryColumns)
 	}
 }
+
+
+// drainQueryResults 在单帧预算内消费查询事件；剩余事件留到下一帧继续处理。
+// maxQueryEventsPerFrame 限制单帧处理的查询消息数量，避免持续结果流独占 Gio 事件循环。
+const maxQueryEventsPerFrame = 4
+
+func (s *workspace) drainQueryResults() {
+	for processed := 0; processed < maxQueryEventsPerFrame; processed++ {
+		select {
+		case result := <-s.queryResults:
+			s.handleQueryResult(result)
+		default:
+			return
+		}
+	}
+}
