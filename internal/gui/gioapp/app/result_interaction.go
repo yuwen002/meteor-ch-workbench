@@ -137,6 +137,11 @@ func (s *workspace) refreshResultView() {
 		s.resultSortKeys = extendResultSortKeys(s.queryData, s.resultSortColumn, s.resultSortKeys)
 	}
 	s.resultView = buildResultRowViewWithPreparedSortKeys(s.queryData, s.resultFilter.Text(), filters, s.resultSortColumn, s.resultSortDescending, s.resultSortKeys)
+	if len(s.resultView) == 0 {
+		s.queryRows.Position = layout.Position{}
+	} else if s.queryRows.Position.First >= len(s.resultView) {
+		s.queryRows.Position.First = len(s.resultView) - 1
+	}
 	s.resultViewDirty = false
 }
 
