@@ -225,7 +225,6 @@ type workspace struct {
 	savedSQLRenameID  string
 	savedSQLRenameEditor widget.Editor
 	savedSQLRenameSave widget.Clickable
-	savedSQLRename []widget.Clickable
 	savedSQLListSeq   uint64
 	objectResults     chan objectsResult
 	schemaResults     chan schemaResult
