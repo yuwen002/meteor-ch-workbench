@@ -202,3 +202,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 首次 CI Run [45859859384](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45859859384) 的 Linux `go test ./...` 编译失败，根因是 `workspace` 已将 `queryColumns/queryData/queryStatus` 嵌入到 `queryResultState`，但 `query_events_test.go`、`result_view_test.go` 和 `sql_tabs_test.go` 的 workspace 复合字面量仍使用旧的提升字段名。Go 复合字面量不能通过字段提升初始化嵌入字段。
 - 已将上述测试初始化改为显式构造 `queryResultState{...}`，保留原断言意图；没有回退生产代码拆分。
 - 修复后的最新 head CI 尚在排队 / 执行，必须以最新 SHA 的 Linux / Windows 测试、vet 和构建结果作为验收结论。
+
+
+### 第二轮 CI 编译问题修复（2026-11-27）
+
+- head `aec331c595c3f40f0c31f60e2d1211ae8d99d777` 的 Linux 和 Windows `go test ./...` 均失败，Windows 日志给出了剩余位置：`sql_tabs_test.go:273`、`sql_tabs_test.go:368` 仍有内嵌字段 `queryColumns` 的单字段复合字面量。
+- 已将这两处初始化改为 `queryResultState: queryResultState{queryColumns: columns}`。这是同一类测试初始化遗漏，不涉及生产逻辑。
+- 修复提交后需继续以最新分支 head 的两平台 CI 结果验收；先前失败的 CI 不能作为最新提交的验收依据。
