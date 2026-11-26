@@ -75,9 +75,9 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 最近一个已确认完整成功的 CI 基线：`e99b27a32184bc842e57cd6f6162815604630eed`；之后保存对话框解耦等代码提交尚需以最新 head 的 CI 重新验收。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
+- 最近代码变更基线：`cdfe0c14ec401d36d0739bb4ce494c7c38c8d325`，对应 CI Run `45779342076` 的 Linux / Windows 检查均成功。后续文档提交的当前 head CI 仍需单独确认。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
 - PR #1：Open / Draft / 未合并，base 为 `main`。
-- 对应 Go CI Run `45779082597`：提交 `e99b27a` 的 Linux / Windows 测试、go vet 与预览构建均成功；不能将该结果视为后续提交的 CI 结果。
+
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
 
 
