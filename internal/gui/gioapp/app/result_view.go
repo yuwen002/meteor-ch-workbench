@@ -234,7 +234,7 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 				parsedTime, errTime := parseResultTime(condition.expected)
 				condition.timestamp = parsedTime
 				condition.timeValid = errTime == nil
-				condition.valid = condition.timeValid
+				condition.valid = condition.timeValid || condition.operator == "=" || condition.operator == "!="
 			}
 		}
 		prepared = append(prepared, condition)
