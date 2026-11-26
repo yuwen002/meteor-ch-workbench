@@ -511,6 +511,9 @@ func (s *workspace) reloadConnections() {
 }
 
 func (s *workspace) selectConnection(item connection.Connection) {
+	if s.queryRunning {
+		s.cancelActiveQuery("查询已取消（切换连接）")
+	}
 	s.selectedID = item.ID
 	s.selectedName = item.Name
 	s.connected = false
@@ -640,6 +643,9 @@ func (s *workspace) drainResults() {
 				s.status = "删除连接失败：" + result.err.Error()
 			} else {
 				if s.selectedID == result.id {
+					if s.queryRunning {
+						s.cancelActiveQuery("查询已取消（连接已删除）")
+					}
 					s.selectedID = ""
 					s.selectedName = ""
 					s.connected = false
