@@ -322,7 +322,9 @@ func (s *workspace) saveConnection(item connection.Connection) {
 		}
 		s.window.Invalidate()
 	})
-}func (s *workspace) deleteConnection(id string) {
+}
+
+func (s *workspace) deleteConnection(id string) {
 	s.goWorker(func() {
 		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 10*time.Second)
 		defer cancel()
