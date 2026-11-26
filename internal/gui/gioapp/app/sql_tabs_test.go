@@ -57,3 +57,35 @@ func TestSQLTabStateRecordsFailure(t *testing.T) {
 		t.Fatalf("failure status = %q", state.Status)
 	}
 }
+
+func TestCancelActiveQueryInvalidatesPendingEvents(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	var execution workspaceui.QueryExecution
+	seq := execution.Start(tabID)
+	cancelCalled := false
+	state := &workspace{
+		queryExecution: execution,
+		queryRunning: true,
+		queryStatus: "正在执行 SQL…",
+		queryCancelFunc: func() { cancelCalled = true },
+	}
+
+	state.cancelActiveQuery("查询已取消（切换连接）")
+
+	if !cancelCalled {
+		t.Fatal("active query context should be canceled")
+	}
+	if state.queryRunning {
+		t.Fatal("queryRunning should be false after cancellation")
+	}
+	if state.queryStatus != "查询已取消（切换连接）" {
+		t.Fatalf("query status = %q", state.queryStatus)
+	}
+	if state.queryExecution.IsCurrent(seq, tabID) {
+		t.Fatal("pending events from canceled query should be invalidated")
+	}
+	if state.queryCancelFunc != nil {
+		t.Fatal("query cancel function should be cleared")
+	}
+}
