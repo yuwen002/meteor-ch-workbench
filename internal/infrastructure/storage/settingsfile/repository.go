@@ -42,7 +42,7 @@ func (r *Repository) Save(ctx context.Context, value domain.Preferences) error {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o700); err != nil { return fmt.Errorf("创建偏好设置目录: %w", err) }
 	data, err := json.MarshalIndent(domain.Normalize(value), "", "  ")
 	if err != nil { return fmt.Errorf("编码偏好设置: %w", err) }
-	data = append(data, '\\n')
+	data = append(data, '\n')
 	file, err := os.CreateTemp(filepath.Dir(r.path), ".settings-*.tmp")
 	if err != nil { return fmt.Errorf("创建偏好设置临时文件: %w", err) }
 	temp := file.Name()
