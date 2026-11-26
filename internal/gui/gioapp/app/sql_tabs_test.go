@@ -270,7 +270,7 @@ func TestSQLTabResultNavigationStateRoundTrip(t *testing.T) {
 
 func TestSQLTabResultViewDoesNotRestoreStaleCellDetail(t *testing.T) {
 	columns := []query.Column{{Name: "new_payload", DatabaseType: "String"}}
-	state := &workspace{queryColumns: columns}
+	state := &workspace{queryResultState: queryResultState{queryColumns: columns}}
 	state.resetResultWidgets(columns)
 	state.restoreResultViewState(sqlTabState{
 		ColumnNames: []string{"old_payload"},
@@ -365,7 +365,7 @@ func TestShouldPreserveTabDatabaseWhenRetryingSameConnection(t *testing.T) {
 
 func TestSQLTabResultViewIgnoresChangedColumnType(t *testing.T) {
 	columns := []query.Column{{Name: "payload", DatabaseType: "JSON"}}
-	state := &workspace{queryColumns: columns}
+	state := &workspace{queryResultState: queryResultState{queryColumns: columns}}
 	state.resetResultWidgets(columns)
 	state.restoreResultViewState(sqlTabState{
 		ColumnNames:   []string{"payload"},
