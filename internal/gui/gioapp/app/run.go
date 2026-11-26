@@ -301,10 +301,7 @@ type workspace struct {
 	objectClicks               map[string]*widget.Clickable
 	refreshObjects             widget.Clickable
 	refreshConnection          widget.Clickable
-	selectedObject             string
-	selectedTable              string
-	columns                    []metadataapp.Column
-	tableDetails               metadataapp.TableDetails
+	explorerSelection
 	databaseList               widget.List
 	objectList                 widget.List
 	objectTreeList             widget.List
@@ -315,10 +312,6 @@ type workspace struct {
 	connectionSidebarCollapsed bool
 	sidebarToggle              widget.Clickable
 	retryConnection            widget.Clickable
-	databases                  []string
-	selectedDatabase           string
-	tables                     []metadataapp.Object
-	views                      []metadataapp.Object
 	loading                    string
 	status                     string
 	explorerRequests           explorerRequestState
@@ -388,13 +381,7 @@ func (s *workspace) selectConnectionForTab(item connection.Connection, preserveD
 		s.sqlTabStates[tabID] = tabState
 	}
 	s.connected = false
-	s.selectedDatabase = ""
-	s.selectedTable = ""
-	s.selectedObject = ""
-	s.columns = nil
-	s.tableDetails = metadataapp.TableDetails{}
-	s.databases = nil
-	s.tables, s.views = nil, nil
+	s.explorerSelection.ResetConnection()
 	s.loading = "正在测试连接并读取数据库…"
 	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 15*time.Second)
 	seq := s.explorerRequests.Begin(cancel)
@@ -418,16 +405,12 @@ func (s *workspace) selectDatabase(name string) {
 	if !s.connected || s.selectedID == "" {
 		return
 	}
-	s.selectedDatabase = name
+	s.explorerSelection.SelectDatabase(name)
 	if tabID := s.sqlWorkspace.ActiveID(); tabID != 0 {
 		tabState := s.sqlTabStates[tabID]
 		tabState.Database = name
 		s.sqlTabStates[tabID] = tabState
 	}
-	s.selectedTable = ""
-	s.columns = nil
-	s.tableDetails = metadataapp.TableDetails{}
-	s.tables, s.views = nil, nil
 	s.loading = "正在读取表和视图…"
 	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 20*time.Second)
 	seq, connectionID := s.explorerRequests.Begin(cancel), s.selectedID
@@ -529,10 +512,7 @@ func (s *workspace) drainResults() {
 					s.selectedID = ""
 					s.selectedName = ""
 					s.connected = false
-					s.databases = nil
-					s.tables = nil
-					s.views = nil
-					s.columns = nil
+					s.explorerSelection.ResetConnection()
 				}
 				s.status = "连接已删除"
 			}
@@ -544,10 +524,10 @@ func (s *workspace) drainResults() {
 			if result.err != nil {
 				s.connected = false
 				s.status = "连接测试或数据库读取失败：" + result.err.Error()
-				s.databases = nil
+				s.explorerSelection.SetDatabases(nil)
 			} else {
 				s.connected = true
-				s.databases = result.databases
+				s.explorerSelection.SetDatabases(result.databases)
 				s.status = fmt.Sprintf("连接成功 · %d 个数据库", len(result.databases))
 				if tabID := s.sqlWorkspace.ActiveID(); tabID != 0 {
 					tabState := s.sqlTabStates[tabID]
@@ -567,7 +547,7 @@ func (s *workspace) drainResults() {
 				s.status = "读取数据库对象失败：" + result.err.Error()
 				continue
 			}
-			s.tables, s.views = result.tables, result.views
+			s.explorerSelection.SetObjects(result.tables, result.views)
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
 		case result := <-s.schemaResults:
 			if !isCurrentSchemaResult(result, s.explorerRequests.Sequence(), s.selectedID, s.selectedDatabase, s.selectedTable) {
@@ -578,7 +558,7 @@ func (s *workspace) drainResults() {
 				s.status = "读取表结构失败：" + result.err.Error()
 				continue
 			}
-			s.columns, s.tableDetails = result.columns, result.details
+			s.explorerSelection.SetSchema(result.columns, result.details)
 			s.status = fmt.Sprintf("%s · %d 个字段", result.table, len(result.columns))
 		default:
 			return
@@ -882,9 +862,7 @@ func (s *workspace) loadTableSchema(table string) {
 	if s.selectedID == "" || s.selectedDatabase == "" || table == "" {
 		return
 	}
-	s.selectedTable = table
-	s.columns = nil
-	s.tableDetails = metadataapp.TableDetails{}
+	s.explorerSelection.SelectTable(table)
 	s.loading = "正在读取表结构与 DDL…"
 	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 20*time.Second)
 	seq, connectionID, database := s.explorerRequests.Begin(cancel), s.selectedID, s.selectedDatabase
