@@ -171,3 +171,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 修复提交：`eb3f5754444193a418f0a7d83127e37a3ef29bf1`（`test(explorer): 同步标签连接测试与导航状态模型`）。
 - 新 head CI Run [45858167585](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45858167585) 已排队，尚无测试 / vet / build 通过结论；未执行本地 Go 命令，也未进行真实桌面验收。
 - PR #1 仍保持 Open / Draft / 未合并，base 为 `main`。
+
+
+### Explorer 表切换状态回归测试补充（2026-11-27）
+
+- 新增 `TestExplorerSelectionSelectTableClearsPreviousSchema`，验证切换表时清除旧字段 / DDL 详情，同时保留当前数据库选择。
+- 测试提交：`4e10718249236f900ea7fb7405e4a2ee1919d57b`（`test(explorer): 覆盖切换表时旧结构清理`）。
+- 当前 head 后续文档提交的 CI 结果仍需以最新 SHA 对应的 Actions 为准；此前 Run `45858260758` 仅对应更早提交，不作为当前 head 验收。
