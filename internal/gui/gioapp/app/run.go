@@ -516,6 +516,12 @@ func (s *workspace) selectConnection(item connection.Connection) {
 	}
 	s.selectedID = item.ID
 	s.selectedName = item.Name
+	if tabID := s.sqlWorkspace.ActiveID(); tabID != 0 {
+		tabState := s.sqlTabStates[tabID]
+		tabState.ConnectionID = item.ID
+		tabState.ConnectionName = item.Name
+		s.sqlTabStates[tabID] = tabState
+	}
 	s.connected = false
 	s.selectedDatabase = ""
 	s.selectedTable = ""
@@ -642,6 +648,12 @@ func (s *workspace) drainResults() {
 			if result.err != nil {
 				s.status = "删除连接失败：" + result.err.Error()
 			} else {
+				for tabID, tabState := range s.sqlTabStates {
+					if tabState.ConnectionID == result.id {
+						tabState.Status = "关联连接已删除，请重新选择连接"
+						s.sqlTabStates[tabID] = tabState
+					}
+				}
 				if s.selectedID == result.id {
 					if s.queryRunning {
 						s.cancelActiveQuery("查询已取消（连接已删除）")
@@ -972,9 +984,20 @@ func queryResultStatus(result queryEvent, columns []queryapp.Column) string {
 	return fmt.Sprintf("执行完成 · 影响 %d 行 · %s", result.summary.RowsAffected, result.summary.Elapsed.Round(time.Millisecond))
 }
 func (s *workspace) executeQuery() {
+	tab := s.sqlWorkspace.ActiveID()
+	activeState := s.sqlTabStates[tab]
+	if activeState.ConnectionID != "" && activeState.ConnectionID != s.selectedID {
+		s.queryStatus = "当前标签页关联连接与已选连接不一致，请切回关联连接或新建查询标签页"
+		return
+	}
 	if !s.connected || s.selectedID == "" {
 		s.queryStatus = "请先连接 ClickHouse"
 		return
+	}
+	if activeState.ConnectionID == "" {
+		activeState.ConnectionID = s.selectedID
+		activeState.ConnectionName = s.selectedName
+		s.sqlTabStates[tab] = activeState
 	}
 	sqlText := strings.TrimSpace(s.queryEditor.Text())
 	if sqlText == "" {
@@ -985,8 +1008,7 @@ func (s *workspace) executeQuery() {
 	if s.queryCancelFunc != nil {
 		s.queryCancelFunc()
 	}
-	tab := s.sqlWorkspace.ActiveID()
-	connectionID := s.selectedID
+	connectionID := activeState.ConnectionID
 	seq := s.queryExecution.Start(tab)
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	s.queryCancelFunc = cancel
@@ -1301,7 +1323,7 @@ func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
 						current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
 						s.sqlTabStates[activeID] = current
 						created := s.sqlWorkspace.Create()
-						s.sqlTabStates[created.ID] = sqlTabState{Status: "新查询标签页已创建"}
+						s.sqlTabStates[created.ID] = sqlTabState{ConnectionID: s.selectedID, ConnectionName: s.selectedName, Status: "新查询标签页已创建"}
 						s.queryEditor.SetText("")
 						s.queryColumns, s.queryData = nil, nil
 						s.clearQueryCellSelection()
@@ -1944,6 +1966,23 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 	s.sqlWorkspace.Activate(tabID)
 	next := s.sqlTabStates[tabID]
 	nextTab, _ := s.sqlWorkspace.Get(tabID)
+	if next.ConnectionID != "" && next.ConnectionID != s.selectedID {
+		var target *connection.Connection
+		for _, item := range s.connections.Snapshot().Items {
+			if item.ID == next.ConnectionID {
+					copy := item
+					target = &copy
+					break
+				}
+		}
+		if target == nil {
+			s.selectedID, s.selectedName, s.connected = "", "", false
+			s.selectedDatabase = ""
+			s.queryStatus = "此查询标签页关联的连接已不存在，请重新选择连接"
+		} else {
+			s.selectConnection(*target)
+		}
+	}
 	s.queryEditor.SetText(nextTab.Editor.Text())
 	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 	s.clearQueryCellSelection()
