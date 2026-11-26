@@ -65,9 +65,7 @@ func (s *workspace) startExport(format string) {
 			case s.exportResults <- exportResult{format: format, err: err, canceled: errors.Is(err, gioexplorer.ErrUserDecline)}:
 			default:
 			}
-			if ctx.Err() == nil && s.window != nil {
-				s.window.Invalidate()
-			}
+			s.invalidateIfActive()
 			return
 		}
 		if ctx.Err() != nil {
@@ -94,9 +92,9 @@ func (s *workspace) startExport(format string) {
 				canceled: errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe),
 			}
 			if err != nil {
-				 supported, removeErr := removeIncompleteExport(file)
-				 result.cleanupUnsupported = !supported
-				 result.cleanupErr = removeErr
+				supported, removeErr := removeIncompleteExport(file)
+				result.cleanupUnsupported = !supported
+				result.cleanupErr = removeErr
 			}
 			if ctx.Err() != nil {
 				return
@@ -105,9 +103,7 @@ func (s *workspace) startExport(format string) {
 			case s.exportResults <- result:
 			default:
 			}
-			if s.window != nil {
-				s.window.Invalidate()
-			}
+			s.invalidateIfActive()
 		})
 		if !started {
 			_ = file.Close()
