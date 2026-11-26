@@ -16,6 +16,7 @@ type sqlTabState struct {
 	Status         string
 	FilterText     string
 	ColumnFilters  []string
+	ColumnNames    []string
 	SortColumn     int
 	SortDescending bool
 	ColumnWidths   []unit.Dp
@@ -28,6 +29,10 @@ func (s *workspace) saveResultViewState(state *sqlTabState) {
 	}
 	state.FilterText = s.resultFilter.Text()
 	state.ColumnFilters = make([]string, len(s.columnFilterEditors))
+	state.ColumnNames = make([]string, len(s.queryColumns))
+	for i := range s.queryColumns {
+		state.ColumnNames[i] = s.queryColumns[i].Name
+	}
 	for i := range s.columnFilterEditors {
 		state.ColumnFilters[i] = s.columnFilterEditors[i].Text()
 	}
@@ -40,16 +45,25 @@ func (s *workspace) saveResultViewState(state *sqlTabState) {
 func (s *workspace) restoreResultViewState(state sqlTabState) {
 	s.resultFilter.SetText(state.FilterText)
 	s.resultFilterLast = state.FilterText
-	for i := range s.columnFilterEditors {
-		if i < len(state.ColumnFilters) {
+	sameColumns := len(state.ColumnNames) == len(s.queryColumns)
+	if sameColumns {
+		for i := range s.queryColumns {
+			if state.ColumnNames[i] != s.queryColumns[i].Name {
+				sameColumns = false
+				break
+			}
+		}
+	}
+	if sameColumns && len(state.ColumnFilters) == len(s.columnFilterEditors) {
+		for i := range s.columnFilterEditors {
 			s.columnFilterEditors[i].SetText(state.ColumnFilters[i])
 		}
 	}
-	if state.SortColumn >= 0 && state.SortColumn < len(s.queryColumns) {
+	if sameColumns && state.SortColumn >= 0 && state.SortColumn < len(s.queryColumns) {
 		s.resultSortColumn = state.SortColumn
 		s.resultSortDescending = state.SortDescending
 	}
-	if len(state.ColumnWidths) == len(s.queryColumns) {
+	if sameColumns && len(state.ColumnWidths) == len(s.queryColumns) {
 		s.columnWidths = append([]unit.Dp(nil), state.ColumnWidths...)
 	}
 	s.resultViewDirty = true
