@@ -38,6 +38,7 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] CSV / TSV 结果导出；写入阶段支持取消、进度和不完整本地文件清理尝试。
 - [x] 窗口后台任务登记、生命周期 Context 取消、任务关闭入口保护和连接池关闭同步。
 - [x] 保存文件对话框与窗口关闭等待解耦：对话框返回后重新检查生命周期，窗口已关闭则不启动导出并尝试关闭 / 清理文件。
+- [x] Windows 启动窗口尺寸根据主显示器工作区和系统 DPI 计算，不再固定 1080×660；非 Windows 暂使用安全回退尺寸。
 
 ## 3. 已有测试或 CI 证据，但仍需区分验收范围
 
@@ -57,6 +58,7 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [ ] 将 workspace、editor、result、explorer、history、snippets、settings 按职责继续拆分；已有子模块不重复创建。
 - [ ] 检查所有后台 goroutine 和 `goWorker` 调用点，补齐生命周期边界测试。
 - [ ] 验证保存对话框在父窗口销毁后的真实平台行为，以及关闭后进程是否退出。
+- [ ] Windows 实机验收 Gio `app.Main` 的窗口关闭退出路径，确认不再触发 `all goroutines are asleep - deadlock`；检查初始化失败时退出码。
 - [ ] 将设置的 domain / application / storage 和 Gio UI 接入新架构。
 
 ### 功能迁移
@@ -70,12 +72,13 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 
 ### 清理与发布
 - [ ] 完成新入口功能替代和验收后，删除旧 Gio 原型、旧业务包和 Vue `frontend/`。
+- [ ] 为 macOS / Linux 实现工作区与 DPI 查询，完成真正的跨平台启动窗口自适应。
 - [ ] 完善 macOS CI，并完成 Windows / macOS / Linux 真实桌面验收。
 - [ ] 增加真实 ClickHouse 集成测试。
 - [ ] 测量冷启动、空闲内存、典型查询内存和发布包体积。
 - [ ] 完成 Community / Pro 独立构建入口与发布流程。
 
-## 5. 本轮开发记录：窗口关闭与导出生命周期
+## 5. 本轮开发记录：窗口关闭、导出生命周期与启动尺寸
 
 - [x] 关闭窗口时先取消活动请求和查询，再关闭后台任务注册入口、取消生命周期 Context 并等待已登记任务退出。
 - [x] 主线程等待 Gio Run goroutine 结束后再关闭服务容器和 ClickHouse 连接池。
@@ -84,15 +87,17 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] `goWorker` 返回任务登记结果；`invalidateIfActive` 避免关闭后访问已销毁窗口。
 - [ ] Windows / macOS / Linux 实机验证原生保存对话框随父窗口关闭的行为。
 - [ ] 实机验证关闭窗口后进程退出、查询取消、文件句柄释放和连接池释放。
+- [ ] Windows 验证主显示器工作区 / DPI 计算在 100%、125%、150%、200% 缩放下的窗口尺寸。
 
 ## 6. 当前开发顺序
 
 1. 等待当前最新 head 的 CI 完成；若失败，先按失败 job / step / 日志修复。
-2. 补充保存对话框返回、窗口关闭、任务登记失败等生命周期边界测试。
-3. 全量检查后台任务入口及窗口关闭后回调，排除遗漏的 goroutine 和窗口访问。
-4. 继续拆分 workspace / result 状态，避免继续向 `run.go` 堆叠逻辑。
-5. 开始设置模块的新架构实现与 UI 接入。
-6. 在功能替代验收后再清理旧代码，不提前删除仍用于兼容对照的数据迁移逻辑。
+2. Windows 实机验收 app.Main 退出修复和不同 DPI / 屏幕尺寸下的初始窗口。
+3. 补充保存对话框返回、窗口关闭、任务登记失败等生命周期边界测试。
+4. 全量检查后台任务入口及窗口关闭后回调，排除遗漏的 goroutine 和窗口访问。
+5. 继续拆分 workspace / result 状态，避免继续向 `run.go` 堆叠逻辑。
+6. 开始设置模块的新架构实现与 UI 接入。
+7. 在功能替代验收后再清理旧代码，不提前删除仍用于兼容对照的数据迁移逻辑。
 
 ## 7. 文档职责
 
