@@ -254,3 +254,20 @@ func TestBuildResultRowViewNormalizesGlobalFilterOnceSemantically(t *testing.T) 
 		t.Fatalf("case-insensitive trimmed filter = %#v, want row 1", got)
 	}
 }
+
+
+func TestPruneResultCellCachesKeepsVisibleRowsAndOverscan(t *testing.T) {
+	clicks := make(map[int64]*widget.Clickable); texts := make(map[int64]string)
+	for row := 0; row < 20; row++ { key := resultCellKey(row, 0); clicks[key] = new(widget.Clickable); texts[key] = "cached" }
+	pruneResultCellCaches(clicks, texts, layout.Position{First: 8, Count: 4}, 20, 2)
+	if len(clicks) != 8 || len(texts) != 8 { t.Fatalf("cache sizes = %d/%d, want 8/8", len(clicks), len(texts)) }
+	for row := 6; row < 14; row++ { key := resultCellKey(row, 0); if clicks[key] == nil || texts[key] != "cached" { t.Errorf("row %d should remain cached", row) } }
+	for _, row := range []int{5, 14, 19} { key := resultCellKey(row, 0); if _, ok := clicks[key]; ok { t.Errorf("row %d click cache should be pruned", row) }; if _, ok := texts[key]; ok { t.Errorf("row %d text cache should be pruned", row) } }
+}
+
+func TestPruneResultCellCachesHandlesEmptyAndOutOfRangePositions(t *testing.T) {
+	clicks := map[int64]*widget.Clickable{resultCellKey(0, 0): new(widget.Clickable), resultCellKey(4, 0): new(widget.Clickable)}
+	texts := map[int64]string{resultCellKey(0, 0): "first", resultCellKey(4, 0): "last"}
+	pruneResultCellCaches(clicks, texts, layout.Position{First: 99, Count: 0}, 5, 1)
+	if len(clicks) != 0 || len(texts) != 0 { t.Fatalf("empty out-of-range viewport should clear caches, got %d/%d", len(clicks), len(texts)) }
+}

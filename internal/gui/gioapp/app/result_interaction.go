@@ -85,6 +85,18 @@ func (s *workspace) releaseResultCellCaches() {
 	s.resultPixelWidths = nil
 }
 
+// pruneResultCellCaches 保留当前可见行及少量邻近行的单元格缓存。
+func pruneResultCellCaches(clicks map[int64]*widget.Clickable, texts map[int64]string, position layout.Position, rowCount, overscan int) {
+	if overscan < 0 { overscan = 0 }
+	first := position.First - overscan
+	if first < 0 { first = 0 }
+	last := position.First + position.Count + overscan
+	if last > rowCount { last = rowCount }
+	if last < first { last = first }
+	for key := range clicks { row := int(uint32(uint64(key) >> 32)); if row < first || row >= last { delete(clicks, key) } }
+	for key := range texts { row := int(uint32(uint64(key) >> 32)); if row < first || row >= last { delete(texts, key) } }
+}
+
 // syncResultFilters 检测筛选条件变化，变化时标记展示行需要重建并回到顶部。
 func (s *workspace) syncResultFilters() {
 	changed := false

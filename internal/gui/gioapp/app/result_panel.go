@@ -232,7 +232,7 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 				return s.layoutQueryCellDetail(gtx)
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return material.List(s.theme, &s.queryRows).Layout(gtx, len(s.resultView), func(gtx layout.Context, index int) layout.Dimensions {
+				dims := material.List(s.theme, &s.queryRows).Layout(gtx, len(s.resultView), func(gtx layout.Context, index int) layout.Dimensions {
 					display := s.resultView[index]
 					var row []any
 					if display.Index >= 0 && display.Index < len(s.queryData) {
@@ -271,6 +271,8 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, s.resultRowChildren...)
 					})
 				})
+				pruneResultCellCaches(s.queryCellClicks, s.resultCellText, s.queryRows.Position, len(s.resultView), 2)
+				return dims
 			}),
 		)
 	})
