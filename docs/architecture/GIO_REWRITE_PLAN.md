@@ -337,3 +337,9 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - `shutdownWorkers` 先关闭新任务入口并取消窗口生命周期，再等待已登记任务全部退出，避免 `WaitGroup.Wait` 与并发 `Add` 在计数归零时发生竞态。
 - DestroyEvent 先取消当前请求和活动查询，再关闭任务入口并等待任务退出，随后 Run 才返回；main 的 `runDone` 同步保证服务容器在窗口 Run 结束后关闭。
 - 新增并发注册 / 关闭交错测试。CI 通过仍不替代 Windows、macOS、Linux 实机关闭与进程退出验证。
+
+
+### 窗口关闭竞态加固（2026-11-26)
+- `goWorker` 通过 `lifecycleMu` 将关闭状态检查和 `WaitGroup.Add` 串行化；`shutdownWorkers` 关闭任务入口、取消 Context 后等待已登记任务。
+- 最新代码验收基线：`280e603b05a7d245a6ea039fb87f02be320d7a46`；CI Run `45778693845` 的 Linux / Windows 测试、vet 与预览构建均成功。
+- 导出数据写入阶段响应生命周期取消；系统文件保存对话框仍不能由 Context 主动中断，桌面端关闭行为待实机验证。
