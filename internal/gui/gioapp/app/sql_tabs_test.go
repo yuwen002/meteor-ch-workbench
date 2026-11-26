@@ -384,6 +384,47 @@ func TestCloneQueryRowsCopiesRowsAndByteValues(t *testing.T) {
 	}
 }
 
+func TestSQLTabClickablesStayBoundToStableIDsAfterReorder(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	first := tabs.Items()[0]
+	second := tabs.Create()
+	state := &workspace{sqlWorkspace: tabs}
+	state.ensureSQLTabClickables(tabs.Items())
+	firstClick := state.sqlTabClicks[first.ID]
+	firstClose := state.sqlTabCloseClicks[first.ID]
+	secondClick := state.sqlTabClicks[second.ID]
+	secondClose := state.sqlTabCloseClicks[second.ID]
+
+	if !tabs.Reorder(second.ID, 0) {
+		t.Fatal("expected tab reorder to succeed")
+	}
+	state.ensureSQLTabClickables(tabs.Items())
+	if state.sqlTabClicks[first.ID] != firstClick || state.sqlTabCloseClicks[first.ID] != firstClose {
+		t.Fatal("first tab clickables changed after reorder")
+	}
+	if state.sqlTabClicks[second.ID] != secondClick || state.sqlTabCloseClicks[second.ID] != secondClose {
+		t.Fatal("second tab clickables changed after reorder")
+	}
+}
+
+func TestDiscardSQLTabClickablesRemovesOnlyClosedTab(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	first := tabs.Items()[0]
+	second := tabs.Create()
+	state := &workspace{sqlWorkspace: tabs}
+	state.ensureSQLTabClickables(tabs.Items())
+	state.discardSQLTabClickables(first.ID)
+	if _, ok := state.sqlTabClicks[first.ID]; ok {
+		t.Fatal("closed tab switch clickable was not released")
+	}
+	if _, ok := state.sqlTabCloseClicks[first.ID]; ok {
+		t.Fatal("closed tab close clickable was not released")
+	}
+	if state.sqlTabClicks[second.ID] == nil || state.sqlTabCloseClicks[second.ID] == nil {
+		t.Fatal("remaining tab clickables must be preserved")
+	}
+}
+
 func TestSaveActiveSQLTabStatePersistsEditorAndResultView(t *testing.T) {
 	tabs := workspaceui.NewTabs()
 	tabID := tabs.ActiveID()
