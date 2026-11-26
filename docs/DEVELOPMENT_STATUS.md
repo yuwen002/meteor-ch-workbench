@@ -195,3 +195,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - `sqlTabState` 仍负责非活动标签及切换时的独立结果快照、筛选、排序和滚动状态；没有将 Gio 控件或查询取消函数放入结果快照模型。
 - 新增 `query_result_state_test.go`，覆盖列元数据替换、批次追加、查询完成和错误完成时保留已有快照。
 - 当前提交后需等待最新 head 的 Linux / Windows CI；未执行本地 gofmt、go test、go vet、build 或真实桌面 GUI 验收。
+
+
+### 活动查询结果状态拆分后的测试初始化修复（2026-11-27）
+
+- 首次 CI Run [45859859384](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45859859384) 的 Linux `go test ./...` 编译失败，根因是 `workspace` 已将 `queryColumns/queryData/queryStatus` 嵌入到 `queryResultState`，但 `query_events_test.go`、`result_view_test.go` 和 `sql_tabs_test.go` 的 workspace 复合字面量仍使用旧的提升字段名。Go 复合字面量不能通过字段提升初始化嵌入字段。
+- 已将上述测试初始化改为显式构造 `queryResultState{...}`，保留原断言意图；没有回退生产代码拆分。
+- 修复后的最新 head CI 尚在排队 / 执行，必须以最新 SHA 的 Linux / Windows 测试、vet 和构建结果作为验收结论。
