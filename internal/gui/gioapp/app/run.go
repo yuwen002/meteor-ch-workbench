@@ -175,10 +175,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		state.explorer.ListenEvents(event)
 		switch e := event.(type) {
 		case gio.DestroyEvent:
-			if state.cancelRequest != nil {
-				state.cancelRequest()
-				state.cancelRequest = nil
-			}
+			state.explorerRequests.Cancel()
 			state.cancelActiveQuery("窗口已关闭")
 			// 取消入口请求后关闭后台任务注册，再等待所有已登记任务退出。
 			state.shutdownWorkers()
@@ -324,8 +321,7 @@ type workspace struct {
 	views                      []metadataapp.Object
 	loading                    string
 	status                     string
-	requestSeq                 uint64
-	cancelRequest              context.CancelFunc
+	explorerRequests           explorerRequestState
 }
 
 func (s *workspace) saveConnection(item connection.Connection) {
@@ -400,13 +396,8 @@ func (s *workspace) selectConnectionForTab(item connection.Connection, preserveD
 	s.databases = nil
 	s.tables, s.views = nil, nil
 	s.loading = "正在测试连接并读取数据库…"
-	if s.cancelRequest != nil {
-		s.cancelRequest()
-	}
-	s.requestSeq++
-	seq := s.requestSeq
 	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 15*time.Second)
-	s.cancelRequest = cancel
+	seq := s.explorerRequests.Begin(cancel)
 	s.goWorker(func() {
 		defer cancel()
 		err := s.connections.Test(ctx, item)
@@ -438,13 +429,8 @@ func (s *workspace) selectDatabase(name string) {
 	s.tableDetails = metadataapp.TableDetails{}
 	s.tables, s.views = nil, nil
 	s.loading = "正在读取表和视图…"
-	if s.cancelRequest != nil {
-		s.cancelRequest()
-	}
-	s.requestSeq++
-	seq, connectionID := s.requestSeq, s.selectedID
 	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 20*time.Second)
-	s.cancelRequest = cancel
+	seq, connectionID := s.explorerRequests.Begin(cancel), s.selectedID
 	s.goWorker(func() {
 		defer cancel()
 		tables, err := s.services.Metadata.ListTables(ctx, connectionID, name)
@@ -551,7 +537,7 @@ func (s *workspace) drainResults() {
 				s.status = "连接已删除"
 			}
 		case result := <-s.checkResults:
-			if result.seq != s.requestSeq || result.id != s.selectedID {
+			if result.seq != s.explorerRequests.Sequence() || result.id != s.selectedID {
 				continue
 			}
 			s.loading = ""
@@ -573,7 +559,7 @@ func (s *workspace) drainResults() {
 				}
 			}
 		case result := <-s.objectResults:
-			if !isCurrentObjectsResult(result, s.requestSeq, s.selectedID, s.selectedDatabase) {
+			if !isCurrentObjectsResult(result, s.explorerRequests.Sequence(), s.selectedID, s.selectedDatabase) {
 				continue
 			}
 			s.loading = ""
@@ -584,7 +570,7 @@ func (s *workspace) drainResults() {
 			s.tables, s.views = result.tables, result.views
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
 		case result := <-s.schemaResults:
-			if !isCurrentSchemaResult(result, s.requestSeq, s.selectedID, s.selectedDatabase, s.selectedTable) {
+			if !isCurrentSchemaResult(result, s.explorerRequests.Sequence(), s.selectedID, s.selectedDatabase, s.selectedTable) {
 				continue
 			}
 			s.loading = ""
@@ -896,17 +882,12 @@ func (s *workspace) loadTableSchema(table string) {
 	if s.selectedID == "" || s.selectedDatabase == "" || table == "" {
 		return
 	}
-	if s.cancelRequest != nil {
-		s.cancelRequest()
-	}
-	s.requestSeq++
-	seq, connectionID, database := s.requestSeq, s.selectedID, s.selectedDatabase
+	seq, connectionID, database := s.explorerRequests.Begin(cancel), s.selectedID, s.selectedDatabase
 	s.selectedTable = table
 	s.columns = nil
 	s.tableDetails = metadataapp.TableDetails{}
 	s.loading = "正在读取表结构与 DDL…"
 	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 20*time.Second)
-	s.cancelRequest = cancel
 	s.goWorker(func() {
 		defer cancel()
 		columns, err := s.services.Metadata.GetTableSchema(ctx, connectionID, database, table)
