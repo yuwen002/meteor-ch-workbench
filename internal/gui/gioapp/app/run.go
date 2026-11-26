@@ -180,6 +180,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 			if state.cancelRequest != nil {
 				state.cancelRequest()
 			}
+			state.cancelActiveQuery("窗口已关闭")
 			return e.Err
 		case gio.FrameEvent:
 			gtx := gio.NewContext(&ops, e)
