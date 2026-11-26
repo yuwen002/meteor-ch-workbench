@@ -21,7 +21,9 @@ func TestSwitchingToActiveSQLTabDoesNotCancelQuery(t *testing.T) {
 	state := &workspace{
 		sqlWorkspace: tabs,
 		queryRuntimeState: queryRuntimeState{queryRunning: true},
-		queryStatus: "正在执行 SQL…",
+		queryResultState: queryResultState{
+			queryStatus: "正在执行 SQL…",
+		},
 	}
 	state.switchSQLTab(activeID)
 	if !state.queryRunning {
@@ -150,8 +152,10 @@ func TestCancelActiveQueryInvalidatesPendingEvents(t *testing.T) {
 func TestSQLTabResultViewStateRoundTrip(t *testing.T) {
 	columns := []query.Column{{Name: "name"}, {Name: "count"}}
 	state := &workspace{
-		queryColumns:        columns,
-		queryData:           [][]any{{"alpha", int64(2)}},
+		queryResultState: queryResultState{
+			queryColumns: columns,
+			queryData: [][]any{{"alpha", int64(2)}},
+		},
 		resultFilter:        widget.Editor{},
 		resultSortColumn:    1,
 		resultSortDescending: true,
@@ -193,8 +197,10 @@ func TestSQLTabResultViewStateRoundTrip(t *testing.T) {
 func TestSQLTabResultViewStateIgnoresChangedColumnSchema(t *testing.T) {
 	columns := []query.Column{{Name: "new_name"}, {Name: "new_count"}}
 	state := &workspace{
-		queryColumns: columns,
-		queryData:    [][]any{{"beta", int64(3)}},
+		queryResultState: queryResultState{
+			queryColumns: columns,
+			queryData: [][]any{{"beta", int64(3)}},
+		},
 	}
 	state.resetResultWidgets(columns)
 	state.restoreResultViewState(sqlTabState{
@@ -227,7 +233,9 @@ func TestSQLTabResultNavigationStateRoundTrip(t *testing.T) {
 		value: "{\"ok\":true}",
 	}
 	state := &workspace{
-		queryColumns: []query.Column{{Name: "payload", DatabaseType: "String"}},
+		queryResultState: queryResultState{
+			queryColumns: []query.Column{{Name: "payload", DatabaseType: "String"}},
+		},
 		queryRows: widget.List{List: layout.List{Position: layout.Position{First: 12, Offset: 8}}},
 		queryHorizontal: widget.List{List: layout.List{Position: layout.Position{First: 0, Offset: -24}}},
 		queryDetailRows: widget.List{List: layout.List{Position: layout.Position{First: 3, Offset: 5}}},
@@ -436,9 +444,11 @@ func TestSaveActiveSQLTabStatePersistsEditorAndResultView(t *testing.T) {
 		sqlWorkspace: tabs,
 		sqlTabStates: map[workspaceui.TabID]sqlTabState{tabID: {SortColumn: -1}},
 		queryEditor: widget.Editor{},
-		queryColumns: []query.Column{{Name: "name", DatabaseType: "String"}},
-		queryData: [][]any{{"alpha"}},
-		queryStatus: "查询完成",
+		queryResultState: queryResultState{
+			queryColumns: []query.Column{{Name: "name", DatabaseType: "String"}},
+			queryData: [][]any{{"alpha"}},
+			queryStatus: "查询完成",
+		},
 		resultFilter: widget.Editor{},
 		columnFilterEditors: []widget.Editor{{}},
 		resultSortColumn: 0,
