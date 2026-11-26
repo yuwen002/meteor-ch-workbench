@@ -101,7 +101,7 @@ MIT
 
 ## 窗口关闭与资源释放
 
-关闭主窗口时，Gio DestroyEvent 会取消窗口生命周期 Context，并取消当前查询 / 元数据请求；窗口管理的后台任务（连接配置、历史、收藏、查询、导出等）统一登记并等待退出；CSV / TSV 导出会在每行写入前检查生命周期取消，停止继续处理大型结果并关闭文件。Gio Explorer 的系统文件保存对话框本身不支持 Context 中断，关闭时仍需等待对话框返回。Run 返回后，入口 main 的窗口 goroutine 会关闭 runDone；主线程在 gio.Main() 返回后等待 runDone，才会执行 services.Close()，关闭 ClickHouse 连接池。
+关闭主窗口时，Gio DestroyEvent 会取消窗口生命周期 Context，并取消当前查询 / 元数据请求；窗口管理的后台任务（连接配置、历史、收藏、查询、导出等）统一登记并等待退出；CSV / TSV 导出会在每行写入前检查生命周期取消，停止继续处理大型结果并关闭文件。Gio Explorer 的系统文件保存对话框本身不支持 Context 中断，因此已从窗口关闭等待的后台任务组中拆出；窗口关闭不再等待对话框返回。若对话框稍后返回，会检查生命周期并关闭 / 清理文件，不再启动导出或访问已销毁窗口。原生对话框随父窗口关闭的实际行为仍需在 Windows / macOS / Linux 桌面环境验证。Run 返回后，入口 main 的窗口 goroutine 会关闭 runDone；主线程在 gio.Main() 返回后等待 runDone，才会执行 services.Close()，关闭 ClickHouse 连接池。
 
 本地构建请在仓库根目录执行：
 
