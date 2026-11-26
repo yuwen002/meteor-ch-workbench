@@ -47,9 +47,7 @@ func (s *workspace) publishQueryEvent(ctx context.Context, event queryEvent) err
 }
 
 // enqueueQueryCompletion 使用独立的短超时投递终态事件，避免查询上下文超时后无法通知 GUI。
-func enqueueQueryCompletion(queue chan<- queryEvent, event queryEvent) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+func enqueueQueryCompletion(ctx context.Context, queue chan<- queryEvent, event queryEvent) error {
 	return enqueueQueryEvent(ctx, queue, event)
 }
 
@@ -96,7 +94,11 @@ func (s *workspace) executeQuery() {
 	}
 	connectionID := activeState.ConnectionID
 	seq := s.queryExecution.Start(tab)
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	parent := s.lifecycleCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
 	s.queryCancelFunc = cancel
 	s.queryRunning = true
 	s.queryColumns, s.queryData = nil, nil
@@ -129,7 +131,11 @@ func (s *workspace) executeQuery() {
 
 // cancelActiveQuery 在离开当前 SQL 标签页时取消仍在执行的请求，并使其后续事件失效。
 func (s *workspace) publishQueryCompletion(event queryEvent) error {
-	if err := enqueueQueryCompletion(s.queryResults, event); err != nil {
+	ctx := s.lifecycleCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := enqueueQueryCompletion(ctx, s.queryResults, event); err != nil {
 		return err
 	}
 	s.window.Invalidate()
