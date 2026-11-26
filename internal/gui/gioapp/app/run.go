@@ -1155,11 +1155,7 @@ func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
 						s.queryStatus = "查询标签页最多支持 12 个"
 					} else {
 						s.cancelActiveQuery("查询已取消（新建标签页）")
-						activeID := s.sqlWorkspace.ActiveID()
-						current := s.sqlTabStates[activeID]
-						s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
-						current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
-						s.sqlTabStates[activeID] = current
+						s.saveActiveSQLTabState()
 						created := s.sqlWorkspace.Create()
 						s.sqlTabStates[created.ID] = sqlTabState{ConnectionID: s.selectedID, ConnectionName: s.selectedName, Database: s.selectedDatabase, Status: "新查询标签页已创建", SortColumn: -1}
 						s.queryEditor.SetText("")
