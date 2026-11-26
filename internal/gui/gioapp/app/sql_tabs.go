@@ -2,6 +2,7 @@
 package app
 
 import (
+	"gioui.org/layout"
 	"gioui.org/unit"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
@@ -20,6 +21,10 @@ type sqlTabState struct {
 	SortColumn     int
 	SortDescending bool
 	ColumnWidths   []unit.Dp
+	ResultPosition layout.Position
+	HorizontalPosition layout.Position
+	DetailPosition layout.Position
+	SelectedCell *queryCellSelection
 }
 
 // saveResultViewState 将结果筛选、排序和列宽归档到指定标签。
@@ -39,6 +44,15 @@ func (s *workspace) saveResultViewState(state *sqlTabState) {
 	state.SortColumn = s.resultSortColumn
 	state.SortDescending = s.resultSortDescending
 	state.ColumnWidths = append([]unit.Dp(nil), s.columnWidths...)
+	state.ResultPosition = s.queryRows.Position
+	state.HorizontalPosition = s.queryHorizontal.Position
+	state.DetailPosition = s.queryDetailRows.Position
+	if s.selectedQueryCell != nil {
+		selection := *s.selectedQueryCell
+		state.SelectedCell = &selection
+	} else {
+		state.SelectedCell = nil
+	}
 }
 
 // restoreResultViewState 恢复指定标签的结果视图设置；列数不匹配时安全使用默认列宽。
@@ -67,6 +81,21 @@ func (s *workspace) restoreResultViewState(state sqlTabState) {
 		s.columnWidths = append([]unit.Dp(nil), state.ColumnWidths...)
 	}
 	s.resultViewDirty = true
+	s.queryRows.Position = state.ResultPosition
+	if len(s.resultView) > 0 && s.queryRows.Position.First >= len(s.resultView) {
+		s.queryRows.Position.First = len(s.resultView) - 1
+	}
+	if len(s.resultView) == 0 {
+		s.queryRows.Position = layout.Position{}
+	}
+	s.queryHorizontal.Position = state.HorizontalPosition
+	s.queryDetailRows.Position = state.DetailPosition
+	if state.SelectedCell != nil {
+		selection := *state.SelectedCell
+		s.selectedQueryCell = &selection
+	} else {
+		s.selectedQueryCell = nil
+	}
 }
 
 // Apply 将一个查询事件归档到所属标签页，不依赖当前活动标签。
