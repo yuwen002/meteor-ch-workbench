@@ -52,47 +52,68 @@ func (s *workspace) startExport(format string) {
 	s.queryStatus = "正在导出当前结果…"
 	ctx := s.lifecycleParent()
 
-	s.goWorker(func() {
-		file, err := s.explorer.CreateFile("query-result." + format)
+	explorer := s.explorer
+	// 系统保存对话框没有 Context 取消接口，不能将其纳入 shutdownWorkers 等待，
+	// 否则窗口销毁时可能一直等待用户关闭原生对话框。
+	go func() {
+		file, err := explorer.CreateFile("query-result." + format)
 		if err != nil {
-			canceled := errors.Is(err, gioexplorer.ErrUserDecline) || ctx.Err() != nil
-			s.exportResults <- exportResult{format: format, err: err, canceled: canceled}
-			s.window.Invalidate()
+			if ctx.Err() != nil {
+				return
+			}
+			select {
+			case s.exportResults <- exportResult{format: format, err: err, canceled: errors.Is(err, gioexplorer.ErrUserDecline)}:
+			default:
+			}
+			if ctx.Err() == nil && s.window != nil {
+				s.window.Invalidate()
+			}
 			return
 		}
-		startedAt := time.Now()
-		writer := &countingWriter{writer: file}
-		var writeErr error
 		if ctx.Err() != nil {
-			writeErr = ctx.Err()
-		} else {
-			writeErr = writeResultExportContext(ctx, writer, columns, rows, sourceRows, format)
+			_ = file.Close()
+			_, _ = removeIncompleteExport(file)
+			return
 		}
-		closeErr := file.Close()
-		if writeErr != nil {
-			err = writeErr
-		} else {
-			err = closeErr
+		started := s.goWorker(func() {
+			startedAt := time.Now()
+			writer := &countingWriter{writer: file}
+			writeErr := writeResultExportContext(ctx, writer, columns, rows, sourceRows, format)
+			closeErr := file.Close()
+			if writeErr != nil {
+				err = writeErr
+			} else {
+				err = closeErr
+			}
+			result := exportResult{
+				format:   format,
+				rows:     int64(len(rows)),
+				bytes:    writer.bytes,
+				duration: time.Since(startedAt),
+				err:      err,
+				canceled: errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe),
+			}
+			if err != nil {
+				 supported, removeErr := removeIncompleteExport(file)
+				 result.cleanupUnsupported = !supported
+				 result.cleanupErr = removeErr
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			select {
+			case s.exportResults <- result:
+			default:
+			}
+			if s.window != nil {
+				s.window.Invalidate()
+			}
+		})
+		if !started {
+			_ = file.Close()
+			_, _ = removeIncompleteExport(file)
 		}
-		result := exportResult{
-			format:   format,
-			rows:     int64(len(rows)),
-			bytes:    writer.bytes,
-			duration: time.Since(startedAt),
-			err:      err,
-			canceled: errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe),
-		}
-		if err != nil {
-			supported, removeErr := removeIncompleteExport(file)
-			result.cleanupUnsupported = !supported
-			result.cleanupErr = removeErr
-		}
-		select {
-		case s.exportResults <- result:
-		default:
-		}
-		s.window.Invalidate()
-	})
+	}()
 }
 
 func writeResultExport(w io.Writer, columns []queryapp.Column, rows []resultRowView, sourceRows [][]any, format string) error {
