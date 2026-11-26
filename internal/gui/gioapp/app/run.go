@@ -27,6 +27,7 @@ import (
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/queryhistory"
 	savedsqldomain "github.com/yuwen002/meteor-ch-workbench/internal/domain/savedsql"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
+	settingsdomain "github.com/yuwen002/meteor-ch-workbench/internal/domain/settings"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
@@ -108,8 +109,12 @@ type objectsResult struct {
 
 // Run 使用新架构服务启动 Gio 窗口，不再依赖旧 internal/app.Service。
 func Run(window *gio.Window, services *bootstrap.Services) error {
-	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil || services.History == nil || services.SavedSQL == nil {
+	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil || services.History == nil || services.SavedSQL == nil || services.Settings == nil {
 		return fmt.Errorf("新架构应用服务未初始化")
+	}
+	preferences := settingsdomain.Default()
+	if loaded, loadErr := services.Settings.Load(context.Background()); loadErr == nil {
+		preferences = loaded
 	}
 	model, err := connectionui.NewModel(services.Connections, services.Folders)
 	if err != nil {
@@ -123,6 +128,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		window:           window,
 		explorer:         explorer,
 		services:         services,
+		queryRowLimit:    preferences.QueryRowLimit,
 		connections:      model,
 		theme:            material.NewTheme(),
 		checkResults:     make(chan connectionCheck, 4),
@@ -251,6 +257,7 @@ type workspace struct {
 	queryData         [][]any
 	queryStatus       string
 	queryRunning      bool
+	queryRowLimit     int
 
 	resultView           []resultRowView
 	resultViewDirty      bool
