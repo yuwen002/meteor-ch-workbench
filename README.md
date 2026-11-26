@@ -78,7 +78,7 @@ go build ./cmd/meteor-ch-gio
 - 可视化建表、编辑 / 删除表、集群拓扑等 ClickHouse 管理能力
 - 系统钥匙串或独立凭据存储，以及旧配置导入 / 备份恢复的完整交互
 - macOS CI、Windows / macOS / Linux 实际窗口验收和真实 ClickHouse 集成测试
-- 继续拆分约 58 KB 的 Gio app/run.go，删除旧 Gio 单体窗口、旧业务层和 Vue 前端
+- 继续拆分约 58 KB 的 Gio app/run.go；SQL 标签点击控件已按稳定 TabID 绑定，后续完善标签生命周期和设置模块，再按验收结果清理旧实现
 
 ## 架构方向
 
