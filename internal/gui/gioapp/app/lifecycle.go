@@ -47,3 +47,17 @@ func (s *workspace) shutdownWorkers() {
 	s.lifecycleMu.Unlock()
 	s.workers.Wait()
 }
+
+// invalidateIfActive serializes the final window access with shutdown.
+// An untracked native file-dialog goroutine may return after DestroyEvent.
+func (s *workspace) invalidateIfActive() {
+	if s == nil {
+		return
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.lifecycleClosing || (s.lifecycleCtx != nil && s.lifecycleCtx.Err() != nil) || s.window == nil {
+		return
+	}
+	s.window.Invalidate()
+}
