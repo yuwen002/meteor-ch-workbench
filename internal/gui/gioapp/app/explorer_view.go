@@ -64,12 +64,7 @@ func (s *workspace) layoutDatabaseNode(gtx layout.Context, name string) layout.D
 	}
 	if click.Clicked(gtx) {
 		if name == s.selectedDatabase {
-			s.selectedDatabase = ""
-			s.selectedTable = ""
-			s.selectedObject = ""
-			s.tables, s.views = nil, nil
-			s.columns = nil
-			s.tableDetails = metadataapp.TableDetails{}
+			s.explorerSelection.ClearDatabase()
 		} else {
 			s.selectDatabase(name)
 		}
@@ -125,7 +120,7 @@ func (s *workspace) layoutObjectNode(gtx layout.Context, database string, object
 			s.objectClicks[key] = click
 		}
 		if click.Clicked(gtx) {
-			s.selectedObject = key
+			s.explorerSelection.SetSelectedObject(key)
 			s.loadTableSchema(object.Name)
 		}
 		active := key == s.selectedObject
