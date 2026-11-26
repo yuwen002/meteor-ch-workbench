@@ -19,6 +19,7 @@ type Request struct {
 	ConnectionID string
 	SQL string
 	Mode Mode
+	// MaxRows 为 0 表示不限制，负数表示使用执行器安全默认值，正数表示最大返回行数。
 	MaxRows int
 	BatchSize int
 	Timeout time.Duration
