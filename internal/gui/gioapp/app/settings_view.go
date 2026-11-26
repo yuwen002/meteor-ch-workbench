@@ -55,7 +55,7 @@ func (s *workspace) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
 	maxWidth := gtx.Constraints.Max.X - gtx.Dp(unit.Dp(32))
 	if width > maxWidth { width = maxWidth }
 	if width < gtx.Dp(unit.Dp(260)) { width = maxWidth }
-	height := gtx.Dp(unit.Dp(260))
+	height := gtx.Dp(unit.Dp(310))
 	if height > gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32)) { height = gtx.Constraints.Max.Y-gtx.Dp(unit.Dp(32)) }
 	if width < 1 || height < 1 { return layout.Dimensions{} }
 	gtx.Constraints.Min = image.Pt(width, height)
@@ -75,6 +75,14 @@ func (s *workspace) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: spaceXS}.Layout),
 				layout.Rigid(styledText(s.theme, "范围：0 表示不限制；100～1,000,000 表示最大返回行数。仅影响新执行的查询。", unit.Sp(10), colorTextMuted)),
+				layout.Rigid(layout.Spacer{Height: spaceS}.Layout),
+				layout.Rigid(styledText(s.theme, "界面主题", unit.Sp(12), colorTextSecondary)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					label := "当前：浅色主题"
+					if s.settingsPreferences.Theme == settingsdomain.ThemeDark { label = "当前：深色主题" }
+					if s.settingsThemeToggle.Clicked(gtx) { s.toggleThemePreference() }
+					return s.smallButton(gtx, &s.settingsThemeToggle, label+" · 切换", false)
+				}),
 				layout.Rigid(layout.Spacer{Height: spaceS}.Layout),
 				layout.Rigid(styledText(s.theme, "编辑器高度占比（0.35～0.80）", unit.Sp(12), colorTextSecondary)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -142,4 +150,40 @@ func parseSettingsEditorRatio(text string) (float64, error) {
 		return 0, fmt.Errorf("编辑器占比须为 %.2f～%.2f", settingsdomain.MinEditorRatio, settingsdomain.MaxEditorRatio)
 	}
 	return value, nil
+}
+
+func (s *workspace) applyTheme(mode string) {
+	if mode != settingsdomain.ThemeDark { mode = settingsdomain.ThemeLight }
+	setPalette(mode)
+	if mode == settingsdomain.ThemeDark {
+		s.theme.Palette.Bg = colorSurface
+		s.theme.Palette.Fg = colorTextPrimary
+		s.theme.Palette.ContrastBg = colorAccent
+		s.theme.Palette.ContrastFg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		return
+	}
+	s.theme.Palette.Bg = colorSurface
+	s.theme.Palette.Fg = colorTextPrimary
+	s.theme.Palette.ContrastBg = colorAccent
+	s.theme.Palette.ContrastFg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+}
+
+func (s *workspace) toggleThemePreference() {
+	preferences := s.settingsPreferences
+	if preferences.Theme == settingsdomain.ThemeDark {
+		preferences.Theme = settingsdomain.ThemeLight
+	} else {
+		preferences.Theme = settingsdomain.ThemeDark
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	saved, err := s.services.Settings.Save(ctx, preferences)
+	if err != nil {
+		s.settingsStatus = "保存主题失败：" + err.Error()
+		return
+	}
+	s.settingsPreferences = saved
+	s.applyTheme(saved.Theme)
+	s.settingsStatus = "主题已切换并保存"
+	s.status = s.settingsStatus
 }
