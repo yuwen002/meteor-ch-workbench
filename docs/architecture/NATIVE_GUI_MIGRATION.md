@@ -341,3 +341,13 @@ Gio 编辑区读取并恢复 `TabsManager` 保存的标签快照，支持新建�
 - 新增测试验证标签重排后 Clickable 指针仍与原 TabID 对应，以及删除标签时只清理目标标签控件。
 - 这次改动没有增加新的拖放排序手势；稳定 ID 映射为后续排序交互提供安全基础。现有排序模型测试仍验证活动标签身份在重排后保持不变。
 - CI 以本轮最新 head `97babddd` 对应的 Actions 为准；尚未声称本地桌面交互验收完成。
+
+
+## 2026-11-26：窗口关闭与后台资源释放
+
+- workspace 增加统一后台任务登记；连接配置、连接测试、数据库 / 表元数据、查询执行、查询历史、收藏 SQL 和结果导出任务均纳入 WaitGroup。
+- 所有可取消的后台请求使用窗口生命周期 Context 作为父上下文。收到 Gio DestroyEvent 时，先取消生命周期和当前请求，再等待已登记任务结束。
+- Run 完成退出后，入口 main 执行 services.Close()，关闭 ClickHouse database/sql 连接池，避免连接池先于仍在执行的查询被关闭。
+- 新增生命周期单元测试，覆盖任务退出等待与取消后不再启动任务。
+- 本轮通过 GitHub Actions 验证 go test ./...、go vet ./... 与 Linux / Windows 构建；该 CI 不等同于实际桌面运行时退出验收。Gio Explorer 的系统文件选择器关闭行为仍需在 Windows / Linux / macOS 实机确认。
+- 本项目入口是 cmd/meteor-ch-gio/main.go，构建命令为 go build ./cmd/meteor-ch-gio，仓库根目录没有 main.go。
