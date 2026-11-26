@@ -130,6 +130,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		services:         services,
 		queryRowLimit:    preferences.QueryRowLimit,
 		settingsPreferences: preferences,
+		connectionSidebarCollapsed: preferences.SidebarCollapsed,
 		connections:      model,
 		theme:            material.NewTheme(),
 		checkResults:     make(chan connectionCheck, 4),
@@ -262,6 +263,8 @@ type workspace struct {
 	settingsToggle    widget.Clickable
 	settingsVisible   bool
 	settingsRowLimitEditor widget.Editor
+	settingsRatioEditor widget.Editor
+	settingsSidebarToggle widget.Clickable
 	settingsStatus    string
 	settingsSave      widget.Clickable
 	settingsCancel    widget.Clickable
@@ -776,7 +779,7 @@ func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
 			if compact {
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if s.sidebarToggle.Clicked(gtx) {
-						s.connectionSidebarCollapsed = !s.connectionSidebarCollapsed
+						s.toggleSidebarPreference()
 					}
 					label := "隐藏连接"
 					if s.connectionSidebarCollapsed {
@@ -926,9 +929,9 @@ func (s *workspace) layoutQueryPanel(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(s.divider),
 			layout.Rigid(s.layoutTabStrip),
 			layout.Rigid(s.divider),
-			layout.Flexed(0.45, s.layoutSQLEditor),
+			layout.Flexed(s.settingsPreferences.EditorRatio, s.layoutSQLEditor),
 			layout.Rigid(s.divider),
-			layout.Flexed(0.55, s.layoutResultsPanel),
+			layout.Flexed(1-s.settingsPreferences.EditorRatio, s.layoutResultsPanel),
 		)
 	})
 }
