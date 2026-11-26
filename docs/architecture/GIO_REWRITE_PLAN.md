@@ -261,3 +261,38 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 2. 再拆 editor 与 result：编辑器状态、执行控制、结果批次有界队列、筛选排序和导出分别独立。
 3. 新建 history / snippets / settings 的 domain、application、storage 和 Gio 组件，不能复用旧 config manager。
 4. 新组件全部接入并验收后，才删除旧业务包和 Vue frontend。
+
+
+## 8. 最新迁移进度（2026-11-26，严格全量重写口径）
+
+本次按阶段 A–F 重新核对代码结构、Gio 新入口、应用服务、基础设施和最新 CI。统计规则沿用第 5 节：旧 Vue、旧业务服务和旧 Gio 单体窗口中的功能不计入新架构完成；只有新入口实际接入且有相应测试的能力才计入。此数字是工程进度估算，不等于用户可见功能覆盖率。
+
+| 阶段 | 权重 | 完成度 | 当前判断 | 主要剩余 |
+|---|---:|---:|---|---|
+| A. 新架构骨架 | 15% | 80% | domain / application / infrastructure / bootstrap 已建立，Gio 新入口使用新服务 | 统一错误与流式契约、补齐边界测试，继续降低 GUI 与用例细节耦合 |
+| B. 连接与配置 | 20% | 65% | 新连接仓库、旧 JSON 一次性迁移、连接 CRUD / 测试 / 分组已有新入口 | 系统钥匙串或独立凭据存储、设置与工作区版本化存储、备份恢复及损坏配置处理 |
+| C. 查询与元数据 | 20% | 55% | 新查询执行器、取消 / 超时 / 批次回调、数据库对象与表详情、历史 / 收藏应用服务及存储已建立并接入 | 真实 ClickHouse 集成测试、历史与收藏完整验收、查询批次背压和资源释放、更多元数据能力 |
+| D. Gio 工作区重写 | 25% | 35% | 新 Gio 入口已接连接分组、对象浏览、SQL 编辑 / 多标签、结果视图、历史和收藏 | app/run.go 仍约 77 KB；需继续拆分 workspace / editor / result / explorer / history / snippets / settings，补齐设置和窄窗口交互验收 |
+| E. 删除旧程序 | 10% | 0% | 根 Wails 启动入口与绑定门面已删除 | 删除旧 internal/app、旧 internal/config、旧 internal/clickhouse、旧 gioapp/window.go、Vue frontend/ 和不再需要的依赖 |
+| F. 完整质量验收 | 10% | 45% | 当前 head 的 Linux 与 Windows CI 已通过测试、vet 和构建 | macOS CI、三平台真实桌面交互、真实 ClickHouse 集成、凭据迁移、安装包与性能基准 |
+
+加权估算：15%×80% + 20%×65% + 20%×55% + 25%×35% + 10%×0% + 10%×45% = **49.25%，约 49%**。
+
+- **全量重写工程进度：约 49%，剩余约 51%。**
+- **旧功能在新 Gio 中的可见替代：**已有连接管理、分组、对象浏览、SQL 编辑 / 多标签、结果视图、历史和收藏等主要路径；但因设置、ClickHouse 管理操作、完整编辑器能力和跨平台验收仍缺，不把旧功能列表的总数直接当成完成率。
+- 旧版 docs/FEATURES.md 中的功能描述是历史行为清单，不表示所有功能已在新架构中完成。
+
+### 本次快照的验收基准
+
+- 分支：feat/native-gui-foundation
+- head：e7a40986e2489ca168e4711130ca001549371fe0
+- 当前 head CI：Run 45763276733，Linux 与 Windows 检查均成功。
+- PR #1：Open / Draft / 未合并，base 为 main。
+- CI 通过不等于真实桌面验收；当前没有本轮本地 Go 测试或 Windows / macOS GUI 实机验证记录。
+
+### 下一步开发顺序
+
+1. 继续把 SQL 标签状态、结果视图状态与异步请求生命周期从 app/run.go 拆到独立 workspace / result 模块，补齐切换、关闭标签和迟到响应测试。
+2. 将查询结果批次处理与 UI 有界队列独立出来，避免大结果集切换标签时重复复制全部数据。
+3. 建立 settings 的 domain / application / storage 和 Gio 页面，迁移主题、行数上限、布局与刷新偏好。
+4. 补齐真实 ClickHouse 集成测试与 macOS CI；完成后再分批删除旧业务包和 Vue 前端。
