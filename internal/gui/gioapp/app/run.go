@@ -1582,12 +1582,16 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return material.List(s.theme, &s.queryRows).Layout(gtx, len(s.resultView), func(gtx layout.Context, index int) layout.Dimensions {
 					display := s.resultView[index]
+					var row []any
+					if display.Index >= 0 && display.Index < len(s.queryData) {
+						row = s.queryData[display.Index]
+					}
 					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						s.resultRowChildren = s.resultRowChildren[:0]
 						for cellIndex := range s.queryColumns {
 							var cell any
-							if cellIndex < len(display.Values) {
-								cell = display.Values[cellIndex]
+							if cellIndex < len(row) {
+								cell = row[cellIndex]
 							}
 							key := resultCellKey(index, cellIndex)
 							value, ok := s.resultCellText[key]
