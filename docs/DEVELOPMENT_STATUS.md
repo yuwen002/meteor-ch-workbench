@@ -209,3 +209,12 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - head `aec331c595c3f40f0c31f60e2d1211ae8d99d777` 的 Linux 和 Windows `go test ./...` 均失败，Windows 日志给出了剩余位置：`sql_tabs_test.go:273`、`sql_tabs_test.go:368` 仍有内嵌字段 `queryColumns` 的单字段复合字面量。
 - 已将这两处初始化改为 `queryResultState: queryResultState{queryColumns: columns}`。这是同一类测试初始化遗漏，不涉及生产逻辑。
 - 修复提交后需继续以最新分支 head 的两平台 CI 结果验收；先前失败的 CI 不能作为最新提交的验收依据。
+
+
+### SQL 标签结果快照复制优化（2026-11-27）
+
+- 标签切换归档结果时不再逐行复制 `[][]any`，改为共享只读结果行切片，消除每次切换时与结果行数成正比的行容器和字节值复制。
+- 安全边界来自查询结果事件：ClickHouse 执行器复制驱动返回的可变字节值，GUI 发布批次前复制行容器；事件入队后按不可变数据处理。
+- 活动结果追加新批次时只扩展当前切片，不修改已有行；列变化或新查询仍通过替换 / 清空切片释放旧快照。
+- 新增测试验证标签归档与活动结果共享行存储，以及活动结果追加后已保存快照的长度和内容保持稳定。
+- 当前提交的 Linux / Windows 全量测试、vet 和预览构建仍以最新 head Actions 结果为准；尚未进行本地性能基准或真实桌面大结果集验收。

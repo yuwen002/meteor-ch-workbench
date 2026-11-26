@@ -382,17 +382,34 @@ func TestSQLTabResultViewIgnoresChangedColumnType(t *testing.T) {
 	}
 }
 
-func TestCloneQueryRowsCopiesRowsAndByteValues(t *testing.T) {
-	original := [][]any{{"text", []byte("payload")}}
-	cloned := cloneQueryRows(original)
-	original[0][0] = "changed"
-	original[0][1].([]byte)[0] = 'X'
-
-	if cloned[0][0] != "text" {
-		t.Fatalf("cloned text value = %v, want text", cloned[0][0])
+func TestSaveActiveSQLTabStateSharesAppendOnlyResultRows(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	rows := make([][]any, 1, 4)
+	rows[0] = []any{"text", []byte("payload")}
+	state := &workspace{
+		sqlWorkspace: tabs,
+		sqlTabStates: map[workspaceui.TabID]sqlTabState{tabID: {SortColumn: -1}},
+		queryResultState: queryResultState{
+			queryColumns: []query.Column{{Name: "value", DatabaseType: "String"}},
+			queryData: rows,
+			queryStatus: "查询完成",
+		},
 	}
-	if got := string(cloned[0][1].([]byte)); got != "payload" {
-		t.Fatalf("cloned byte value = %q, want payload", got)
+
+	state.saveActiveSQLTabState()
+	saved := state.sqlTabStates[tabID].Data
+	if len(saved) != 1 || &saved[0][0] != &state.queryData[0][0] {
+		t.Fatal("saved result should share immutable row storage without copying")
+	}
+
+	// 活动结果只追加新行；已保存快照的长度和已有值必须保持不变。
+	state.queryData = append(state.queryData, []any{"next"})
+	if len(saved) != 1 {
+		t.Fatalf("saved snapshot row count = %d, want 1", len(saved))
+	}
+	if saved[0][0] != "text" || string(saved[0][1].([]byte)) != "payload" {
+		t.Fatalf("saved row changed after append: %v", saved[0])
 	}
 }
 
