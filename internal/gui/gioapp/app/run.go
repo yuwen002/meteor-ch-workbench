@@ -76,7 +76,14 @@ type deleteResult struct {
 }
 
 type historySaveResult struct {
-	err error
+	action string
+	err    error
+}
+
+type historyListResult struct {
+	seq   uint64
+	items []queryhistory.Entry
+	err   error
 }
 
 type savedSQLResult struct {
@@ -132,6 +139,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		saveResults:      make(chan saveResult, 2),
 		deleteResults:    make(chan deleteResult, 4),
 		historyResults:   make(chan historySaveResult, 16),
+		historyListResults: make(chan historyListResult, 2),
 		savedSQLResults:  make(chan savedSQLResult, 4),
 		savedSQLListResults: make(chan savedSQLListResult, 2),
 		objectResults:    make(chan objectsResult, 8),
@@ -193,6 +201,17 @@ type workspace struct {
 	saveResults       chan saveResult
 	deleteResults     chan deleteResult
 	historyResults    chan historySaveResult
+	historyListResults chan historyListResult
+	historyToggle     widget.Clickable
+	historyVisible    bool
+	historySearch     widget.Editor
+	historyList       widget.List
+	historyItems      []queryhistory.Entry
+	historyClicks     []widget.Clickable
+	historyDeleteClicks []widget.Clickable
+	historyClear      widget.Clickable
+	historyRefresh    widget.Clickable
+	historyListSeq    uint64
 	savedSQLResults   chan savedSQLResult
 	savedSQLListResults chan savedSQLListResult
 	saveSQL           widget.Clickable
@@ -567,7 +586,23 @@ func (s *workspace) drainResults() {
 			s.selectConnection(result.item)
 		case result := <-s.historyResults:
 			if result.err != nil {
-				s.status = "保存查询历史失败：" + result.err.Error()
+				action := result.action
+				if action == "" { action = "保存查询历史" }
+				s.status = action + "失败：" + result.err.Error()
+			} else if result.action != "" {
+				s.status = result.action + "成功"
+				s.reloadHistory()
+			} else if s.historyVisible {
+				s.reloadHistory()
+			}
+		case result := <-s.historyListResults:
+			if result.seq != s.historyListSeq { continue }
+			if result.err != nil {
+				s.status = "读取查询历史失败：" + result.err.Error()
+			} else {
+				s.historyItems = result.items
+				s.historyClicks = make([]widget.Clickable, len(result.items))
+				s.historyDeleteClicks = make([]widget.Clickable, len(result.items))
 			}
 		case result := <-s.savedSQLResults:
 			if result.err != nil {
@@ -1144,6 +1179,10 @@ func (s *workspace) layoutQueryPanel(gtx layout.Context) layout.Dimensions {
 				if !s.savedSQLVisible { return layout.Dimensions{} }
 				return s.layoutSavedSQLPanel(gtx)
 			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if !s.historyVisible { return layout.Dimensions{} }
+				return s.layoutHistoryPanel(gtx)
+			}),
 			layout.Rigid(s.divider),
 			layout.Rigid(s.layoutTabStrip),
 			layout.Rigid(s.divider),
@@ -1178,6 +1217,16 @@ func (s *workspace) layoutQueryToolbar(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(styledText(s.theme, "执行中…", unit.Sp(11), colorTextMuted)),
 				)
 			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.historyToggle.Clicked(gtx) {
+					s.historyVisible = !s.historyVisible
+					if s.historyVisible { s.reloadHistory() }
+				}
+				label := "查询历史"
+				if s.historyVisible { label = "收起历史" }
+				return s.smallButton(gtx, &s.historyToggle, label, false)
+			}),
+			layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if s.savedSQLToggle.Clicked(gtx) {
 					s.savedSQLVisible = !s.savedSQLVisible
