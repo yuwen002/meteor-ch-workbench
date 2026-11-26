@@ -10,9 +10,9 @@ import (
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 )
 
+// resultRowView 只保存源结果行索引，避免为每一行重复持有 Values 切片头。
 type resultRowView struct {
-	Index  int
-	Values []any
+	Index int
 }
 
 // buildResultRowView 仅构造 UI 展示顺序，不修改查询返回的原始结果。
@@ -31,16 +31,18 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 		if !resultRowMatchesColumnFilters(row, columnFilters) {
 			continue
 		}
-		view = append(view, resultRowView{Index: i, Values: row})
+		view = append(view, resultRowView{Index: i})
 	}
 	if sortColumn >= 0 {
 		sort.SliceStable(view, func(i, j int) bool {
+			leftRow := rows[view[i].Index]
+			rightRow := rows[view[j].Index]
 			var left, right any
-			if sortColumn < len(view[i].Values) {
-				left = view[i].Values[sortColumn]
+			if sortColumn < len(leftRow) {
+				left = leftRow[sortColumn]
 			}
-			if sortColumn < len(view[j].Values) {
-				right = view[j].Values[sortColumn]
+			if sortColumn < len(rightRow) {
+				right = rightRow[sortColumn]
 			}
 			if left == nil && right != nil {
 				return false
