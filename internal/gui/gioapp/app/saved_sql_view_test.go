@@ -39,3 +39,28 @@ func TestFilterSavedSQL(t *testing.T) {
 		})
 	}
 }
+
+
+func TestSyncSavedSQLControlsKeepsIdentityAndPrunesRemovedItems(t *testing.T) {
+	var state workspace
+	first := []savedsqldomain.Entry{
+		{ID: "alpha", Name: "Alpha"},
+		{ID: "beta", Name: "Beta"},
+	}
+	state.syncSavedSQLControls(first)
+	betaControls := state.savedSQLControls["beta"]
+	if betaControls == nil {
+		t.Fatal("expected controls for beta")
+	}
+
+	// Reordering and filtering must not bind a visible row to another item's controls.
+	state.syncSavedSQLControls([]savedsqldomain.Entry{
+		{ID: "beta", Name: "Beta"},
+	})
+	if state.savedSQLControls["beta"] != betaControls {
+		t.Fatal("controls identity changed after reorder/filter")
+	}
+	if _, ok := state.savedSQLControls["alpha"]; ok {
+		t.Fatal("controls for removed item were not pruned")
+	}
+}
