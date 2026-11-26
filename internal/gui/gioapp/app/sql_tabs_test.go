@@ -252,3 +252,15 @@ func TestSQLTabResultViewDoesNotRestoreStaleCellDetail(t *testing.T) {
 		t.Fatalf("stale detail scroll position should be reset: %+v", state.queryDetailRows.Position)
 	}
 }
+
+func TestShouldPreserveTabDatabaseWhenRetryingSameConnection(t *testing.T) {
+	if !shouldPreserveTabDatabase("connection-a", "connection-a", false) {
+		t.Fatal("retrying the same connection should preserve its database context")
+	}
+	if shouldPreserveTabDatabase("connection-a", "connection-b", false) {
+		t.Fatal("switching to another connection should clear the previous database context")
+	}
+	if !shouldPreserveTabDatabase("connection-a", "connection-b", true) {
+		t.Fatal("tab restoration should preserve its saved database context")
+	}
+}
