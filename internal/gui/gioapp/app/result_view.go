@@ -22,6 +22,16 @@ func buildResultRowView(rows [][]any, filter string, sortColumn int, descending 
 
 // buildResultRowViewWithColumnFilters 将全局关键字和各列条件按 AND 组合。
 func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilters []string, sortColumn int, descending bool) []resultRowView {
+	var sortKeys []resultSortKey
+	if sortColumn >= 0 {
+		sortKeys = extendResultSortKeys(rows, sortColumn, nil)
+	}
+	return buildResultRowViewWithPreparedSortKeys(rows, filter, columnFilters, sortColumn, descending, sortKeys)
+}
+
+// buildResultRowViewWithPreparedSortKeys 使用调用方维护的排序键缓存构建展示索引。
+// 缓存只包含当前排序列的键，不复制原始结果行。
+func buildResultRowViewWithPreparedSortKeys(rows [][]any, filter string, columnFilters []string, sortColumn int, descending bool, sortKeys []resultSortKey) []resultRowView {
 	filter = strings.TrimSpace(filter)
 	view := make([]resultRowView, 0, len(rows))
 	for i, row := range rows {
@@ -34,16 +44,8 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 		view = append(view, resultRowView{Index: i})
 	}
 	if sortColumn >= 0 {
-		// 排序比较器会被调用 O(n log n) 次；提前为参与排序的行解析一次
-		// 数值 / 时间 / 文本键，避免在每次比较中重复 fmt.Sprint 和解析。
-		sortKeys := make([]resultSortKey, len(rows))
-		for _, item := range view {
-			row := rows[item.Index]
-			var value any
-			if sortColumn < len(row) {
-				value = row[sortColumn]
-			}
-			sortKeys[item.Index] = newResultSortKey(value)
+		if len(sortKeys) < len(rows) {
+			sortKeys = extendResultSortKeys(rows, sortColumn, sortKeys)
 		}
 		sort.SliceStable(view, func(i, j int) bool {
 			cmp := compareResultSortKeys(sortKeys[view[i].Index], sortKeys[view[j].Index])
@@ -54,6 +56,29 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 		})
 	}
 	return view
+}
+
+// extendResultSortKeys 只为新增结果行计算排序键，供筛选变化和排序方向切换复用。
+func extendResultSortKeys(rows [][]any, sortColumn int, keys []resultSortKey) []resultSortKey {
+	if sortColumn < 0 {
+		return nil
+	}
+	if len(keys) > len(rows) {
+		keys = nil
+	}
+	if cap(keys) < len(rows) {
+		extended := make([]resultSortKey, len(keys), len(rows))
+		copy(extended, keys)
+		keys = extended
+	}
+	for i := len(keys); i < len(rows); i++ {
+		var value any
+		if sortColumn < len(rows[i]) {
+			value = rows[i][sortColumn]
+		}
+		keys = append(keys, newResultSortKey(value))
+	}
+	return keys
 }
 
 // resultSortKey 将排序值的昂贵转换预计算一次，供稳定排序的比较器复用。
