@@ -31,8 +31,8 @@ func filterHistory(items []queryhistory.Entry, keyword string) []queryhistory.En
 func (s *workspace) reloadHistory() {
 	s.historyListSeq++
 	seq := s.historyListSeq
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 5*time.Second)
 		defer cancel()
 		items, err := s.services.History.List(ctx)
 		select {
@@ -40,12 +40,12 @@ func (s *workspace) reloadHistory() {
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) mutateHistory(action, id string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	s.goWorker(func() {
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 5*time.Second)
 		defer cancel()
 		var err error
 		if action == "删除查询历史" {
@@ -58,7 +58,7 @@ func (s *workspace) mutateHistory(action, id string) {
 		case <-ctx.Done():
 		}
 		s.window.Invalidate()
-	}()
+	})
 }
 
 func (s *workspace) layoutHistoryPanel(gtx layout.Context) layout.Dimensions {
