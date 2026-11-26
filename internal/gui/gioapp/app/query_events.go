@@ -96,7 +96,7 @@ func (s *workspace) executeQuery() {
 	seq := s.queryExecution.Start(tab)
 	parent := s.lifecycleCtx
 	if parent == nil {
-		parent = context.Background()
+		parent = s.lifecycleParent()
 	}
 	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
 	s.queryCancelFunc = cancel
@@ -111,7 +111,7 @@ func (s *workspace) executeQuery() {
 	s.resetResultWidgets(nil)
 	s.queryStatus = "正在执行 SQL…"
 	request := queryapp.Request{ConnectionID: connectionID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: 10000, BatchSize: 128, Timeout: 30 * time.Second}
-	go func() {
+	s.goWorker(func() {
 		defer cancel()
 		summary, err := s.services.Queries.Execute(ctx, request,
 			func(columns []queryapp.Column) error {
@@ -126,14 +126,14 @@ func (s *workspace) executeQuery() {
 			},
 		)
 		_ = s.publishQueryCompletion(queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: connectionID, err: err, done: true})
-	}()
+	})
 }
 
 // cancelActiveQuery 在离开当前 SQL 标签页时取消仍在执行的请求，并使其后续事件失效。
 func (s *workspace) publishQueryCompletion(event queryEvent) error {
 	ctx := s.lifecycleCtx
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = s.lifecycleParent()
 	}
 	if err := enqueueQueryCompletion(ctx, s.queryResults, event); err != nil {
 		return err
