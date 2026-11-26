@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	domain "github.com/yuwen002/meteor-ch-workbench/internal/domain/settings"
@@ -19,7 +20,7 @@ func TestRepositoryDefaultsAndRoundTrip(t *testing.T) {
 	reloaded, err := repo.Load(context.Background()); if err != nil { t.Fatal(err) }
 	if reloaded != want { t.Fatalf("got %+v, want %+v", reloaded, want) }
 	info, err := os.Stat(path); if err != nil { t.Fatal(err) }
-	if info.Mode().Perm() != 0o600 { t.Fatalf("settings permissions = %o, want 600", info.Mode().Perm()) }
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 { t.Fatalf("settings permissions = %o, want 600", info.Mode().Perm()) }
 }
 
 func TestRepositoryRejectsCorruptJSON(t *testing.T) {
