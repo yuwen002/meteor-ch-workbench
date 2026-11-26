@@ -35,7 +35,7 @@ cmd/meteor-ch-gio
 - `internal/gui/gioapp/workspace`：与 Gio 控件解耦的 SQL 标签工作区模型。
 
 - `internal/gui/gioapp/app/query_workspace_view.go`：SQL 工作区布局、表结构条、查询工具栏、标签栏 / 标签、SQL 编辑器和状态栏；控件状态仍由 `workspace` 持有，避免视图拆分改变状态生命周期。
-- `internal/gui/gioapp/app/explorer_view.go`：数据库节点展开、表 / 视图分组、对象节点选择和资源树行绘制；连接与元数据状态仍由 `workspace` 持有。
+- `internal/gui/gioapp/app/explorer_view.go`：数据库节点展开、表 / 视图分组、对象节点选择和资源树行绘制；`explorer_state.go` 负责响应上下文校验，`explorer_request_state.go` 统一持有请求序号与取消函数。
 
 ## 当前目录状态
 
