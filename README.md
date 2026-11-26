@@ -92,7 +92,7 @@ cmd/meteor-ch-gio
                     └── storage
 ```
 
-详细重写范围和验收标准见 [Gio 重写计划](docs/architecture/GIO_REWRITE_PLAN.md) 与 [代码索引](docs/CODE_INDEX.md)。
+继续开发时，先查看 [开发进度与已完成功能](docs/DEVELOPMENT_STATUS.md)，确认已完成项、待验收项和下一步任务；详细重写范围见 [Gio 重写计划](docs/architecture/GIO_REWRITE_PLAN.md)，迁移历史见 [原生 GUI 迁移记录](docs/architecture/NATIVE_GUI_MIGRATION.md)，代码职责见 [代码索引](docs/CODE_INDEX.md)。
 
 ## License
 
