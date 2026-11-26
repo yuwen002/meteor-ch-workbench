@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"io"
 	"strings"
 	"time"
 
 	gio "gioui.org/app"
 	"gioui.org/gesture"
-	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
