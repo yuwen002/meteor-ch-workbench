@@ -161,3 +161,33 @@ func TestSQLTabResultViewStateRoundTrip(t *testing.T) {
 		t.Fatalf("column widths = %v, want [140 220]", state.columnWidths)
 	}
 }
+
+func TestSQLTabResultViewStateIgnoresChangedColumnSchema(t *testing.T) {
+	columns := []query.Column{{Name: "new_name"}, {Name: "new_count"}}
+	state := &workspace{
+		queryColumns: columns,
+		queryData:    [][]any{{"beta", int64(3)}},
+	}
+	state.resetResultWidgets(columns)
+	state.restoreResultViewState(sqlTabState{
+		FilterText:     "beta",
+		ColumnNames:    []string{"old_name", "old_count"},
+		ColumnFilters:  []string{"old", ">10"},
+		SortColumn:     0,
+		SortDescending: true,
+		ColumnWidths:   []unit.Dp{280, 300},
+	})
+
+	if got := state.resultFilter.Text(); got != "beta" {
+		t.Fatalf("global filter = %q, want beta", got)
+	}
+	if state.columnFilterEditors[0].Text() != "" || state.columnFilterEditors[1].Text() != "" {
+		t.Fatal("column filters from a different result schema must not be restored")
+	}
+	if state.resultSortColumn != -1 {
+		t.Fatalf("sort column = %d, want no sort for changed schema", state.resultSortColumn)
+	}
+	if state.columnWidths[0] == 280 || state.columnWidths[1] == 300 {
+		t.Fatalf("column widths from a different result schema must not be restored: %v", state.columnWidths)
+	}
+}
