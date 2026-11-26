@@ -605,6 +605,7 @@ func databaseNameExists(items []string, target string) bool {
 }
 
 func (s *workspace) drainResults() {
+	s.drainQueryResults()
 	for {
 		select {
 		case result := <-s.saveResults:
@@ -717,8 +718,6 @@ func (s *workspace) drainResults() {
 			}
 			s.tables, s.views = result.tables, result.views
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
-		case result := <-s.queryResults:
-			s.handleQueryResult(result)
 		case result := <-s.schemaResults:
 			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase || result.table != s.selectedTable {
 				continue
