@@ -75,9 +75,9 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 当前代码验收基线：`e99b27a32184bc842e57cd6f6162815604630eed`（窗口关闭任务入口竞态修复、并发注册保护及导出取消；保存对话框关闭等待优化正在开发）
+- 最近一个已确认完整成功的 CI 基线：`e99b27a32184bc842e57cd6f6162815604630eed`；之后保存对话框解耦等代码提交尚需以最新 head 的 CI 重新验收。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
 - PR #1：Open / Draft / 未合并，base 为 `main`。
-- 对应 Go CI Run `45778693845`：当前验收基线的 Linux / Windows 测试、go vet 与预览构建均成功。nux / Windows 检查已触发，检查结果以 Actions 页面为准；文档提交后仍需以新 head 的 CI 作为最终验收。
+- 对应 Go CI Run `45779082597`：提交 `e99b27a` 的 Linux / Windows 测试、go vet 与预览构建均成功；不能将该结果视为后续提交的 CI 结果。
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
 
 
@@ -93,10 +93,10 @@ cmd/meteor-ch-gio
 
 - `internal/gui/gioapp/app/lifecycle.go` 提供 `lifecycleParent`、`goWorker` 和 `shutdownWorkers`：后台任务统一继承窗口生命周期 Context，并登记到 `workspace.workers`。`lifecycleMu` 将“检查关闭状态 + WaitGroup.Add”与关闭入口串行化，避免 `Wait` 与并发 `Add` 竞态。
 - `run.go` 收到 `gio.DestroyEvent` 后先取消当前请求和活动查询，再通过 `shutdownWorkers` 原子关闭任务注册入口、取消生命周期并等待已登记任务退出；Run 返回后，窗口 goroutine 关闭 `runDone`；main 在 `gio.Main()` 返回后等待 `runDone`，再由 defer `services.Close()` 关闭 ClickHouse 连接池。
-- 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果导出均纳入后台任务登记。文件选择器由 Gio Explorer 提供，关闭行为仍需在目标桌面平台实测。
+- 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果文件写入均纳入后台任务登记。Gio Explorer 的系统保存对话框不纳入关闭等待的 WaitGroup；对话框返回后检查生命周期，窗口已关闭则关闭并尝试清理文件，不启动导出。
 - lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务、并发注册与关闭竞态，以及父 Context 选择；`lifecycleMu` 保证任务入口关闭与 WaitGroup.Add 串行化。
-- result_export.go 的 writeResultExportContext 在每行写入前检查生命周期 Context；窗口关闭后停止继续处理大型 CSV / TSV 导出，关闭文件并尝试清理不完整的本地文件。Gio Explorer 的文件保存对话框本身仍需用户关闭或返回，当前 API 不支持由 Context 主动打断对话框。
+- result_export.go 的 writeResultExportContext 在每行写入前检查生命周期 Context；窗口关闭后停止继续处理大型 CSV / TSV 导出，关闭文件并尝试清理不完整的本地文件。Gio Explorer 的文件保存对话框不支持 Context 中断，已拆分为独立阶段；窗口关闭不再等待该对话框。
 - `result_export_test.go` 覆盖已取消 Context 下不写出表头或数据，以及导出过程中取消后提前停止写入。
-- 当前导出限制：Gio Explorer 的 CreateFile 系统保存对话框不接受 Context；拆分后窗口关闭不再等待该对话框，但原生对话框自身如何随父窗口销毁，仍需在 Windows / macOS / Linux 实机确认。
+- 当前导出限制：原生对话框随父窗口销毁的实际行为仍需在 Windows / macOS / Linux 实机确认；代码层已避免关闭流程等待对话框。
 
 - `internal/infrastructure/clickhouse/pool_test.go` 验证 `PoolManager.Close()` 会关闭已创建的 `sql.DB`，关闭后不能再获取连接，且重复调用关闭保持幂等。
