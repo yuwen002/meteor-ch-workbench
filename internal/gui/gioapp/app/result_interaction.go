@@ -69,6 +69,9 @@ func (s *workspace) resetResultWidgets(columns []queryapp.Column) {
 	}
 	s.resultView = nil
 	s.resultViewDirty = true
+	s.resultSortKeys = nil
+	s.resultSortKeysColumn = -1
+	s.resultSortKeysValid = false
 	s.queryRows.Position = layout.Position{}
 	clear(s.queryCellClicks)
 	clear(s.resultCellText)
@@ -113,7 +116,19 @@ func (s *workspace) refreshResultView() {
 	for i := range s.columnFilterEditors {
 		filters[i] = s.columnFilterEditors[i].Text()
 	}
-	s.resultView = buildResultRowViewWithColumnFilters(s.queryData, s.resultFilter.Text(), filters, s.resultSortColumn, s.resultSortDescending)
+	if s.resultSortColumn < 0 {
+		s.resultSortKeys = nil
+		s.resultSortKeysColumn = -1
+		s.resultSortKeysValid = false
+	} else {
+		if !s.resultSortKeysValid || s.resultSortKeysColumn != s.resultSortColumn {
+			s.resultSortKeys = nil
+			s.resultSortKeysColumn = s.resultSortColumn
+			s.resultSortKeysValid = true
+		}
+		s.resultSortKeys = extendResultSortKeys(s.queryData, s.resultSortColumn, s.resultSortKeys)
+	}
+	s.resultView = buildResultRowViewWithPreparedSortKeys(s.queryData, s.resultFilter.Text(), filters, s.resultSortColumn, s.resultSortDescending, s.resultSortKeys)
 	s.resultViewDirty = false
 }
 
