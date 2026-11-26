@@ -155,6 +155,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		resultCellText:   make(map[int64]string),
 		exportResults:    make(chan exportResult, 4),
 		resultSortColumn: -1,
+		resultSortKeysColumn: -1,
 		databaseClicks:   make(map[string]*widget.Clickable),
 		objectClicks:     make(map[string]*widget.Clickable),
 		databaseList:     widget.List{List: layout.List{Axis: layout.Vertical}},
@@ -257,6 +258,9 @@ type workspace struct {
 
 	resultView           []resultRowView
 	resultViewDirty      bool
+	resultSortKeys       []resultSortKey
+	resultSortKeysColumn int
+	resultSortKeysValid  bool
 	resultCellText       map[int64]string
 	resultHeaderChildren []layout.FlexChild
 	resultRowChildren    []layout.FlexChild
