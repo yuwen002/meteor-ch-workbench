@@ -110,7 +110,7 @@ func (s *workspace) executeQuery() {
 	s.clearQueryCellSelection()
 	s.resetResultWidgets(nil)
 	s.queryStatus = "正在执行 SQL…"
-	request := queryapp.Request{ConnectionID: connectionID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: 10000, BatchSize: 128, Timeout: 30 * time.Second}
+	request := queryapp.Request{ConnectionID: connectionID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: s.queryRowLimit, BatchSize: 128, Timeout: 30 * time.Second}
 	s.goWorker(func() {
 		defer cancel()
 		summary, err := s.services.Queries.Execute(ctx, request,
