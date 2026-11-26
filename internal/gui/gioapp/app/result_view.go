@@ -73,9 +73,11 @@ func newResultSortKey(value any) resultSortKey {
 	text := fmt.Sprint(value)
 	key := resultSortKey{text: strings.ToLower(text)}
 	_, key.numeric = key.number.SetString(strings.TrimSpace(text))
-	var timeErr error
-	key.timestamp, timeErr = parseResultTime(text)
-	key.timeValid = timeErr == nil
+	if !key.numeric {
+		var timeErr error
+		key.timestamp, timeErr = parseResultTime(text)
+		key.timeValid = timeErr == nil
+	}
 	return key
 }
 
