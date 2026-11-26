@@ -142,7 +142,7 @@ func TestHandleQueryResultIgnoresEventForClosedTab(t *testing.T) {
 		sqlTabStates: map[workspaceui.TabID]sqlTabState{
 			closed: {Status: "关闭前状态", Data: [][]any{{"keep"}}},
 		},
-		queryExecution: execution,
+		queryRuntimeState: queryRuntimeState{queryExecution: execution},
 		queryStatus: "当前标签状态",
 		queryColumns: []queryapp.Column{{Name: "keep"}},
 		queryData: [][]any{{"active"}},
@@ -178,7 +178,7 @@ func TestHandleQueryResultIgnoresSupersededGeneration(t *testing.T) {
 		sqlTabStates: map[workspaceui.TabID]sqlTabState{
 			tabID: {Status: "当前标签状态"},
 		},
-		queryExecution: execution,
+		queryRuntimeState: queryRuntimeState{queryExecution: execution},
 		queryStatus: "当前查询状态",
 		queryColumns: []queryapp.Column{{Name: "current"}},
 		queryData: [][]any{{"current"}},
@@ -208,8 +208,7 @@ func TestHandleQueryResultAppendsBatchesAndFinishesActiveQuery(t *testing.T) {
 	seq := execution.Start(tabID)
 	state := &workspace{
 		sqlWorkspace: tabs,
-		queryExecution: execution,
-		queryRunning: true,
+		queryRuntimeState: queryRuntimeState{queryExecution: execution, queryRunning: true},
 		queryStatus: "正在执行 SQL…",
 		queryData: [][]any{{"first"}},
 	}
@@ -277,7 +276,7 @@ func TestDrainQueryResultsRespectsPerFrameBudget(t *testing.T) {
 	var execution workspaceui.QueryExecution
 	state := &workspace{
 		sqlWorkspace: tabs,
-		queryExecution: execution,
+		queryRuntimeState: queryRuntimeState{queryExecution: execution},
 		queryResults: make(chan queryEvent, queryResultQueueCapacity),
 		queryStatus: "保持当前查询状态",
 	}
