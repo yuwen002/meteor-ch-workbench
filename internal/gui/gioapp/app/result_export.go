@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -49,17 +50,24 @@ func (s *workspace) startExport(format string) {
 	sourceRows := append([][]any(nil), s.queryData...)
 	s.exportRunning = true
 	s.queryStatus = "正在导出当前结果…"
+	ctx := s.lifecycleParent()
 
 	s.goWorker(func() {
 		file, err := s.explorer.CreateFile("query-result." + format)
 		if err != nil {
-			s.exportResults <- exportResult{format: format, err: err, canceled: errors.Is(err, gioexplorer.ErrUserDecline)}
+			canceled := errors.Is(err, gioexplorer.ErrUserDecline) || ctx.Err() != nil
+			s.exportResults <- exportResult{format: format, err: err, canceled: canceled}
 			s.window.Invalidate()
 			return
 		}
 		startedAt := time.Now()
 		writer := &countingWriter{writer: file}
-		writeErr := writeResultExport(writer, columns, rows, sourceRows, format)
+		var writeErr error
+		if ctx.Err() != nil {
+			writeErr = ctx.Err()
+		} else {
+			writeErr = writeResultExportContext(ctx, writer, columns, rows, sourceRows, format)
+		}
 		closeErr := file.Close()
 		if writeErr != nil {
 			err = writeErr
@@ -72,7 +80,7 @@ func (s *workspace) startExport(format string) {
 			bytes:    writer.bytes,
 			duration: time.Since(startedAt),
 			err:      err,
-			canceled: errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe),
+			canceled: errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe),
 		}
 		if err != nil {
 			supported, removeErr := removeIncompleteExport(file)
@@ -88,6 +96,14 @@ func (s *workspace) startExport(format string) {
 }
 
 func writeResultExport(w io.Writer, columns []queryapp.Column, rows []resultRowView, sourceRows [][]any, format string) error {
+	return writeResultExportContext(context.Background(), w, columns, rows, sourceRows, format)
+}
+
+// writeResultExportContext 在每行写入前检查窗口生命周期，避免窗口关闭后继续处理大型导出结果。
+func writeResultExportContext(ctx context.Context, w io.Writer, columns []queryapp.Column, rows []resultRowView, sourceRows [][]any, format string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	writer := csv.NewWriter(w)
 	if format == "tsv" {
 		writer.Comma = '\t'
@@ -100,6 +116,9 @@ func writeResultExport(w io.Writer, columns []queryapp.Column, rows []resultRowV
 		return err
 	}
 	for _, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		cells := make([]string, len(columns))
 		var values []any
 		if row.Index >= 0 && row.Index < len(sourceRows) {
