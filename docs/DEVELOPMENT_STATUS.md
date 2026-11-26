@@ -3,7 +3,7 @@
 > 本文是当前开发状态的快速入口，按代码是否接入、是否测试、是否完成桌面验收分开记录。
 > 最后更新：2026-11-26
 > 当前分支：`feat/native-gui-foundation`
-> 最近代码变更基线：`cdfe0c14ec401d36d0739bb4ce494c7c38c8d325`
+> 最近代码变更基线：窗口启动与自适应尺寸修复正在 CI 验收，具体以最新 head 为准。
 >
 > **统计规则：**「已实现」只表示代码路径已完成并接入，不自动等于本地测试通过或真实桌面验收通过。没有对应证据的项目不得标记为验收完成。本文不使用容易失真的单一迁移百分比。
 
@@ -45,9 +45,8 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] 生命周期单元测试覆盖任务等待、取消后拒绝启动、并发注册与关闭竞态。
 - [x] 导出写入测试覆盖预先取消和大结果写入中途取消。
 - [x] 标签状态归档、稳定 TabID 控件绑定和查询事件有效性已有对应单元测试。
-- [x] 最近一个已确认完整成功的 CI 基线为提交 `e99b27a`，Run [45779082597](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45779082597)，Linux / Windows 测试、vet 和预览构建成功。
-- [x] 代码变更基线 `cdfe0c1` 的 CI Run [45779342076](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45779342076) 已完成，Linux / Windows 检查成功。
-- [ ] 本轮后续文档提交的最新 head `5db4b44` 对应 CI Run [45779754953](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45779754953) 尚在 queued；仍需等待完成。
+- [x] 最近历史基线 `cdfe0c1` 的 CI Run [45779342076](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45779342076) 已完成，Linux / Windows 检查成功。
+- [ ] 本轮 Windows 启动退出修复和窗口尺寸计算尚未获得最新 head 的完整 CI 结果；需确认 Windows / Linux 构建、测试和 vet。
 
 **注意：** GitHub Actions 成功只能证明对应提交在 CI 环境中的测试、静态检查和构建通过，不等于真实桌面交互已验收。
 
