@@ -45,21 +45,18 @@ func (s *workspace) handleQueryResult(result queryEvent) {
 		s.sqlTabStates[result.tab] = state
 		return
 	}
-	if len(result.columns) > 0 {
-		s.queryColumns = result.columns
-		s.queryData = nil
+	columnsChanged, rowsChanged, finished := s.queryResultState.apply(result)
+	if columnsChanged {
 		s.clearQueryCellSelection()
-		s.resetResultWidgets(result.columns)
+		s.resetResultWidgets(s.queryColumns)
 	}
-	if len(result.batch) > 0 {
-		s.queryData = append(s.queryData, result.batch...)
+	if rowsChanged {
 		s.resultViewDirty = true
 	}
-	if result.done {
+	if finished {
 		s.queryExecution.Finish(result.seq, result.tab)
 		s.queryRunning = false
 		s.queryCancelFunc = nil
-		s.queryStatus = queryResultStatus(result, s.queryColumns)
 	}
 }
 
