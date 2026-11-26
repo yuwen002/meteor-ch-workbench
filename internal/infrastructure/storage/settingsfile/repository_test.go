@@ -15,7 +15,7 @@ func TestRepositoryDefaultsAndRoundTrip(t *testing.T) {
 	repo, err := New(path); if err != nil { t.Fatal(err) }
 	got, err := repo.Load(context.Background()); if err != nil { t.Fatal(err) }
 	if got != domain.Default() { t.Fatalf("unexpected defaults: %+v", got) }
-	want := domain.Preferences{QueryRowLimit: 25000, SidebarCollapsed: true, EditorRatio: 0.72}
+	want := domain.Preferences{Theme: domain.ThemeLight, QueryRowLimit: 25000, SidebarCollapsed: true, EditorRatio: 0.72}
 	if err := repo.Save(context.Background(), want); err != nil { t.Fatal(err) }
 	reloaded, err := repo.Load(context.Background()); if err != nil { t.Fatal(err) }
 	if reloaded != want { t.Fatalf("got %+v, want %+v", reloaded, want) }
