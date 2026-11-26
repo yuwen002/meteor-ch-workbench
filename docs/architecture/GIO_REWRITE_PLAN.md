@@ -425,3 +425,10 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - Explorer 当前拆分为视图（`explorer_view.go`）、导航数据与选中上下文（`explorer_selection.go`）、请求生命周期（`explorer_request_state.go`）和异步响应有效性判断（`explorer_state.go`）。
 - `workspace` 通过嵌入状态对象暂时保持原有 UI 访问方式；Gio Clickable / List 控件仍由窗口层持有，避免领域状态依赖 UI 控件。
 - 后续应补充快速切换连接 / 数据库 / 表、刷新与迟到响应的组合回归测试，再继续拆分 SQL 编辑器和结果视图状态。
+
+
+### SQL 查询运行状态收拢（2026-11-27）
+
+- 查询执行生命周期字段已从 workspace 平铺字段收拢到 `queryRuntimeState`：查询代次、取消函数、运行标记。
+- 查询结果仍通过有界事件队列回到 Gio 事件循环；标签页归档状态（SQL、结果集、筛选、排序、滚动位置）仍由 `sqlTabState` 管理，两者职责分离。
+- 后续继续拆分查询结果视图状态时，应保留每标签独立快照与旧请求代次校验，不要把 UI 控件放入运行状态对象。
