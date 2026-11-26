@@ -18,6 +18,7 @@ type sqlTabState struct {
 	FilterText     string
 	ColumnFilters  []string
 	ColumnNames    []string
+	ColumnTypes    []string
 	SortColumn     int
 	SortDescending bool
 	ColumnWidths   []unit.Dp
@@ -35,8 +36,10 @@ func (s *workspace) saveResultViewState(state *sqlTabState) {
 	state.FilterText = s.resultFilter.Text()
 	state.ColumnFilters = make([]string, len(s.columnFilterEditors))
 	state.ColumnNames = make([]string, len(s.queryColumns))
+	state.ColumnTypes = make([]string, len(s.queryColumns))
 	for i := range s.queryColumns {
 		state.ColumnNames[i] = s.queryColumns[i].Name
+		state.ColumnTypes[i] = s.queryColumns[i].DatabaseType
 	}
 	for i := range s.columnFilterEditors {
 		state.ColumnFilters[i] = s.columnFilterEditors[i].Text()
@@ -59,10 +62,10 @@ func (s *workspace) saveResultViewState(state *sqlTabState) {
 func (s *workspace) restoreResultViewState(state sqlTabState) {
 	s.resultFilter.SetText(state.FilterText)
 	s.resultFilterLast = state.FilterText
-	sameColumns := len(state.ColumnNames) == len(s.queryColumns)
+	sameColumns := len(state.ColumnNames) == len(s.queryColumns) && len(state.ColumnTypes) == len(s.queryColumns)
 	if sameColumns {
 		for i := range s.queryColumns {
-			if state.ColumnNames[i] != s.queryColumns[i].Name {
+			if state.ColumnNames[i] != s.queryColumns[i].Name || state.ColumnTypes[i] != s.queryColumns[i].DatabaseType {
 				sameColumns = false
 				break
 			}
