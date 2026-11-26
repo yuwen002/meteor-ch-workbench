@@ -13,12 +13,14 @@ type FolderService interface {
 	List(context.Context) ([]domain.Folder, error)
 	Save(context.Context, domain.Folder) (domain.Folder, error)
 	Delete(context.Context, string) error
+	Reorder(context.Context, []string) error
 }
 
 type Service interface {
 	List(context.Context) ([]domain.Connection, error)
 	Save(context.Context, domain.Connection) (domain.Connection, error)
 	Delete(context.Context, string) error
+	Reorder(context.Context, []string) error
 	Test(context.Context, domain.Connection) error
 }
 
@@ -119,6 +121,30 @@ func (m *Model) DeleteFolder(ctx context.Context, id string) error {
 	m.folders = folders
 	for i := range m.items { if m.items[i].FolderID == id { m.items[i].FolderID = "" } }
 	m.err = ""
+	return nil
+}
+
+// ReorderFolders 按新的 ID 顺序持久化分组，并同步更新界面快照。
+func (m *Model) ReorderFolders(ctx context.Context, ids []string) error {
+	if err := m.folderService.Reorder(ctx, ids); err != nil { m.setError(err); return err }
+	folders, err := m.folderService.List(ctx)
+	if err != nil { m.setError(err); return err }
+	m.mu.Lock()
+	m.folders = append([]domain.Folder(nil), folders...)
+	m.err = ""
+	m.mu.Unlock()
+	return nil
+}
+
+// ReorderConnections 按新的 ID 顺序持久化连接，并同步更新界面快照。
+func (m *Model) ReorderConnections(ctx context.Context, ids []string) error {
+	if err := m.service.Reorder(ctx, ids); err != nil { m.setError(err); return err }
+	items, err := m.service.List(ctx)
+	if err != nil { m.setError(err); return err }
+	m.mu.Lock()
+	m.items = append([]domain.Connection(nil), items...)
+	m.err = ""
+	m.mu.Unlock()
 	return nil
 }
 

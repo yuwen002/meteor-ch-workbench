@@ -12,6 +12,7 @@ type Repository interface {
 	ListFolders(context.Context) ([]connection.Folder, error)
 	SaveFolder(context.Context, connection.Folder) error
 	DeleteFolder(context.Context, string) error
+	ReorderFolders(context.Context, []string) error
 }
 
 // IDGenerator 为新分组生成稳定 ID。

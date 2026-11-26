@@ -41,6 +41,12 @@ func (s *Service) Save(ctx context.Context, item connection.Folder) (connection.
 	return item, nil
 }
 
+// Reorder 按给定 ID 顺序重排分组；未提供的分组保留原相对顺序。
+func (s *Service) Reorder(ctx context.Context, ids []string) error {
+	if err := ctx.Err(); err != nil { return err }
+	return s.repository.ReorderFolders(ctx, append([]string(nil), ids...))
+}
+
 // Delete 删除分组；底层仓库负责将该分组内的连接移回根级。
 func (s *Service) Delete(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)

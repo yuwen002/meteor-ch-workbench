@@ -25,6 +25,8 @@ import (
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
+	"github.com/yuwen002/meteor-ch-workbench/internal/domain/queryhistory"
+	savedsqldomain "github.com/yuwen002/meteor-ch-workbench/internal/domain/savedsql"
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
 	connectionui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/connection"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
@@ -56,6 +58,8 @@ type queryEvent struct {
 	columns []queryapp.Column
 	batch   [][]any
 	summary queryapp.Summary
+	sql string
+	connectionID string
 	err     error
 	done    bool
 }
@@ -69,6 +73,22 @@ type queryCellSelection struct {
 type deleteResult struct {
 	id  string
 	err error
+}
+
+type historySaveResult struct {
+	err error
+}
+
+type savedSQLResult struct {
+	name   string
+	action string
+	err    error
+}
+
+type savedSQLListResult struct {
+	seq   uint64
+	items []savedsqldomain.Entry
+	err   error
 }
 
 type saveResult struct {
@@ -94,7 +114,7 @@ type objectsResult struct {
 
 // Run 使用新架构服务启动 Gio 窗口，不再依赖旧 internal/app.Service。
 func Run(window *gio.Window, services *bootstrap.Services) error {
-	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil {
+	if services == nil || services.Connections == nil || services.Folders == nil || services.Metadata == nil || services.Queries == nil || services.History == nil || services.SavedSQL == nil {
 		return fmt.Errorf("新架构应用服务未初始化")
 	}
 	model, err := connectionui.NewModel(services.Connections, services.Folders)
@@ -111,12 +131,16 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		checkResults:     make(chan connectionCheck, 4),
 		saveResults:      make(chan saveResult, 2),
 		deleteResults:    make(chan deleteResult, 4),
+		historyResults:   make(chan historySaveResult, 16),
+		savedSQLResults:  make(chan savedSQLResult, 4),
+		savedSQLListResults: make(chan savedSQLListResult, 2),
 		objectResults:    make(chan objectsResult, 8),
 		schemaResults:    make(chan schemaResult, 4),
 		queryResults:     make(chan queryEvent, 128),
 		sqlWorkspace:     workspaceui.NewTabs(),
 		sqlTabStates:     map[workspaceui.TabID]sqlTabState{1: {}},
 		queryRows:        widget.List{List: layout.List{Axis: layout.Vertical}},
+		savedSQLList:     widget.List{List: layout.List{Axis: layout.Vertical}},
 		queryHorizontal:  widget.List{List: layout.List{Axis: layout.Horizontal}},
 		queryDetailRows:  widget.List{List: layout.List{Axis: layout.Vertical}},
 		queryCellClicks:  make(map[int64]*widget.Clickable),
@@ -168,6 +192,23 @@ type workspace struct {
 	checkResults      chan connectionCheck
 	saveResults       chan saveResult
 	deleteResults     chan deleteResult
+	historyResults    chan historySaveResult
+	savedSQLResults   chan savedSQLResult
+	savedSQLListResults chan savedSQLListResult
+	saveSQL           widget.Clickable
+	savedSQLToggle    widget.Clickable
+	savedSQLRefresh   widget.Clickable
+	savedSQLVisible   bool
+	savedSQLSearch    widget.Editor
+	savedSQLList      widget.List
+	savedSQLItems     []savedsqldomain.Entry
+	savedSQLClicks    []widget.Clickable
+	savedSQLDelete    []widget.Clickable
+	savedSQLRenameID  string
+	savedSQLRenameEditor widget.Editor
+	savedSQLRenameSave widget.Clickable
+	savedSQLRename []widget.Clickable
+	savedSQLListSeq   uint64
 	objectResults     chan objectsResult
 	schemaResults     chan schemaResult
 	queryResults      chan queryEvent
@@ -258,6 +299,159 @@ func (s *workspace) saveConnection(item connection.Connection) {
 		select {
 		case s.saveResults <- result:
 		default:
+		}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *workspace) reloadSavedSQL() {
+	s.savedSQLListSeq++
+	seq := s.savedSQLListSeq
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		items, err := s.services.SavedSQL.List(ctx)
+		select {
+		case s.savedSQLListResults <- savedSQLListResult{seq: seq, items: items, err: err}:
+		case <-ctx.Done():
+		}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *workspace) layoutSavedSQLPanel(gtx layout.Context) layout.Dimensions {
+	filtered := filterSavedSQL(s.savedSQLItems, s.savedSQLSearch.Text())
+	needle := strings.TrimSpace(s.savedSQLSearch.Text())
+	height := gtx.Dp(unit.Dp(174))
+	gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = height, height
+	return s.surface(gtx, colorSurfaceSubtle, radiusS, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top: spaceXS, Bottom: spaceXS, Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(styledText(s.theme, fmt.Sprintf("收藏 SQL（%d）", len(s.savedSQLItems)), unit.Sp(11), colorTextPrimary)),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								s.savedSQLSearch.SingleLine = true
+								editor := material.Editor(s.theme, &s.savedSQLSearch, "搜索名称或 SQL")
+							editor.TextSize = unit.Sp(11)
+								return editor.Layout(gtx)
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if s.savedSQLRefresh.Clicked(gtx) { s.reloadSavedSQL() }
+							return s.smallButton(gtx, &s.savedSQLRefresh, "刷新", false)
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if s.savedSQLRenameID == "" { return layout.Dimensions{} }
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							s.savedSQLRenameEditor.SingleLine = true
+							editor := material.Editor(s.theme, &s.savedSQLRenameEditor, "输入新的收藏名称")
+							editor.TextSize = unit.Sp(11)
+							return editor.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if s.savedSQLRenameSave.Clicked(gtx) { s.renameSavedSQL(s.savedSQLRenameID) }
+							return s.smallButton(gtx, &s.savedSQLRenameSave, "保存名称", strings.TrimSpace(s.savedSQLRenameEditor.Text()) == "")
+						}),
+					)
+				}),
+				layout.Rigid(s.divider),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					if len(filtered) == 0 {
+						message := "暂无收藏 SQL"
+						if needle != "" { message = "没有匹配的收藏 SQL" }
+						return layout.Center.Layout(gtx, styledText(s.theme, message, unit.Sp(11), colorTextMuted))
+					}
+					s.savedSQLList.Axis = layout.Vertical
+					return material.List(s.theme, &s.savedSQLList).Layout(gtx, len(filtered), func(gtx layout.Context, index int) layout.Dimensions {
+						item := filtered[index]
+						click := &s.savedSQLClicks[index]
+						remove := &s.savedSQLDelete[index]
+						if click.Clicked(gtx) {
+							s.queryEditor.SetText(item.SQL)
+							s.queryStatus = "已载入收藏 SQL：" + item.Name
+						}
+						if remove.Clicked(gtx) { s.deleteSavedSQL(item.ID) }
+						rename := &s.savedSQLRename[index]
+						if rename.Clicked(gtx) { s.savedSQLRenameID = item.ID; s.savedSQLRenameEditor.SetText(item.Name) }
+						return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+											layout.Rigid(styledText(s.theme, item.Name, unit.Sp(11), colorTextPrimary)),
+											layout.Rigid(styledText(s.theme, strings.ReplaceAll(strings.TrimSpace(item.SQL), "\n", " "), unit.Sp(10), colorTextMuted)),
+										)
+									})
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return s.smallButton(gtx, rename, "改名", false)
+								}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return s.smallButton(gtx, remove, "删除", false)
+								}),
+							)
+						})
+					})
+				}),
+			)
+		})
+	})
+}
+
+func (s *workspace) renameSavedSQL(id string) {
+	name := strings.TrimSpace(s.savedSQLRenameEditor.Text())
+	if name == "" { return }
+	var item savedsqldomain.Entry
+	for _, saved := range s.savedSQLItems {
+		if saved.ID == id { item = saved; break }
+	}
+	if item.ID == "" { return }
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		updated, err := s.services.SavedSQL.Update(ctx, id, name, item.SQL)
+		select {
+		case s.savedSQLResults <- savedSQLResult{name: updated.Name, action: "重命名收藏", err: err}:
+		case <-ctx.Done():
+		}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *workspace) deleteSavedSQL(id string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := s.services.SavedSQL.Delete(ctx, id)
+		select {
+		case s.savedSQLResults <- savedSQLResult{action: "删除收藏", err: err}:
+		case <-ctx.Done():
+		}
+		s.window.Invalidate()
+	}()
+}
+
+func (s *workspace) saveCurrentSQL() {
+	sqlText := strings.TrimSpace(s.queryEditor.Text())
+	if sqlText == "" || !s.connected || s.selectedID == "" {
+		return
+	}
+	connectionID := s.selectedID
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		item, err := s.services.SavedSQL.Add(ctx, savedsqldomain.Entry{
+			SQL:          sqlText,
+			ConnectionID: connectionID,
+		})
+		select {
+		case s.savedSQLResults <- savedSQLResult{name: item.Name, action: "收藏 SQL", err: err}:
+		case <-ctx.Done():
 		}
 		s.window.Invalidate()
 	}()
@@ -371,6 +565,36 @@ func (s *workspace) drainResults() {
 			}
 			s.status = "连接已保存，正在测试连接…"
 			s.selectConnection(result.item)
+		case result := <-s.historyResults:
+			if result.err != nil {
+				s.status = "保存查询历史失败：" + result.err.Error()
+			}
+		case result := <-s.savedSQLResults:
+			if result.err != nil {
+				action := result.action
+				if action == "" { action = "收藏 SQL" }
+				s.status = action + "失败：" + result.err.Error()
+			} else {
+				if result.action == "删除收藏" {
+					s.status = "已删除收藏 SQL"
+				} else if result.action == "重命名收藏" {
+					s.status = "已重命名收藏 SQL：" + result.name
+					s.savedSQLRenameID = ""
+				} else {
+					s.status = "已收藏 SQL：" + result.name
+				}
+				s.reloadSavedSQL()
+			}
+		case result := <-s.savedSQLListResults:
+			if result.seq != s.savedSQLListSeq { continue }
+			if result.err != nil {
+				s.status = "读取收藏 SQL 失败：" + result.err.Error()
+			} else {
+				s.savedSQLItems = result.items
+				s.savedSQLClicks = make([]widget.Clickable, len(result.items))
+				s.savedSQLDelete = make([]widget.Clickable, len(result.items))
+				s.savedSQLRename = make([]widget.Clickable, len(result.items))
+			}
 		case result := <-s.deleteResults:
 			if result.err != nil {
 				s.status = "删除连接失败：" + result.err.Error()
@@ -418,6 +642,25 @@ func (s *workspace) drainResults() {
 			_, exists := s.sqlWorkspace.Get(result.tab)
 			if !exists {
 				continue // 标签页已关闭，丢弃迟到的查询事件。
+			}
+			if result.done && strings.TrimSpace(result.sql) != "" {
+				entry := queryhistory.Entry{
+					SQL: result.sql,
+					ConnectionID: result.connectionID,
+					DurationMs: float64(result.summary.Elapsed) / float64(time.Millisecond),
+					Success: result.err == nil,
+				}
+				go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_, err := s.services.History.Add(ctx, entry)
+				select {
+				case s.historyResults <- historySaveResult{err: err}:
+				case <-ctx.Done():
+					// 窗口退出或反馈队列持续拥塞时，最多等待本次保存超时。
+				}
+				s.window.Invalidate()
+			}()
 			}
 			if result.tab != s.sqlWorkspace.ActiveID() {
 				state := s.sqlTabStates[result.tab]
@@ -697,6 +940,7 @@ func (s *workspace) executeQuery() {
 		s.queryCancelFunc()
 	}
 	tab := s.sqlWorkspace.ActiveID()
+	connectionID := s.selectedID
 	seq := s.queryExecution.Start(tab)
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	s.queryCancelFunc = cancel
@@ -705,7 +949,7 @@ func (s *workspace) executeQuery() {
 	s.clearQueryCellSelection()
 	s.resetResultWidgets(nil)
 	s.queryStatus = "正在执行 SQL…"
-	request := queryapp.Request{ConnectionID: s.selectedID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: 10000, BatchSize: 128, Timeout: 30 * time.Second}
+	request := queryapp.Request{ConnectionID: connectionID, SQL: sqlText, Mode: classifySQLMode(sqlText), MaxRows: 10000, BatchSize: 128, Timeout: 30 * time.Second}
 	go func() {
 		defer cancel()
 		summary, err := s.services.Queries.Execute(ctx, request,
@@ -731,7 +975,7 @@ func (s *workspace) executeQuery() {
 			},
 		)
 		select {
-		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, err: err, done: true}:
+		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: connectionID, err: err, done: true}:
 		case <-ctx.Done():
 			// 标签页切换或窗口退出后不再等待无人消费的结果事件。
 		}
@@ -896,6 +1140,10 @@ func (s *workspace) layoutQueryPanel(gtx layout.Context) layout.Dimensions {
 	return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(s.layoutQueryToolbar),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if !s.savedSQLVisible { return layout.Dimensions{} }
+				return s.layoutSavedSQLPanel(gtx)
+			}),
 			layout.Rigid(s.divider),
 			layout.Rigid(s.layoutTabStrip),
 			layout.Rigid(s.divider),
@@ -930,6 +1178,23 @@ func (s *workspace) layoutQueryToolbar(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(styledText(s.theme, "执行中…", unit.Sp(11), colorTextMuted)),
 				)
 			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.savedSQLToggle.Clicked(gtx) {
+					s.savedSQLVisible = !s.savedSQLVisible
+					if s.savedSQLVisible { s.reloadSavedSQL() }
+				}
+				label := "收藏 SQL"
+				if s.savedSQLVisible { label = "收起收藏" }
+				return s.smallButton(gtx, &s.savedSQLToggle, label, false)
+			}),
+			layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.saveSQL.Clicked(gtx) && !s.queryRunning {
+					s.saveCurrentSQL()
+				}
+				return s.smallButton(gtx, &s.saveSQL, "收藏 SQL", s.queryRunning || strings.TrimSpace(s.queryEditor.Text()) == "" || !s.connected)
+			}),
+			layout.Rigid(layout.Spacer{Width: spaceS}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if s.queryRun.Clicked(gtx) && !s.queryRunning {
 					s.executeQuery()

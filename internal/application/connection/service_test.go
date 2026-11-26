@@ -24,6 +24,16 @@ func (r *memoryRepository) Save(_ context.Context, item connection.Connection) e
 	for i := range r.items { if r.items[i].ID == item.ID { r.items[i] = item; return nil } }
 	r.items = append(r.items, item); return nil
 }
+func (r *memoryRepository) Reorder(_ context.Context, ids []string) error {
+	byID := make(map[string]connection.Connection, len(r.items))
+	for _, item := range r.items { byID[item.ID] = item }
+	seen := map[string]bool{}
+	ordered := make([]connection.Connection, 0, len(r.items))
+	for _, id := range ids { if item, ok := byID[id]; ok && !seen[id] { ordered = append(ordered, item); seen[id] = true } }
+	for _, item := range r.items { if !seen[item.ID] { ordered = append(ordered, item) } }
+	r.items = ordered
+	return nil
+}
 func (r *memoryRepository) Delete(_ context.Context, id string) error {
 	if r.deleteErr != nil { return r.deleteErr }
 	for i := range r.items { if r.items[i].ID == id { r.items = append(r.items[:i], r.items[i+1:]...); return nil } }
@@ -92,6 +102,15 @@ func TestDeleteRemovesConnection(t *testing.T) {
 	if err := s.Delete(context.Background(), "c1"); err != nil { t.Fatal(err) }
 	if len(repo.items) != 0 { t.Fatalf("连接未删除: %+v", repo.items) }
 }
+func TestReorderDelegatesOrderedIDs(t *testing.T) {
+	repo := &memoryRepository{items: []connection.Connection{{ID:"c1"},{ID:"c2"},{ID:"c3"}}}
+	s := newTestService(t, repo, &fakeTester{})
+	if err := s.Reorder(context.Background(), []string{"c3","c1"}); err != nil { t.Fatal(err) }
+	if got, want := []string{repo.items[0].ID,repo.items[1].ID,repo.items[2].ID}, []string{"c3","c1","c2"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("排序结果=%v，期望 %v",got,want)
+	}
+}
+
 func TestTestDoesNotPersistConnection(t *testing.T) {
 	repo, tester := &memoryRepository{}, &fakeTester{}
 	s := newTestService(t, repo, tester)

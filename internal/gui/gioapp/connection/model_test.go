@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	domain "github.com/yuwen002/meteor-ch-workbench/internal/domain/connection"
@@ -28,6 +29,16 @@ func (s *serviceStub) Save(_ context.Context, item domain.Connection) (domain.Co
 	s.items = append(s.items, item)
 	return item, nil
 }
+func (s *serviceStub) Reorder(_ context.Context, ids []string) error {
+	byID := make(map[string]domain.Connection, len(s.items))
+	for _, item := range s.items { byID[item.ID] = item }
+	seen := map[string]bool{}
+	ordered := make([]domain.Connection, 0, len(s.items))
+	for _, id := range ids { if item, ok := byID[id]; ok && !seen[id] { ordered = append(ordered, item); seen[id] = true } }
+	for _, item := range s.items { if !seen[item.ID] { ordered = append(ordered, item) } }
+	s.items = ordered
+	return nil
+}
 func (s *serviceStub) Delete(_ context.Context, id string) error {
 	if s.deleteErr != nil { return s.deleteErr }
 	for i := range s.items {
@@ -42,6 +53,16 @@ func (s *folderStub) List(context.Context) ([]domain.Folder, error) { return app
 func (s *folderStub) Save(_ context.Context, item domain.Folder) (domain.Folder, error) {
  for i := range s.items { if s.items[i].ID == item.ID { s.items[i] = item; return item, nil } }
  s.items = append(s.items, item); return item, nil
+}
+func (s *folderStub) Reorder(_ context.Context, ids []string) error {
+	byID := make(map[string]domain.Folder, len(s.items))
+	for _, item := range s.items { byID[item.ID] = item }
+	seen := map[string]bool{}
+	ordered := make([]domain.Folder, 0, len(s.items))
+	for _, id := range ids { if item, ok := byID[id]; ok && !seen[id] { ordered = append(ordered, item); seen[id] = true } }
+	for _, item := range s.items { if !seen[item.ID] { ordered = append(ordered, item) } }
+	s.items = ordered
+	return nil
 }
 func (s *folderStub) Delete(_ context.Context, id string) error {
  if s.deleteErr != nil { return s.deleteErr }
@@ -119,6 +140,23 @@ func TestModelNewerConnectionTestSupersedesOlderResult(t *testing.T) {
 	<-firstDone
 	if got := model.Snapshot().TestingID; got != "" {
 		t.Fatalf("较旧测试结束不应覆盖新状态，得到 %q", got)
+	}
+}
+
+func TestModelReordersFoldersAndConnections(t *testing.T) {
+	service := &serviceStub{items: []domain.Connection{{ID:"c1"},{ID:"c2"},{ID:"c3"}}}
+	folders := &folderStub{items: []domain.Folder{{ID:"f1",Name:"one"},{ID:"f2",Name:"two"},{ID:"f3",Name:"three"}}}
+	model, err := NewModel(service, folders)
+	if err != nil { t.Fatal(err) }
+	if err := model.Reload(context.Background()); err != nil { t.Fatal(err) }
+	if err := model.ReorderFolders(context.Background(), []string{"f3","f1"}); err != nil { t.Fatal(err) }
+	if err := model.ReorderConnections(context.Background(), []string{"c2","c1"}); err != nil { t.Fatal(err) }
+	state := model.Snapshot()
+	if got, want := []string{state.Folders[0].ID,state.Folders[1].ID,state.Folders[2].ID}, []string{"f3","f1","f2"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("模型分组顺序=%v，期望 %v",got,want)
+	}
+	if got, want := []string{state.Items[0].ID,state.Items[1].ID,state.Items[2].ID}, []string{"c2","c1","c3"}; !reflect.DeepEqual(got,want) {
+		t.Fatalf("模型连接顺序=%v，期望 %v",got,want)
 	}
 }
 

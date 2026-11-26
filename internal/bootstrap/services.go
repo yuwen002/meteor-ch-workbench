@@ -9,10 +9,14 @@ import (
 
 	connectionapp "github.com/yuwen002/meteor-ch-workbench/internal/application/connection"
 	folderapp "github.com/yuwen002/meteor-ch-workbench/internal/application/folder"
+	historyapp "github.com/yuwen002/meteor-ch-workbench/internal/application/history"
+	savedsqlapp "github.com/yuwen002/meteor-ch-workbench/internal/application/savedsql"
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	chinfra "github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/clickhouse"
 	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/connectionfile"
+	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/historyfile"
+	"github.com/yuwen002/meteor-ch-workbench/internal/infrastructure/storage/savedsqlfile"
 )
 
 // Services 是新架构的应用服务容器。GUI 只需依赖这些应用层服务，不直接创建基础设施对象。
@@ -21,6 +25,8 @@ type Services struct {
 	ConfigPath string
 	Connections *connectionapp.Service
 	Folders *folderapp.Service
+	History *historyapp.Service
+	SavedSQL *savedsqlapp.Service
 	Queries     *queryapp.Service
 	Metadata    *metadataapp.Service
 	pools       *chinfra.PoolManager
@@ -54,6 +60,16 @@ func New(dataDir string) (*Services, error) {
 	}
 	folders, err := folderapp.NewService(repository, ids)
 	if err != nil { return fail(err) }
+	historyRepository, err := historyfile.New(filepath.Join(dataDir, "history.json"))
+	if err != nil { return fail(err) }
+	history, err := historyapp.NewService(historyRepository, historyfile.RandomIDGenerator{})
+	if err != nil { return fail(err) }
+
+	savedSQLRepository, err := savedsqlfile.New(filepath.Join(dataDir, "saved_sql.json"))
+	if err != nil { return fail(err) }
+	savedSQL, err := savedsqlapp.NewService(savedSQLRepository, savedsqlfile.RandomIDGenerator{})
+	if err != nil { return fail(err) }
+
 	executor, err := chinfra.NewQueryExecutor(pools)
 	if err != nil {
 		return fail(err)
@@ -75,6 +91,8 @@ func New(dataDir string) (*Services, error) {
 		ConfigPath: configPath,
 		Connections: connections,
 		Folders: folders,
+		History: history,
+		SavedSQL: savedSQL,
 		Queries: queries,
 		Metadata: metadata,
 		pools: pools,

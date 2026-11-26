@@ -123,11 +123,15 @@ type View struct {
 	folderErrors           string
 	folderCollapsed        map[string]bool
 	folderRename           map[string]*widget.Clickable
+	folderUp               map[string]*widget.Clickable
+	folderDown             map[string]*widget.Clickable
 	folderDelete           map[string]*widget.Clickable
 	folderMore             map[string]*widget.Clickable
 	folderActionsOpen      map[string]bool
 	folderMove             map[string]*widget.Clickable
 	rowEdit                map[string]*widget.Clickable
+	rowUp                  map[string]*widget.Clickable
+	rowDown                map[string]*widget.Clickable
 	rowDelete              map[string]*widget.Clickable
 	rowTest                map[string]*widget.Clickable
 	rowMore                map[string]*widget.Clickable
@@ -157,11 +161,15 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		rows:              make(map[string]*widget.Clickable),
 		folderCollapsed:   make(map[string]bool),
 		folderRename:      make(map[string]*widget.Clickable),
+		folderUp:          make(map[string]*widget.Clickable),
+		folderDown:        make(map[string]*widget.Clickable),
 		folderDelete:      make(map[string]*widget.Clickable),
 		folderMore:        make(map[string]*widget.Clickable),
 		folderActionsOpen: make(map[string]bool),
 		folderMove:        make(map[string]*widget.Clickable),
 		rowEdit:           make(map[string]*widget.Clickable),
+		rowUp:             make(map[string]*widget.Clickable),
+		rowDown:           make(map[string]*widget.Clickable),
 		rowDelete:         make(map[string]*widget.Clickable),
 		rowTest:           make(map[string]*widget.Clickable),
 		rowMore:           make(map[string]*widget.Clickable),
@@ -408,6 +416,8 @@ func (v *View) Layout(gtx layout.Context, theme *material.Theme) layout.Dimensio
 
 // layoutFolderRow 绘制分组标题行，以及展开后的改名 / 删除操作。
 func (v *View) layoutFolderRow(gtx layout.Context, theme *material.Theme, folder domain.Folder, items []domain.Connection) layout.Dimensions {
+	if v.folderUp[folder.ID] == nil { v.folderUp[folder.ID] = new(widget.Clickable) }
+	if v.folderDown[folder.ID] == nil { v.folderDown[folder.ID] = new(widget.Clickable) }
 	if v.folderRename[folder.ID] == nil {
 		v.folderRename[folder.ID] = new(widget.Clickable)
 	}
@@ -478,6 +488,16 @@ func (v *View) layoutFolderRow(gtx layout.Context, theme *material.Theme, folder
 			return layout.Inset{Left: unit.Dp(14), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if v.folderUp[folder.ID].Clicked(gtx) { v.moveFolder(folder.ID, -1) }
+						return compactButton(gtx, theme, v.folderUp[folder.ID], "上移", false)
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if v.folderDown[folder.ID].Clicked(gtx) { v.moveFolder(folder.ID, 1) }
+						return compactButton(gtx, theme, v.folderDown[folder.ID], "下移", false)
+					}),
+					layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if v.folderRename[folder.ID].Clicked(gtx) {
 							v.editingFolderID = folder.ID
 							v.folderName.SetText(folder.Name)
@@ -499,6 +519,40 @@ func (v *View) layoutFolderRow(gtx layout.Context, theme *material.Theme, folder
 	)
 }
 
+// moveFolder 通过上移 / 下移操作调整分组顺序，并立即写回配置文件。
+func (v *View) moveFolder(id string, delta int) {
+	snapshot := v.model.Snapshot()
+	ids := make([]string, len(snapshot.Folders))
+	index := -1
+	for i, folder := range snapshot.Folders {
+		ids[i] = folder.ID
+		if folder.ID == id { index = i }
+	}
+	target := index + delta
+	if index < 0 || target < 0 || target >= len(ids) { return }
+	ids[index], ids[target] = ids[target], ids[index]
+	_ = v.model.ReorderFolders(context.Background(), ids)
+}
+
+// moveConnection 仅在同一分组内调整连接顺序，不会意外改变连接所属分组。
+func (v *View) moveConnection(id string, delta int) {
+	snapshot := v.model.Snapshot()
+	ids := make([]string, len(snapshot.Items))
+	index := -1
+	for i, item := range snapshot.Items {
+		ids[i] = item.ID
+		if item.ID == id { index = i }
+	}
+	if index < 0 { return }
+	target := index + delta
+	for target >= 0 && target < len(snapshot.Items) && snapshot.Items[target].FolderID != snapshot.Items[index].FolderID {
+		target += delta
+	}
+	if target < 0 || target >= len(snapshot.Items) { return }
+	ids[index], ids[target] = ids[target], ids[index]
+	_ = v.model.ReorderConnections(context.Background(), ids)
+}
+
 // layoutConnectionRow 绘制连接卡片：状态圆点 + 名称 + 状态徽标 + 地址，操作按钮折叠在「更多操作」内。
 func (v *View) layoutConnectionRow(gtx layout.Context, theme *material.Theme, item domain.Connection) layout.Dimensions {
 	if v.rows[item.ID] == nil {
@@ -510,6 +564,8 @@ func (v *View) layoutConnectionRow(gtx layout.Context, theme *material.Theme, it
 	if v.rowTest[item.ID] == nil {
 		v.rowTest[item.ID] = new(widget.Clickable)
 	}
+	if v.rowUp[item.ID] == nil { v.rowUp[item.ID] = new(widget.Clickable) }
+	if v.rowDown[item.ID] == nil { v.rowDown[item.ID] = new(widget.Clickable) }
 	if v.rowEdit[item.ID] == nil {
 		v.rowEdit[item.ID] = new(widget.Clickable)
 	}
@@ -587,6 +643,16 @@ func (v *View) layoutConnectionRow(gtx layout.Context, theme *material.Theme, it
 						}
 						return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if v.rowUp[item.ID].Clicked(gtx) { v.moveConnection(item.ID, -1) }
+									return compactButton(gtx, theme, v.rowUp[item.ID], "上移", false)
+								}),
+								layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if v.rowDown[item.ID].Clicked(gtx) { v.moveConnection(item.ID, 1) }
+									return compactButton(gtx, theme, v.rowDown[item.ID], "下移", false)
+								}),
+								layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									if v.rowTest[item.ID].Clicked(gtx) && v.onSelect != nil {
 										v.onSelect(item)
