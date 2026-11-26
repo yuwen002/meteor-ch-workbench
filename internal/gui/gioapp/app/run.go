@@ -511,6 +511,10 @@ func (s *workspace) reloadConnections() {
 }
 
 func (s *workspace) selectConnection(item connection.Connection) {
+	s.selectConnectionForTab(item, false)
+}
+
+func (s *workspace) selectConnectionForTab(item connection.Connection, preserveDatabase bool) {
 	if s.queryRunning {
 		s.cancelActiveQuery("查询已取消（切换连接）")
 	}
@@ -520,6 +524,9 @@ func (s *workspace) selectConnection(item connection.Connection) {
 		tabState := s.sqlTabStates[tabID]
 		tabState.ConnectionID = item.ID
 		tabState.ConnectionName = item.Name
+		if !preserveDatabase {
+			tabState.Database = ""
+		}
 		s.sqlTabStates[tabID] = tabState
 	}
 	s.connected = false
@@ -1351,7 +1358,7 @@ func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
 						current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
 						s.sqlTabStates[activeID] = current
 						created := s.sqlWorkspace.Create()
-						s.sqlTabStates[created.ID] = sqlTabState{ConnectionID: s.selectedID, ConnectionName: s.selectedName, Status: "新查询标签页已创建"}
+						s.sqlTabStates[created.ID] = sqlTabState{ConnectionID: s.selectedID, ConnectionName: s.selectedName, Database: s.selectedDatabase, Status: "新查询标签页已创建"}
 						s.queryEditor.SetText("")
 						s.queryColumns, s.queryData = nil, nil
 						s.clearQueryCellSelection()
@@ -2009,7 +2016,7 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 			next.Status = "此查询标签页关联的连接已不存在，请重新选择连接"
 			s.sqlTabStates[tabID] = next
 		} else {
-			s.selectConnection(*target)
+			s.selectConnectionForTab(*target, true)
 		}
 	} else if next.ConnectionID != "" && next.ConnectionID == s.selectedID && next.Database != "" && s.connected {
 		s.selectDatabase(next.Database)
