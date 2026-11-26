@@ -75,7 +75,15 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 当前 head（本索引更新前）：`328c7ac17fea0f63dc29f3ea715a6cc9087ca50e`
+- 当前 head（本索引更新前）：`97babdddccb81c71a386a4c5d40b7475e635d0b6`
 - PR #1：Open / Draft / 未合并，base 为 `main`。
-- 对应 Go CI Run `45772171047`：Linux 与 Windows 均在 `go test ./...` 阶段失败，原因是 `sql_tabs.go` 调用了未定义的 `cloneQueryRows`；本轮已补齐实现和回归测试，修复后的 CI 结果以新 head 对应的 Actions 为准。
+- 对应 Go CI Run `45773594090`：Linux 测试、vet、Gio 预览构建和 Artifact 上传成功；Windows 测试在当时检查时仍在执行。后续 `cloneQueryRows` 修复及本轮标签控件变更已触发新的 CI，验收必须以 `97babdd` 或其后最新 head 的 Actions 为准。
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
+
+
+## SQL 标签点击控件生命周期
+
+- `workspace.sqlTabClicks` 与 `workspace.sqlTabCloseClicks` 均按 `workspace.TabID` 建立映射，不再按可变列表索引保存控件。
+- 标签切换与关闭回调均使用稳定 TabID；列表重排后，原标签的点击状态仍绑定原标签，不会因索引变化而错位。
+- 关闭标签时同步删除其切换 / 关闭 Clickable 引用与 `sqlTabStates` 状态，其他标签控件保持不变。
+- 回归测试覆盖重排前后控件身份稳定，以及关闭后仅释放目标标签控件。
