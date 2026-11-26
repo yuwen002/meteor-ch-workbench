@@ -6,9 +6,11 @@ import (
 )
 
 type sqlTabState struct {
-	Columns []query.Column
-	Data    [][]any
-	Status  string
+	ConnectionID   string
+	ConnectionName string
+	Columns        []query.Column
+	Data           [][]any
+	Status         string
 }
 
 // Apply 将一个查询事件归档到所属标签页，不依赖当前活动标签。
