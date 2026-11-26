@@ -14,14 +14,14 @@ func (s *workspace) lifecycleParent() context.Context {
 }
 
 // goWorker 在锁内完成“检查关闭状态 + WaitGroup.Add”，避免 Add 与 Wait 并发竞态。
-func (s *workspace) goWorker(task func()) {
+func (s *workspace) goWorker(task func()) bool {
 	if s == nil || task == nil {
-		return
+		return false
 	}
 	s.lifecycleMu.Lock()
 	if s.lifecycleClosing || (s.lifecycleCtx != nil && s.lifecycleCtx.Err() != nil) {
 		s.lifecycleMu.Unlock()
-		return
+		return false
 	}
 	s.workers.Add(1)
 	s.lifecycleMu.Unlock()
@@ -30,6 +30,7 @@ func (s *workspace) goWorker(task func()) {
 		defer s.workers.Done()
 		task()
 	}()
+	return true
 }
 
 // shutdownWorkers 关闭任务入口、取消生命周期并等待已登记任务全部退出。
