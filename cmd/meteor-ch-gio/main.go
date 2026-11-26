@@ -28,7 +28,9 @@ func main() {
 		}
 	}()
 
+	runDone := make(chan struct{})
 	go func() {
+		defer close(runDone)
 		window := new(gio.Window)
 		window.Option(
 			gio.Title("Meteor CH Workbench"),
@@ -39,4 +41,7 @@ func main() {
 		}
 	}()
 	gio.Main()
+	// gio.Main 返回不代表 Run 的 DestroyEvent 清理逻辑已完成。
+	// 等待窗口 goroutine 退出后，main 的 defer 才能安全关闭服务与连接池。
+	<-runDone
 }
