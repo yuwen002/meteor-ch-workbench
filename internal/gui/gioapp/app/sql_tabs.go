@@ -127,6 +127,18 @@ func (s *sqlTabState) Apply(result queryEvent) {
 	}
 }
 
+
+// databaseForConnectedTab 只从当前活动标签读取其自己的数据库上下文，避免异步连接结果串用其他标签的数据库。
+func databaseForConnectedTab(tab sqlTabState, connectionID string, databases []string) (string, bool) {
+	if tab.ConnectionID != connectionID || tab.Database == "" {
+		return "", false
+	}
+	if !databaseNameExists(databases, tab.Database) {
+		return "", true
+	}
+	return tab.Database, false
+}
+
 func (s *workspace) closeSQLTab(index int) {
 	items := s.sqlWorkspace.Items()
 	if index < 0 || index >= len(items) {
