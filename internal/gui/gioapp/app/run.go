@@ -2003,40 +2003,87 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 	s.sqlWorkspace.Activate(tabID)
 	next := s.sqlTabStates[tabID]
 	nextTab, _ := s.sqlWorkspace.Get(tabID)
-	if next.ConnectionID != "" && next.ConnectionID != s.selectedID {
-		var target *connection.Connection
-		for _, item := range s.connections.Snapshot().Items {
-			if item.ID == next.ConnectionID {
-					copy := item
-					target = &copy
-					break
-				}
-		}
-		if target == nil {
-			s.selectedID, s.selectedName, s.connected = "", "", false
-			s.selectedDatabase = ""
-			next.Status = "此查询标签页关联的连接已不存在，请重新选择连接"
-			s.sqlTabStates[tabID] = next
-		} else {
-			s.selectConnectionForTab(*target, true)
-		}
-	} else if next.ConnectionID != "" && next.ConnectionID == s.selectedID {
-		if s.connected && next.Database != "" {
-			s.selectDatabase(next.Database)
-		} else if !s.connected && s.loading == "" {
-			for _, item := range s.connections.Snapshot().Items {
-				if item.ID == next.ConnectionID {
-					s.selectConnectionForTab(item, true)
-					break
-				}
-			}
-		}
-	}
+	s.restoreSQLTabConnection(tabID)
 	s.queryEditor.SetText(nextTab.Editor.Text())
 	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 	s.clearQueryCellSelection()
 	s.resetResultWidgets(s.queryColumns)
 	s.restoreResultViewState(next)
+}
+
+// restoreSQLTabConnection 让活动标签页独占当前连接上下文，避免空标签继承其他标签的连接。
+func (s *workspace) restoreSQLTabConnection(tabID workspaceui.TabID) {
+	next := s.sqlTabStates[tabID]
+	if next.ConnectionID == "" {
+		s.resetConnectionContext()
+		return
+	}
+	if next.ConnectionID != s.selectedID {
+		var target *connection.Connection
+		if s.connections != nil {
+			for _, item := range s.connections.Snapshot().Items {
+				if item.ID == next.ConnectionID {
+					copy := item
+					target = &copy
+					break
+				}
+			}
+		}
+		if target == nil {
+			s.resetConnectionContext()
+			next.Status = "此查询标签页关联的连接已不存在，请重新选择连接"
+			s.sqlTabStates[tabID] = next
+			return
+		}
+		s.selectConnectionForTab(*target, true)
+		return
+	}
+	if s.connected {
+		if next.Database != "" {
+			if next.Database != s.selectedDatabase {
+				s.selectDatabase(next.Database)
+			}
+		} else if s.selectedDatabase != "" {
+			s.resetDatabaseContext()
+		}
+		return
+	}
+	if s.loading == "" && s.connections != nil {
+		for _, item := range s.connections.Snapshot().Items {
+			if item.ID == next.ConnectionID {
+				s.selectConnectionForTab(item, true)
+				break
+			}
+		}
+	}
+}
+
+// resetDatabaseContext 取消旧数据库请求并清理当前连接下的数据库对象状态。
+func (s *workspace) resetDatabaseContext() {
+	if s.cancelRequest != nil {
+		s.cancelRequest()
+		s.cancelRequest = nil
+	}
+	s.requestSeq++
+	s.selectedDatabase = ""
+	s.selectedTable = ""
+	s.selectedObject = ""
+	s.tables, s.views, s.columns = nil, nil, nil
+	s.tableDetails = metadataapp.TableDetails{}
+	s.loading = ""
+}
+
+// resetConnectionContext 使迟到的连接检测结果失效，并清空当前活动标签的连接上下文。
+func (s *workspace) resetConnectionContext() {
+	if s.cancelRequest != nil {
+		s.cancelRequest()
+		s.cancelRequest = nil
+	}
+	s.requestSeq++
+	s.selectedID, s.selectedName = "", ""
+	s.connected = false
+	s.databases = nil
+	s.resetDatabaseContext()
 }
 func (s *workspace) treeGroupLabel(gtx layout.Context, title string) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(2), Left: unit.Dp(26), Right: unit.Dp(8)}.Layout(gtx, styledText(s.theme, title, unit.Sp(10), colorTextMuted))
