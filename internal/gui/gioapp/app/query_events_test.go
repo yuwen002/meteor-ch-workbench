@@ -85,3 +85,21 @@ func TestQueryResultQueueCapacityBoundsPendingEvents(t *testing.T) {
 		t.Fatalf("queued events = %d, want %d", len(queue), queryResultQueueCapacity)
 	}
 }
+
+func TestEnqueueQueryCompletionDeliversTerminalEventAfterQueueUnblocks(t *testing.T) {
+	queue := make(chan queryEvent, 1)
+	queue <- queryEvent{seq: 1}
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		<-queue
+	}()
+
+	want := queryEvent{seq: 2, done: true}
+	if err := enqueueQueryCompletion(queue, want); err != nil {
+		t.Fatalf("enqueue terminal event: %v", err)
+	}
+	got := <-queue
+	if got.seq != want.seq || !got.done {
+		t.Fatalf("terminal event = %+v, want %+v", got, want)
+	}
+}
