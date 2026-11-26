@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"encoding/csv"
 	"testing"
 
@@ -59,6 +61,41 @@ func TestWriteResultExportContextStopsBeforeWritingWhenCanceled(t *testing.T) {
 	}
 	if output.Len() != 0 {
 		t.Fatalf("output contains %d bytes after cancellation, want 0", output.Len())
+	}
+}
+
+type cancelOnWriteBuffer struct {
+	bytes.Buffer
+	cancel context.CancelFunc
+}
+
+func (w *cancelOnWriteBuffer) Write(p []byte) (int, error) {
+	n, err := w.Buffer.Write(p)
+	w.cancel()
+	return n, err
+}
+
+func TestWriteResultExportContextStopsDuringLargeExport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const rowCount = 300
+	rows := make([]resultRowView, rowCount)
+	sourceRows := make([][]any, rowCount)
+	for i := 0; i < rowCount; i++ {
+		rows[i] = resultRowView{Index: i}
+		sourceRows[i] = []any{fmt.Sprintf("%04d-%s", i, strings.Repeat("x", 96))}
+	}
+	output := &cancelOnWriteBuffer{cancel: cancel}
+	err := writeResultExportContext(ctx, output, []queryapp.Column{{Name: "value"}}, rows, sourceRows, "csv")
+	if err != context.Canceled {
+		t.Fatalf("writeResultExportContext() error = %v, want context.Canceled", err)
+	}
+	if output.Len() == 0 {
+		t.Fatal("expected some buffered rows to be written before cancellation")
+	}
+	if output.Len() >= rowCount*100 {
+		t.Fatalf("export wrote %d bytes; expected cancellation before all rows were processed", output.Len())
 	}
 }
 
