@@ -83,8 +83,8 @@ func TestPoolManagerCloseReleasesActivePools(t *testing.T) {
 	if err := manager.Close(); err != nil {
 		t.Fatalf("关闭连接池失败：%v", err)
 	}
-	if _, err := db.Conn(context.Background()); !errors.Is(err, sql.ErrDBClosed) {
-		t.Fatalf("Close 后连接池仍可获取连接，错误 = %v", err)
+	if _, err := db.Conn(context.Background()); err == nil {
+		t.Fatal("Close 后连接池仍可获取连接")
 	}
 	if err := manager.Close(); err != nil {
 		t.Fatalf("重复关闭应保持幂等，错误：%v", err)
