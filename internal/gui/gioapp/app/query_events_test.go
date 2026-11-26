@@ -131,7 +131,7 @@ func TestQueryEventIsApplicableRejectsStaleOrClosedTab(t *testing.T) {
 func TestHandleQueryResultIgnoresEventForClosedTab(t *testing.T) {
 	tabs := workspaceui.NewTabs()
 	closed := tabs.ActiveID()
-	active := tabs.Create()
+	active := tabs.Create().ID
 	if _, ok := tabs.Close(closed); !ok {
 		t.Fatal("expected the original tab to close")
 	}
