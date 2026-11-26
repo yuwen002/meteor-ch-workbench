@@ -18,6 +18,17 @@ func TestNormalizeRowLimit(t *testing.T) {
 	}
 }
 
+func TestNormalizeTheme(t *testing.T) {
+	if got := Normalize(Preferences{Theme: ThemeDark}).Theme; got != ThemeDark {
+		t.Fatalf("dark theme changed: %q", got)
+	}
+	for _, input := range []string{"", "system", "unknown"} {
+		if got := Normalize(Preferences{Theme: input}).Theme; got != ThemeLight {
+			t.Fatalf("theme %q normalized to %q, want light", input, got)
+		}
+	}
+}
+
 func TestNormalizePreferences(t *testing.T) {
 	got := Normalize(Preferences{QueryRowLimit: 5000, SidebarCollapsed: true, EditorRatio: 0.7})
 	if got.QueryRowLimit != 5000 || !got.SidebarCollapsed || got.EditorRatio != 0.7 { t.Fatalf("valid preferences changed: %+v", got) }
