@@ -38,3 +38,58 @@ func TestResultColumnLabelShowsSortDirection(t *testing.T) {
 		t.Fatalf("descending label = %q", got)
 	}
 }
+
+
+func TestCompareResultSortKeysMatchesExistingSemantics(t *testing.T) {
+	values := []any{
+		nil,
+		int64(0),
+		uint64(9007199254740993),
+		"9007199254740992",
+		"1.0000000000000000001",
+		"1.0000000000000000002",
+		"2026-11-25 10:00:00",
+		"2026-11-25T10:00:00Z",
+		"alpha",
+		"ALPHA",
+		"beta",
+	}
+	keys := make([]resultSortKey, len(values))
+	for i, value := range values {
+		keys[i] = newResultSortKey(value)
+	}
+	for i := range values {
+		for j := range values {
+			want := compareResultValues(values[i], values[j])
+			got := compareResultSortKeys(keys[i], keys[j])
+			if sign(got) != sign(want) {
+				t.Errorf("compare(%#v, %#v) = %d, want sign %d", values[i], values[j], got, want)
+			}
+		}
+	}
+}
+
+func TestBuildResultRowViewKeepsEqualSortValuesStable(t *testing.T) {
+	rows := [][]any{{"first", 2}, {"second", 2}, {"third", 1}}
+	got := buildResultRowView(rows, "", 1, false)
+	want := []int{2, 0, 1}
+	if len(got) != len(want) {
+		t.Fatalf("view length = %d, want %d", len(got), len(want))
+	}
+	for i, index := range want {
+		if got[i].Index != index {
+			t.Errorf("view[%d].Index = %d, want %d", i, got[i].Index, index)
+		}
+	}
+}
+
+func sign(value int) int {
+	switch {
+	case value < 0:
+		return -1
+	case value > 0:
+		return 1
+	default:
+		return 0
+	}
+}
