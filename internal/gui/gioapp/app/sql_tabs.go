@@ -327,11 +327,7 @@ func (s *workspace) restoreSQLTabConnection(tabID workspaceui.TabID) {
 
 // resetDatabaseContext 取消旧数据库请求并清理当前连接下的数据库对象状态。
 func (s *workspace) resetDatabaseContext() {
-	if s.cancelRequest != nil {
-		s.cancelRequest()
-		s.cancelRequest = nil
-	}
-	s.requestSeq++
+	s.explorerRequests.Cancel()
 	s.selectedDatabase = ""
 	s.selectedTable = ""
 	s.selectedObject = ""
@@ -342,11 +338,6 @@ func (s *workspace) resetDatabaseContext() {
 
 // resetConnectionContext 使迟到的连接检测结果失效，并清空当前活动标签的连接上下文。
 func (s *workspace) resetConnectionContext() {
-	if s.cancelRequest != nil {
-		s.cancelRequest()
-		s.cancelRequest = nil
-	}
-	s.requestSeq++
 	s.selectedID, s.selectedName = "", ""
 	s.connected = false
 	s.databases = nil
