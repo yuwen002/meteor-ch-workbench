@@ -46,6 +46,7 @@ func (s *workspace) startExport(format string) {
 	}
 	columns := append([]queryapp.Column(nil), s.queryColumns...)
 	rows := append([]resultRowView(nil), s.resultView...)
+	sourceRows := append([][]any(nil), s.queryData...)
 	s.exportRunning = true
 	s.queryStatus = "正在导出当前结果…"
 
@@ -58,7 +59,7 @@ func (s *workspace) startExport(format string) {
 		}
 		startedAt := time.Now()
 		writer := &countingWriter{writer: file}
-		writeErr := writeResultExport(writer, columns, rows, format)
+		writeErr := writeResultExport(writer, columns, rows, sourceRows, format)
 		closeErr := file.Close()
 		if writeErr != nil {
 			err = writeErr
@@ -86,7 +87,7 @@ func (s *workspace) startExport(format string) {
 	}()
 }
 
-func writeResultExport(w io.Writer, columns []queryapp.Column, rows []resultRowView, format string) error {
+func writeResultExport(w io.Writer, columns []queryapp.Column, rows []resultRowView, sourceRows [][]any, format string) error {
 	writer := csv.NewWriter(w)
 	if format == "tsv" {
 		writer.Comma = '\t'
@@ -100,9 +101,13 @@ func writeResultExport(w io.Writer, columns []queryapp.Column, rows []resultRowV
 	}
 	for _, row := range rows {
 		cells := make([]string, len(columns))
+		var values []any
+		if row.Index >= 0 && row.Index < len(sourceRows) {
+			values = sourceRows[row.Index]
+		}
 		for i := range columns {
-			if i < len(row.Values) {
-				cells[i] = resultCellRawValue(row.Values[i])
+			if i < len(values) {
+				cells[i] = resultCellRawValue(values[i])
 			} else {
 				cells[i] = "NULL"
 			}
