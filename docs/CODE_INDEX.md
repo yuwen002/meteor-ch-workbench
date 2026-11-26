@@ -35,7 +35,7 @@ cmd/meteor-ch-gio
 - `internal/gui/gioapp/workspace`：与 Gio 控件解耦的 SQL 标签工作区模型。
 
 - `internal/gui/gioapp/app/query_workspace_view.go`：SQL 工作区布局、表结构条、查询工具栏、标签栏 / 标签、SQL 编辑器和状态栏；控件状态仍由 `workspace` 持有，避免视图拆分改变状态生命周期。
-- `internal/gui/gioapp/app/explorer_view.go`：数据库节点展开、表 / 视图分组、对象节点选择和资源树行绘制；`explorer_state.go` 负责响应上下文校验，`explorer_request_state.go` 统一持有请求序号与取消函数。
+- `internal/gui/gioapp/app/explorer_view.go`：数据库节点展开、表 / 视图分组、对象节点选择和资源树行绘制；`explorer_selection.go` 聚合数据库 / 表 / 视图 / 字段与选中上下文，`explorer_state.go` 负责异步响应上下文校验，`explorer_request_state.go` 统一持有请求序号与取消函数。
 
 ## 当前目录状态
 
@@ -78,7 +78,7 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 最近确认成功的代码基线：`54b10ac688494b5b02d89c7880b920b5d33ca819`，对应 CI Run [45855866259](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855866259) 的 Linux / Windows 测试、vet 和预览构建均成功。其后的 Explorer 状态响应校验与测试仍待最新 head CI。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
+- 最近确认成功的代码基线：`54b10ac688494b5b02d89c7880b920b5d33ca819`，对应 CI Run [45855866259](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855866259) 的 Linux / Windows 测试、vet 和预览构建均成功。其后 head `e5d6a51` 的 Run [45857092505](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45857092505) 在 Linux / Windows 的 `go test ./...` 均因 `sql_tabs.go` 仍引用已移除的 `requestSeq/cancelRequest` 字段而失败；该遗漏已在后续提交修复，最新 head 的重跑结果待确认。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
 - PR #1：Open / Draft / 未合并，base 为 `main`。
 
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
@@ -114,5 +114,7 @@ cmd/meteor-ch-gio
 - `internal/gui/gioapp/app/settings_view.go`：工作台设置面板，提供深浅色主题切换、查询结果行数上限、侧栏折叠和编辑器高度比例设置；主题令牌集中在 `theme.go`，由 `setPalette` 统一切换。
 
 
+- `internal/gui/gioapp/app/explorer_selection.go`：聚合数据库列表、当前数据库 / 表 / 对象、表 / 视图列表和表结构详情；提供连接重置、数据库切换、对象加载和表结构清理等状态转换。
+- `internal/gui/gioapp/app/explorer_selection_test.go`：覆盖数据库切换清理旧对象、连接重置清空导航状态、表结构设置与清理。
 - `internal/gui/gioapp/app/explorer_state.go`：集中判断数据库对象列表、表结构异步响应是否仍匹配当前请求序号、连接、数据库和表，阻止过期响应覆盖当前 Explorer 状态。
 - `internal/gui/gioapp/app/explorer_state_test.go`：覆盖对象列表响应的序号 / 连接 / 数据库失效，以及表结构响应的序号 / 连接 / 数据库 / 表失效。
