@@ -1,7 +1,7 @@
 # Gio 原生工作台全量重写计划
 
 > 状态：执行中。此文档优先于此前渐进迁移、保留现有 Gio 原型的旧计划。
-> 最后更新：2026-11-24
+> 最后更新：2026-11-26
 
 > 当前已完成 / 未完成清单、测试状态和下一步开发顺序统一查看 [开发进度与已完成功能](../DEVELOPMENT_STATUS.md)。本文负责长期目标架构、阶段定义与验收标准；下方历史执行记录不作为最新状态的唯一来源。
 
@@ -380,3 +380,11 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 查询执行器的截断判断仅在 `MaxRows > 0` 时生效；`MaxRows == 0` 不再在首行前误判为截断，负数仍使用安全默认上限。
 - 查询执行器现将 `MaxRows=0` 解释为不限制，负数才使用安全默认值；对应测试覆盖了完整结果返回。
 - 主题切换尚未接入；本轮 CI 未完成前不标记验收通过。
+
+
+### SQL 工作区布局拆分（2026-11-26）
+
+- 将 `clearQueryCellSelection`、`layoutSchemaStrip`、`layoutQueryWorkspace`、`layoutQueryPanel`、`layoutQueryToolbar`、`layoutTabStrip`、`layoutSQLTab`、`layoutSQLEditor` 和 `layoutStatusBar` 从 `run.go` 移至 `query_workspace_view.go`。
+- 拆分只移动视图方法，不改变 `workspace` 状态归属、查询执行流程、标签状态保存 / 恢复和事件处理顺序。
+- 后续继续把对象导航 / Explorer 视图与状态拆分，并为标签切换、关闭、窄窗口布局和设置比例增加回归覆盖。
+- 本次拆分的 CI 结果以最新 head SHA 对应的 Actions 为准；提交前一基线 `ee5ff0685f4de2af866ada2d45fd0867aeac83f2` 的 Linux / Windows CI 已通过。
