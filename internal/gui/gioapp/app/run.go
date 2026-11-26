@@ -146,7 +146,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		schemaResults:    make(chan schemaResult, 4),
 		queryResults:     make(chan queryEvent, queryResultQueueCapacity),
 		sqlWorkspace:     workspaceui.NewTabs(),
-		sqlTabStates:     map[workspaceui.TabID]sqlTabState{1: {}},
+		sqlTabStates:     map[workspaceui.TabID]sqlTabState{1: {SortColumn: -1}},
 		queryRows:        widget.List{List: layout.List{Axis: layout.Vertical}},
 		savedSQLList:     widget.List{List: layout.List{Axis: layout.Vertical}},
 		queryHorizontal:  widget.List{List: layout.List{Axis: layout.Horizontal}},
@@ -1358,7 +1358,7 @@ func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
 						current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
 						s.sqlTabStates[activeID] = current
 						created := s.sqlWorkspace.Create()
-						s.sqlTabStates[created.ID] = sqlTabState{ConnectionID: s.selectedID, ConnectionName: s.selectedName, Database: s.selectedDatabase, Status: "新查询标签页已创建"}
+						s.sqlTabStates[created.ID] = sqlTabState{ConnectionID: s.selectedID, ConnectionName: s.selectedName, Database: s.selectedDatabase, Status: "新查询标签页已创建", SortColumn: -1}
 						s.queryEditor.SetText("")
 						s.queryColumns, s.queryData = nil, nil
 						s.clearQueryCellSelection()
