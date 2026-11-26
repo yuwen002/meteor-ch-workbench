@@ -92,6 +92,6 @@ cmd/meteor-ch-gio
 ## 窗口关闭与后台任务生命周期
 
 - internal/gui/gioapp/app/lifecycle.go 提供 lifecycleParent 和 goWorker：后台任务统一继承窗口生命周期 Context，并登记到 workspace.workers。
-- run.go 收到 gio.DestroyEvent 后先取消生命周期和当前请求，再等待已登记任务退出；Run 返回后，cmd/meteor-ch-gio/main.go 的 defer services.Close() 关闭 ClickHouse 连接池。
+- run.go 收到 gio.DestroyEvent 后先取消生命周期和当前请求，再等待已登记任务退出；Run 返回后，窗口 goroutine 关闭 runDone；main 在 gio.Main() 返回后等待 runDone，再由 defer services.Close() 关闭 ClickHouse 连接池。
 - 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果导出均纳入后台任务登记。文件选择器由 Gio Explorer 提供，关闭行为仍需在目标桌面平台实测。
 - lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务，以及父 Context 选择。
