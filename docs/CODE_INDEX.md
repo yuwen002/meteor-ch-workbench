@@ -118,3 +118,5 @@ cmd/meteor-ch-gio
 - `internal/gui/gioapp/app/explorer_selection_test.go`：覆盖数据库切换清理旧对象、连接重置清空导航状态、表结构设置与清理。
 - `internal/gui/gioapp/app/explorer_state.go`：集中判断数据库对象列表、表结构异步响应是否仍匹配当前请求序号、连接、数据库和表，阻止过期响应覆盖当前 Explorer 状态。
 - `internal/gui/gioapp/app/explorer_state_test.go`：覆盖对象列表响应的序号 / 连接 / 数据库失效，以及表结构响应的序号 / 连接 / 数据库 / 表失效。
+
+- `internal/gui/gioapp/app/query_runtime_state.go`：聚合 SQL 查询执行代次、取消函数和运行标记；查询事件通过有界队列与 Gio 窗口事件循环交互。
