@@ -2,6 +2,8 @@
 package app
 
 import (
+	"bytes"
+
 	"gioui.org/layout"
 	"gioui.org/unit"
 
@@ -140,6 +142,25 @@ func databaseForConnectedTab(tab sqlTabState, connectionID string, databases []s
 		return "", true
 	}
 	return tab.Database, false
+}
+
+// cloneQueryRows 复制结果行及驱动返回的可变字节值，避免标签快照与活动结果共享底层内存。
+func cloneQueryRows(rows [][]any) [][]any {
+	if rows == nil {
+		return nil
+	}
+	cloned := make([][]any, len(rows))
+	for i, row := range rows {
+		cloned[i] = make([]any, len(row))
+		for j, value := range row {
+			if raw, ok := value.([]byte); ok {
+				cloned[i][j] = bytes.Clone(raw)
+				continue
+			}
+			cloned[i][j] = value
+		}
+	}
+	return cloned
 }
 
 // saveActiveSQLTabState 将活动编辑器、结果数据和结果视图设置完整归档到当前标签。
