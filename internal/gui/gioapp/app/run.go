@@ -168,12 +168,13 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		state.explorer.ListenEvents(event)
 		switch e := event.(type) {
 		case gio.DestroyEvent:
-			state.shutdownWorkers()
 			if state.cancelRequest != nil {
 				state.cancelRequest()
 				state.cancelRequest = nil
 			}
 			state.cancelActiveQuery("窗口已关闭")
+			// 取消入口请求后关闭后台任务注册，再等待所有已登记任务退出。
+			state.shutdownWorkers()
 			return e.Err
 		case gio.FrameEvent:
 			gtx := gio.NewContext(&ops, e)
