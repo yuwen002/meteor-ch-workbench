@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"sync"
 )
 
 // lifecycleParent 为后台工作提供统一的窗口生命周期父 Context。
