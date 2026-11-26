@@ -23,19 +23,14 @@ func (s *workspace) openSettings() {
 }
 
 func (s *workspace) saveSettings() {
-	text := strings.TrimSpace(s.settingsRowLimitEditor.Text())
-	value, err := strconv.Atoi(text)
+	value, err := parseSettingsRowLimit(s.settingsRowLimitEditor.Text())
 	if err != nil {
-		s.settingsStatus = "请输入有效整数；输入 0 表示不限制"
+		s.settingsStatus = err.Error()
 		return
 	}
-	if value != settingsdomain.RowLimitUnlimited && (value < settingsdomain.RowLimitMin || value > settingsdomain.RowLimitMax) {
-		s.settingsStatus = fmt.Sprintf("行数上限须为 0 或 %d～%d", settingsdomain.RowLimitMin, settingsdomain.RowLimitMax)
-		return
-	}
-	ratio, err := strconv.ParseFloat(strings.TrimSpace(s.settingsRatioEditor.Text()), 64)
-	if err != nil || ratio < settingsdomain.MinEditorRatio || ratio > settingsdomain.MaxEditorRatio {
-		s.settingsStatus = fmt.Sprintf("编辑器占比须为 %.2f～%.2f", settingsdomain.MinEditorRatio, settingsdomain.MaxEditorRatio)
+	ratio, err := parseSettingsEditorRatio(s.settingsRatioEditor.Text())
+	if err != nil {
+		s.settingsStatus = err.Error()
 		return
 	}
 	preferences := s.settingsPreferences
@@ -130,4 +125,21 @@ func (s *workspace) toggleSidebarPreference() {
 		return
 	}
 	s.settingsPreferences = saved
+}
+
+func parseSettingsRowLimit(text string) (int, error) {
+	value, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil { return 0, fmt.Errorf("请输入有效整数；输入 0 表示不限制") }
+	if value != settingsdomain.RowLimitUnlimited && (value < settingsdomain.RowLimitMin || value > settingsdomain.RowLimitMax) {
+		return 0, fmt.Errorf("行数上限须为 0 或 %d～%d", settingsdomain.RowLimitMin, settingsdomain.RowLimitMax)
+	}
+	return value, nil
+}
+
+func parseSettingsEditorRatio(text string) (float64, error) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+	if err != nil || value < settingsdomain.MinEditorRatio || value > settingsdomain.MaxEditorRatio {
+		return 0, fmt.Errorf("编辑器占比须为 %.2f～%.2f", settingsdomain.MinEditorRatio, settingsdomain.MaxEditorRatio)
+	}
+	return value, nil
 }
