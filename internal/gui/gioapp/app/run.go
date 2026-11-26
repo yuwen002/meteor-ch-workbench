@@ -712,62 +712,7 @@ func (s *workspace) drainResults() {
 			s.tables, s.views = result.tables, result.views
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
 		case result := <-s.queryResults:
-			if !s.queryExecution.IsCurrent(result.seq, result.tab) {
-				continue
-			}
-			_, exists := s.sqlWorkspace.Get(result.tab)
-			if !exists {
-				continue // 标签页已关闭，丢弃迟到的查询事件。
-			}
-			if result.done && strings.TrimSpace(result.sql) != "" {
-				entry := queryhistory.Entry{
-					SQL: result.sql,
-					ConnectionID: result.connectionID,
-					DurationMs: float64(result.summary.Elapsed) / float64(time.Millisecond),
-					Success: result.err == nil,
-				}
-				go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_, err := s.services.History.Add(ctx, entry)
-				select {
-				case s.historyResults <- historySaveResult{err: err}:
-				case <-ctx.Done():
-					// 窗口退出或反馈队列持续拥塞时，最多等待本次保存超时。
-				}
-				s.window.Invalidate()
-			}()
-			}
-			if result.tab != s.sqlWorkspace.ActiveID() {
-				state := s.sqlTabStates[result.tab]
-				state.Apply(result)
-				s.sqlTabStates[result.tab] = state
-				continue
-			}
-			if len(result.columns) > 0 {
-				s.queryColumns = result.columns
-				s.queryData = nil
-				s.clearQueryCellSelection()
-				s.resetResultWidgets(result.columns)
-			}
-			if len(result.batch) > 0 {
-				s.queryData = append(s.queryData, result.batch...)
-				s.resultViewDirty = true
-			}
-			if result.done {
-				s.queryExecution.Finish(result.seq, result.tab)
-				s.queryRunning = false
-				s.queryCancelFunc = nil
-				if result.err != nil {
-					s.queryStatus = "执行失败：" + result.err.Error()
-				} else if result.summary.Truncated {
-					s.queryStatus = fmt.Sprintf("已返回 %d 行（达到结果上限）· %s", result.summary.RowCount, result.summary.Elapsed.Round(time.Millisecond))
-				} else if len(s.queryColumns) > 0 {
-					s.queryStatus = fmt.Sprintf("查询完成 · %d 行 · %s", result.summary.RowCount, result.summary.Elapsed.Round(time.Millisecond))
-				} else {
-					s.queryStatus = fmt.Sprintf("执行完成 · 影响 %d 行 · %s", result.summary.RowsAffected, result.summary.Elapsed.Round(time.Millisecond))
-				}
-			}
+			s.handleQueryResult(result)
 		case result := <-s.schemaResults:
 			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase || result.table != s.selectedTable {
 				continue
