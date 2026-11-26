@@ -30,11 +30,12 @@ cmd/meteor-ch-gio
 - `internal/infrastructure/storage/historyfile`：兼容旧 `history.json` 数组格式的查询历史仓库。
 - `internal/infrastructure/storage/savedsqlfile`：兼容旧 `saved_sql.json` 数组格式的收藏 SQL 仓库。
 - `internal/platform/osfs`：本地文件系统适配。
-- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口与交互；`run.go` 负责主事件循环、窗口状态和页面组合；SQL 工作区布局与标签栏视图在 `query_workspace_view.go`，标签生命周期在 `sql_tabs.go`，查询事件生产/消费在 `query_events.go` / `query_result_consumer.go`，结果展示与筛选在 `result_view.go` / `result_panel.go`。
+- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口与交互；`run.go` 负责主事件循环、窗口状态和页面组合；SQL 工作区布局在 `query_workspace_view.go`，对象导航树在 `explorer_view.go`，标签生命周期在 `sql_tabs.go`，查询事件生产/消费在 `query_events.go` / `query_result_consumer.go`，结果展示与筛选在 `result_view.go` / `result_panel.go`。
 - `internal/gui/gioapp/connection`：连接侧栏模型、样式和视图。
 - `internal/gui/gioapp/workspace`：与 Gio 控件解耦的 SQL 标签工作区模型。
 
 - `internal/gui/gioapp/app/query_workspace_view.go`：SQL 工作区布局、表结构条、查询工具栏、标签栏 / 标签、SQL 编辑器和状态栏；控件状态仍由 `workspace` 持有，避免视图拆分改变状态生命周期。
+- `internal/gui/gioapp/app/explorer_view.go`：数据库节点展开、表 / 视图分组、对象节点选择和资源树行绘制；连接与元数据状态仍由 `workspace` 持有。
 
 ## 当前目录状态
 
@@ -77,7 +78,7 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 最近确认成功的代码基线：`ee5ff0685f4de2af866ada2d45fd0867aeac83f2`，对应 CI Run [45798026060](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45798026060) 的 Linux / Windows 检查均成功。其后的 SQL 工作区布局拆分正在等待新 head CI。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
+- 最近确认成功的代码基线：`2ac0002e32d16ff97ea13a20defbff35ccf16c83`，对应 CI Run [45855044244](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855044244) 的 Linux / Windows 测试、vet 和预览构建均成功。其后的 Explorer 视图拆分正在等待新 head CI。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
 - PR #1：Open / Draft / 未合并，base 为 `main`。
 
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
