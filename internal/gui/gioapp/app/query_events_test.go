@@ -200,3 +200,48 @@ func TestHandleQueryResultIgnoresSupersededGeneration(t *testing.T) {
 	}
 }
 
+
+func TestHandleQueryResultAppendsBatchesAndFinishesActiveQuery(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	var execution workspaceui.QueryExecution
+	seq := execution.Start(tabID)
+	state := &workspace{
+		sqlWorkspace: tabs,
+		queryExecution: execution,
+		queryRunning: true,
+		queryStatus: "正在执行 SQL…",
+		queryData: [][]any{{"first"}},
+	}
+
+	state.handleQueryResult(queryEvent{
+		seq: seq,
+		tab: tabID,
+		batch: [][]any{{"second"}, {"third"}},
+	})
+	if len(state.queryData) != 3 || state.queryData[0][0] != "first" || state.queryData[2][0] != "third" {
+		t.Fatalf("active result rows = %v, want first, second, third", state.queryData)
+	}
+	if !state.queryRunning {
+		t.Fatal("receiving a non-terminal batch must not finish the query")
+	}
+
+	state.handleQueryResult(queryEvent{
+		seq: seq,
+		tab: tabID,
+		done: true,
+		summary: queryapp.Summary{RowCount: 3, Elapsed: 12 * time.Millisecond},
+	})
+	if state.queryRunning {
+		t.Fatal("terminal event should stop the active query")
+	}
+	if state.queryCancelFunc != nil {
+		t.Fatal("terminal event should clear the query cancel function")
+	}
+	if state.queryExecution.IsCurrent(seq, tabID) {
+		t.Fatal("finished query should no longer accept result events")
+	}
+	if state.queryStatus == "正在执行 SQL…" || state.queryStatus == "" {
+		t.Fatalf("terminal event did not update query status: %q", state.queryStatus)
+	}
+}
