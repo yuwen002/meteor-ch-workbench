@@ -3,7 +3,7 @@
 > 本文是当前开发状态的快速入口，按代码是否接入、是否测试、是否完成桌面验收分开记录。
 > 最后更新：2026-11-26
 > 当前分支：`feat/native-gui-foundation`
-> 最近代码变更基线：设置模块、查询行数上限、布局偏好及深浅色主题已通过 Linux / Windows CI；随后将 SQL 工作区布局与标签栏视图拆分到 `query_workspace_view.go`，当前拆分提交及文档更新正在等待新 head CI。
+> 最近代码变更基线：设置模块、查询行数上限、布局偏好及深浅色主题已通过 Linux / Windows CI；SQL 工作区布局已拆分到 `query_workspace_view.go`，本轮继续将对象导航树拆分到 `explorer_view.go`，最新 Explorer 拆分提交等待新 head CI。
 >
 > **统计规则：**「已实现」只表示代码路径已完成并接入，不自动等于本地测试通过或真实桌面验收通过。没有对应证据的项目不得标记为验收完成。本文不使用容易失真的单一迁移百分比。
 
@@ -40,6 +40,7 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] 保存文件对话框与窗口关闭等待解耦：对话框返回后重新检查生命周期，窗口已关闭则不启动导出并尝试关闭 / 清理文件。
 - [x] 收藏 SQL 面板布局与增删改查动作已从 `run.go` 拆分到 `saved_sql_view.go`；列表控件按收藏 ID 绑定，搜索过滤后不会错绑其他收藏的改名 / 删除按钮。
 - [x] SQL 工作区布局已从 `run.go` 拆分到 `query_workspace_view.go`，包含表结构条、查询工作区 / 工具栏、标签栏 / 标签、SQL 编辑器与状态栏；状态模型仍由 `workspace` 统一持有。
+- [x] Explorer 对象导航视图已从 `run.go` 拆分到 `explorer_view.go`，包含数据库节点、表 / 视图分组、对象节点和树行绘制；连接 / 元数据状态仍由 `workspace` 统一持有。
 - [x] Windows 启动窗口尺寸根据主显示器工作区和系统 DPI 计算，不再固定 1080×660；非 Windows 暂使用安全回退尺寸。
 
 ## 3. 已有测试或 CI 证据，但仍需区分验收范围
@@ -51,14 +52,14 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] Windows 启动退出修复和窗口尺寸计算：提交 `eb11e16a` 的 CI Run [45780318904](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45780318904) 中 Linux、Windows 的测试、vet 和构建均成功。
 - [x] 收藏 SQL 面板拆分与控件稳定绑定：最新提交 `16c0b432` 的 CI Run [45791265139](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45791265139) Linux / Windows 检查成功。
 - [x] 新架构设置模块、设置文件持久化、查询行数 / 侧栏 / 编辑器比例和深浅色主题切换已接入；提交 `ee5ff06` 对应 CI Run [45798026060](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45798026060) 的 Linux / Windows 检查成功。
-- [ ] SQL 工作区布局拆分已提交；等待本轮最新 head CI，并继续补充标签栏 / 编辑器布局回归测试。
+- [ ] Explorer 视图拆分已提交；等待本轮最新 head CI。
 
 **注意：** GitHub Actions 成功只能证明对应提交在 CI 环境中的测试、静态检查和构建通过，不等于真实桌面交互已验收。
 
 ## 4. 尚未完成 / 正在推进
 
 ### 高优先级：当前迁移主线
-- [ ] 继续拆分 `internal/gui/gioapp/app/run.go` 中的对象导航 / Explorer 视图与状态，降低窗口层状态、事件和布局耦合。
+- [ ] 继续拆分 `internal/gui/gioapp/app/run.go` 中的 Explorer 状态与元数据交互协调，评估下沉到独立 presenter / model；当前只拆出了视图，状态仍由 `workspace` 持有。
 - [ ] 将 workspace、editor、result、explorer、history、snippets、settings 按职责继续拆分；已有子模块不重复创建。
 - [ ] 检查所有后台 goroutine 和 `goWorker` 调用点，补齐生命周期边界测试。
 - [ ] 验证保存对话框在父窗口销毁后的真实平台行为，以及关闭后进程是否退出。
@@ -124,3 +125,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 3. 真实桌面交互完成后，再勾选平台验收项，并注明操作系统。
 4. 新增或调整下一步任务时，检查是否与已完成项重复。
 5. 不以提交数量、代码行数或旧版功能清单条目数计算迁移百分比。
+
+
+## 2026-11-27：Explorer 视图拆分
+
+- 将 `layoutNavigator`、`layoutDatabaseNode`、`layoutObjectNode`、`treeRow` 和 `treeGroupLabel` 从 `run.go` 移至 `explorer_view.go`。
+- `run.go` 从 1,122 行减少到 926 行；视图方法仍接收原有 `workspace`，未改变数据库选择、对象加载、请求序号和元数据状态生命周期。
+- 当前只完成视图层拆分，不将其误记为 Explorer 状态模型已独立；下一步应先为数据库展开 / 折叠和对象选择提取纯状态协调逻辑，再决定是否建立 presenter。
+- 本轮未执行本地 gofmt、go test、go vet、build 或真实桌面 GUI 验收；以最新 head 的 Linux / Windows CI 为代码验收依据。
