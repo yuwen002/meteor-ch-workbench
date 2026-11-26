@@ -186,3 +186,12 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 新增 `internal/gui/gioapp/app/query_runtime_state.go`，将查询代次（`workspaceui.QueryExecution`）、执行取消函数和运行标记收拢到 `queryRuntimeState`。
 - `workspace` 通过匿名嵌入该状态对象维持现有调用方式，查询事件处理、标签切换和取消流程的行为不变；同步调整查询结果与 SQL 标签测试中的状态初始化。
 - 本轮尚未获得新 head 的 CI 结果；未执行本地 Go 测试 / vet / build，也未进行真实桌面 GUI 验收。
+
+
+## 12. 2026-11-27：活动查询结果快照状态拆分
+
+- 新增 `query_result_state.go`，将当前活动标签的列元数据、结果行和状态文本聚合为 `queryResultState`；`workspace` 通过匿名嵌入保留既有 UI 字段访问方式。
+- 查询事件消费者将列替换、批次追加和完成状态更新委托给结果状态对象；消费者继续负责事件代次校验、历史写入、活动 / 非活动标签分流，以及 Gio 控件重置和结果视图刷新。
+- `sqlTabState` 仍负责非活动标签及切换时的独立结果快照、筛选、排序和滚动状态；没有将 Gio 控件或查询取消函数放入结果快照模型。
+- 新增 `query_result_state_test.go`，覆盖列元数据替换、批次追加、查询完成和错误完成时保留已有快照。
+- 当前提交后需等待最新 head 的 Linux / Windows CI；未执行本地 gofmt、go test、go vet、build 或真实桌面 GUI 验收。
