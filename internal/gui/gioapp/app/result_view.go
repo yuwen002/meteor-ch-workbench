@@ -69,10 +69,11 @@ func extendResultSortKeys(rows [][]any, sortColumn int, keys []resultSortKey) []
 	}
 	if cap(keys) < len(rows) {
 		newCapacity := cap(keys) * 2
-		if newCapacity < len(rows) {
-			newCapacity = len(rows)
+		minimumCapacity := len(rows) * 2
+		if newCapacity < minimumCapacity {
+			newCapacity = minimumCapacity
 		}
-		if newCapacity == 0 {
+		if newCapacity < len(rows) {
 			newCapacity = len(rows)
 		}
 		extended := make([]resultSortKey, len(keys), newCapacity)
