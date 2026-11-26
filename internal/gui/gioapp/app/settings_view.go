@@ -20,6 +20,7 @@ func (s *workspace) openSettings() {
 	s.settingsVisible = true
 	s.settingsStatus = ""
 	s.settingsRowLimitEditor.SetText(strconv.Itoa(s.queryRowLimit))
+	s.settingsRatioEditor.SetText(strconv.FormatFloat(s.settingsPreferences.EditorRatio, "f", 2, 64))
 }
 
 func (s *workspace) saveSettings() {
@@ -33,8 +34,15 @@ func (s *workspace) saveSettings() {
 		s.settingsStatus = fmt.Sprintf("行数上限须为 0 或 %d～%d", settingsdomain.RowLimitMin, settingsdomain.RowLimitMax)
 		return
 	}
+	ratio, err := strconv.ParseFloat(strings.TrimSpace(s.settingsRatioEditor.Text()), 64)
+	if err != nil || ratio < settingsdomain.MinEditorRatio || ratio > settingsdomain.MaxEditorRatio {
+		s.settingsStatus = fmt.Sprintf("编辑器占比须为 %.2f～%.2f", settingsdomain.MinEditorRatio, settingsdomain.MaxEditorRatio)
+		return
+	}
 	preferences := s.settingsPreferences
 	preferences.QueryRowLimit = value
+	preferences.SidebarCollapsed = s.connectionSidebarCollapsed
+	preferences.EditorRatio = ratio
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	saved, err := s.services.Settings.Save(ctx, preferences)
@@ -74,6 +82,21 @@ func (s *workspace) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(layout.Spacer{Height: spaceXS}.Layout),
 				layout.Rigid(styledText(s.theme, "范围：0 表示不限制；100～1,000,000 表示最大返回行数。仅影响新执行的查询。", unit.Sp(10), colorTextMuted)),
 				layout.Rigid(layout.Spacer{Height: spaceS}.Layout),
+				layout.Rigid(styledText(s.theme, "编辑器高度占比（0.35～0.80）", unit.Sp(12), colorTextSecondary)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					s.settingsRatioEditor.SingleLine = true
+					editor := material.Editor(s.theme, &s.settingsRatioEditor, "例如 0.45")
+					editor.TextSize = unit.Sp(13)
+					return editor.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: spaceXS}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					label := "侧栏：展开"
+					if s.connectionSidebarCollapsed { label = "侧栏：收起" }
+					if s.settingsSidebarToggle.Clicked(gtx) { s.toggleSidebarPreference() }
+					return s.smallButton(gtx, &s.settingsSidebarToggle, label, false)
+				}),
+				layout.Rigid(layout.Spacer{Height: spaceS}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if s.settingsStatus == "" { return layout.Dimensions{} }
 					return styledText(s.theme, s.settingsStatus, unit.Sp(10), colorTextSecondary)(gtx)
@@ -94,4 +117,18 @@ func (s *workspace) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
 			)
 		})
 	})
+}
+
+func (s *workspace) toggleSidebarPreference() {
+	s.connectionSidebarCollapsed = !s.connectionSidebarCollapsed
+	preferences := s.settingsPreferences
+	preferences.SidebarCollapsed = s.connectionSidebarCollapsed
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	saved, err := s.services.Settings.Save(ctx, preferences)
+	if err != nil {
+		s.settingsStatus = "保存侧栏状态失败：" + err.Error()
+		return
+	}
+	s.settingsPreferences = saved
 }
