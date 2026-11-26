@@ -1,6 +1,8 @@
-# API Reference
+# API Reference（旧版 Wails API 归档）
 
-后端 Go 方法通过 Wails v3 自动绑定为前端可调用函数。
+> **重要**：本文记录的是旧 Vue/Wails 运行时的绑定 API，不是当前 Go + Gio 原生版的调用接口。当前桌面入口为 `cmd/meteor-ch-gio`，通过 `internal/bootstrap` 装配应用服务，Gio 界面直接调用 application service；当前版本没有 Wails runtime，也不应再按本文的 `Call.ByName` / TypeScript API 方式接入新功能。本文仅保留作旧功能行为、参数和迁移兼容参考。新架构的模块边界请查看 [代码索引](CODE_INDEX.md) 与 [原生 GUI 迁移记录](architecture/NATIVE_GUI_MIGRATION.md)。
+
+后端 Go 方法通过 Wails v3 自动绑定为前端可调用函数（仅适用于旧版）。
 
 调用格式：
 ```ts
