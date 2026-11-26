@@ -573,7 +573,7 @@ func (s *workspace) drainResults() {
 				}
 			}
 		case result := <-s.objectResults:
-			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase {
+			if !isCurrentObjectsResult(result, s.requestSeq, s.selectedID, s.selectedDatabase) {
 				continue
 			}
 			s.loading = ""
@@ -584,7 +584,7 @@ func (s *workspace) drainResults() {
 			s.tables, s.views = result.tables, result.views
 			s.status = fmt.Sprintf("%s · %d 张表 · %d 个视图", result.database, len(result.tables), len(result.views))
 		case result := <-s.schemaResults:
-			if result.seq != s.requestSeq || result.connectionID != s.selectedID || result.database != s.selectedDatabase || result.table != s.selectedTable {
+			if !isCurrentSchemaResult(result, s.requestSeq, s.selectedID, s.selectedDatabase, s.selectedTable) {
 				continue
 			}
 			s.loading = ""
