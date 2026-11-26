@@ -879,7 +879,6 @@ func (s *workspace) primaryButton(gtx layout.Context, click *widget.Clickable, l
 	return button.Layout(gtx)
 }
 
-// switchSQLTab 在标签之间切换时保存当前编辑内容与查询结果，并载入目标标签的状态。
 // smallButton 统一小尺寸次要按钮，避免各处手写字号与内边距。
 func (s *workspace) smallButton(gtx layout.Context, click *widget.Clickable, label string, disabled bool) layout.Dimensions {
 	button := material.Button(s.theme, click, label)
