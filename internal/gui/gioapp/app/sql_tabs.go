@@ -6,6 +6,7 @@ import (
 
 	"gioui.org/layout"
 	"gioui.org/unit"
+	"gioui.org/widget"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
@@ -181,12 +182,42 @@ func (s *workspace) saveActiveSQLTabState() {
 	s.sqlTabStates[tabID] = current
 }
 
-func (s *workspace) closeSQLTab(index int) {
+// ensureSQLTabClickables 以稳定 TabID 绑定点击控件，标签重排后不会串用其他标签的点击状态。
+func (s *workspace) ensureSQLTabClickables(items []workspaceui.Tab) {
+	if s.sqlTabClicks == nil {
+		s.sqlTabClicks = make(map[workspaceui.TabID]*widget.Clickable, len(items))
+	}
+	if s.sqlTabCloseClicks == nil {
+		s.sqlTabCloseClicks = make(map[workspaceui.TabID]*widget.Clickable, len(items))
+	}
+	for _, tab := range items {
+		if s.sqlTabClicks[tab.ID] == nil {
+			s.sqlTabClicks[tab.ID] = new(widget.Clickable)
+		}
+		if s.sqlTabCloseClicks[tab.ID] == nil {
+			s.sqlTabCloseClicks[tab.ID] = new(widget.Clickable)
+		}
+	}
+}
+
+// discardSQLTabClickables 释放已关闭标签的 UI 控件引用。
+func (s *workspace) discardSQLTabClickables(tabID workspaceui.TabID) {
+	delete(s.sqlTabClicks, tabID)
+	delete(s.sqlTabCloseClicks, tabID)
+}
+
+func (s *workspace) closeSQLTab(tabID workspaceui.TabID) {
 	items := s.sqlWorkspace.Items()
-	if index < 0 || index >= len(items) {
+	index := -1
+	for i := range items {
+		if items[i].ID == tabID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
 		return
 	}
-	tabID := items[index].ID
 	activeID := s.sqlWorkspace.ActiveID()
 	if tabID == activeID {
 		s.cancelActiveQuery("查询已取消（关闭标签页）")
@@ -211,8 +242,7 @@ func (s *workspace) closeSQLTab(index int) {
 		return
 	}
 	delete(s.sqlTabStates, tabID)
-	s.sqlTabClicks = append(s.sqlTabClicks[:index], s.sqlTabClicks[index+1:]...)
-	s.sqlTabCloseClicks = append(s.sqlTabCloseClicks[:index], s.sqlTabCloseClicks[index+1:]...)
+	s.discardSQLTabClickables(tabID)
 
 	if tabID == activeID {
 		nextID := s.sqlWorkspace.ActiveID()
