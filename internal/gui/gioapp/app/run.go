@@ -168,17 +168,12 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		state.explorer.ListenEvents(event)
 		switch e := event.(type) {
 		case gio.DestroyEvent:
-			if state.cancelLifecycle != nil {
-				state.cancelLifecycle()
-			}
+			state.shutdownWorkers()
 			if state.cancelRequest != nil {
 				state.cancelRequest()
 				state.cancelRequest = nil
 			}
 			state.cancelActiveQuery("窗口已关闭")
-			// 所有后台任务都继承生命周期 Context；等待它们退出后再返回，
-			// 确保 main 中的 services.Close 不会与仍在运行的请求竞争。
-			state.workers.Wait()
 			return e.Err
 		case gio.FrameEvent:
 			gtx := gio.NewContext(&ops, e)
@@ -194,6 +189,8 @@ type workspace struct {
 	window            *gio.Window
 	lifecycleCtx      context.Context
 	cancelLifecycle   context.CancelFunc
+	lifecycleMu       sync.Mutex
+	lifecycleClosing  bool
 	workers           sync.WaitGroup
 	services          *bootstrap.Services
 	connections       *connectionui.Model
