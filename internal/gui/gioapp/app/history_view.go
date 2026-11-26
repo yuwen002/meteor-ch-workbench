@@ -8,7 +8,6 @@ import (
 
 	"gioui.org/layout"
 	"gioui.org/unit"
-	"gioui.org/widget"
 	"gioui.org/widget/material"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/domain/queryhistory"
@@ -151,4 +150,3 @@ func (s *workspace) layoutHistoryPanel(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-var _ = widget.List{}
