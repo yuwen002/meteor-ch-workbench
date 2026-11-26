@@ -296,3 +296,12 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 2. 将查询结果批次处理与 UI 有界队列独立出来，避免大结果集切换标签时重复复制全部数据。
 3. 建立 settings 的 domain / application / storage 和 Gio 页面，迁移主题、行数上限、布局与刷新偏好。
 4. 补齐真实 ClickHouse 集成测试与 macOS CI；完成后再分批删除旧业务包和 Vue 前端。
+
+### SQL 查询事件生产与消费解耦（2026-11-26）
+
+- 将查询执行、批次回调、有限队列入队与取消收敛在 `query_events.go`；将事件有效性检查、查询历史写入、活动标签结果更新和非活动标签结果归档拆到 `query_result_consumer.go`。
+- 查询事件按查询 generation 与稳定 TabID 双重校验；标签已关闭或查询已被新请求 / 取消操作取代时，迟到事件直接丢弃。
+- 增加过期 generation、已关闭标签、有效标签事件的单元测试；保留队列背压、取消退出和查询结果分批测试。
+- `sql_tabs.go` 继续负责标签连接上下文和结果视图状态；`run.go` 只负责事件循环中的通道分发，SQL 查询事件不再在窗口文件中展开处理。
+- 当前代码 CI：Linux 与 Windows 均完成 `go test ./...`、`go vet ./...`、Gio 预览构建及 Artifact 上传，Run 45768140849 成功。
+- 本轮仍未执行本地测试或实际桌面 GUI 验收。下一步应把查询结果状态归档进一步下沉到独立 workspace/result 模型，并重点验证大结果集切换标签时的内存占用；随后再处理 settings 模块。
