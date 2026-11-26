@@ -10,7 +10,7 @@
 - 本地连接配置读取，连接新增 / 编辑 / 删除、Native / HTTP、TLS 与连通性测试
 - 连接分组管理、连接移动、分组排序和折叠
 - 数据库、表和视图浏览，以及表字段、引擎、DDL、分区键、排序键和 TTL 详情
-- SQL 编辑器、多标签、查询执行与取消，标签间 SQL / 结果状态隔离
+- SQL 编辑器、多标签、查询执行与取消；标签间 SQL、结果数据、筛选排序和列宽等视图状态隔离
 - 查询结果表格、搜索筛选、列排序、列宽调整、单元格详情和复制
 - CSV / TSV 流式导出、查询历史和收藏 SQL 面板
 - 新的 domain / application / infrastructure 分层与独立 Gio 入口
@@ -78,7 +78,7 @@ go build ./cmd/meteor-ch-gio
 - 可视化建表、编辑 / 删除表、集群拓扑等 ClickHouse 管理能力
 - 系统钥匙串或独立凭据存储，以及旧配置导入 / 备份恢复的完整交互
 - macOS CI、Windows / macOS / Linux 实际窗口验收和真实 ClickHouse 集成测试
-- 拆分约 77 KB 的 Gio app/run.go，删除旧 Gio 单体窗口、旧业务层和 Vue 前端
+- 继续拆分约 58 KB 的 Gio app/run.go，删除旧 Gio 单体窗口、旧业务层和 Vue 前端
 
 ## 架构方向
 
