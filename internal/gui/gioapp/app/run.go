@@ -1501,6 +1501,12 @@ func (s *workspace) layoutResultsPanel(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
+	if s.queryCellClicks == nil {
+		s.queryCellClicks = make(map[int64]*widget.Clickable)
+	}
+	if s.resultCellText == nil {
+		s.resultCellText = make(map[int64]string)
+	}
 	if len(s.queryCellClicks) > 4096 {
 		clear(s.queryCellClicks)
 		clear(s.resultCellText)
