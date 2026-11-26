@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 
+	metadataapp "github.com/yuwen002/meteor-ch-workbench/internal/application/metadata"
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
@@ -251,6 +253,65 @@ func TestSQLTabResultViewDoesNotRestoreStaleCellDetail(t *testing.T) {
 	}
 	if state.queryDetailRows.Position != (layout.Position{}) {
 		t.Fatalf("stale detail scroll position should be reset: %+v", state.queryDetailRows.Position)
+	}
+}
+
+func TestRestoreSQLTabConnectionClearsUnboundTabContext(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	ctx, cancel := context.WithCancel(context.Background())
+	state := &workspace{
+		sqlWorkspace: tabs,
+		sqlTabStates: map[workspaceui.TabID]sqlTabState{tabID: {}},
+		selectedID: "connection-a",
+		selectedName: "生产集群",
+		connected: true,
+		selectedDatabase: "analytics",
+		selectedTable: "events",
+		selectedObject: "events",
+		databases: []string{"analytics"},
+		loading: "正在读取表和视图…",
+		requestSeq: 7,
+		cancelRequest: cancel,
+	}
+	_ = ctx
+
+	state.restoreSQLTabConnection(tabID)
+
+	if state.selectedID != "" || state.selectedName != "" || state.connected {
+		t.Fatalf("unbound tab retained connection: id=%q name=%q connected=%t", state.selectedID, state.selectedName, state.connected)
+	}
+	if state.selectedDatabase != "" || state.selectedTable != "" || state.selectedObject != "" {
+		t.Fatalf("unbound tab retained database objects: database=%q table=%q object=%q", state.selectedDatabase, state.selectedTable, state.selectedObject)
+	}
+	if state.loading != "" || state.cancelRequest != nil || state.requestSeq <= 7 {
+		t.Fatalf("pending request was not invalidated: loading=%q cancel=%v seq=%d", state.loading, state.cancelRequest != nil, state.requestSeq)
+	}
+}
+
+func TestRestoreSQLTabConnectionClearsDatabaseForSameConnection(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	state := &workspace{
+		sqlWorkspace: tabs,
+		sqlTabStates: map[workspaceui.TabID]sqlTabState{
+			tabID: {ConnectionID: "connection-a"},
+		},
+		selectedID: "connection-a",
+		connected: true,
+		selectedDatabase: "analytics",
+		selectedTable: "events",
+		selectedObject: "events",
+		tables: []metadataapp.Object{{Name: "events"}},
+		views: []metadataapp.Object{{Name: "event_view"}},
+		requestSeq: 3,
+	}
+	state.restoreSQLTabConnection(tabID)
+	if state.selectedDatabase != "" || state.selectedTable != "" || state.selectedObject != "" {
+		t.Fatalf("tab without saved database retained database context: database=%q table=%q object=%q", state.selectedDatabase, state.selectedTable, state.selectedObject)
+	}
+	if len(state.tables) != 0 || len(state.views) != 0 || state.requestSeq <= 3 {
+		t.Fatalf("database objects were not cleared: tables=%v views=%v seq=%d", state.tables, state.views, state.requestSeq)
 	}
 }
 
