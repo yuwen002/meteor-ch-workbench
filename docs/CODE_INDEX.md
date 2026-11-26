@@ -30,7 +30,7 @@ cmd/meteor-ch-gio
 - `internal/infrastructure/storage/historyfile`：兼容旧 `history.json` 数组格式的查询历史仓库。
 - `internal/infrastructure/storage/savedsqlfile`：兼容旧 `saved_sql.json` 数组格式的收藏 SQL 仓库。
 - `internal/platform/osfs`：本地文件系统适配。
-- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口与交互；`run.go` 负责主事件循环、窗口状态和页面组合；SQL 工作区布局在 `query_workspace_view.go`，对象导航树在 `explorer_view.go`，标签生命周期在 `sql_tabs.go`，查询事件生产/消费在 `query_events.go` / `query_result_consumer.go`，结果展示与筛选在 `result_view.go` / `result_panel.go`。
+- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口与交互； `explorer_view.go` 负责对象树布局，`explorer_selection.go` 聚合数据库 / 表 / 视图 / 字段与选中上下文，`explorer_request_state.go` 管理元数据请求序号和取消，`explorer_state.go` 校验异步响应上下文；`run.go` 负责主事件循环、窗口状态和页面组合；SQL 工作区布局在 `query_workspace_view.go`，对象导航树在 `explorer_view.go`，标签生命周期在 `sql_tabs.go`，查询事件生产/消费在 `query_events.go` / `query_result_consumer.go`，结果展示与筛选在 `result_view.go` / `result_panel.go`。
 - `internal/gui/gioapp/connection`：连接侧栏模型、样式和视图。
 - `internal/gui/gioapp/workspace`：与 Gio 控件解耦的 SQL 标签工作区模型。
 
