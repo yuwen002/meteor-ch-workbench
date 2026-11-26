@@ -3,8 +3,34 @@ package app
 import (
 	"testing"
 
+	"gioui.org/layout"
+	"gioui.org/widget"
+
 	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
 )
+
+func TestReleaseResultCellCachesKeepsArchivedQueryData(t *testing.T) {
+	rows := [][]any{{"retained", int64(7)}}
+	state := &workspace{
+		queryColumns: []queryapp.Column{{Name: "value"}},
+		queryData: rows,
+		queryCellClicks: map[int64]*widget.Clickable{1: new(widget.Clickable)},
+		resultCellText: map[int64]string{1: "cached"},
+		resultHeaderChildren: make([]layout.FlexChild, 0, 8),
+		resultRowChildren: make([]layout.FlexChild, 0, 8),
+		resultPixelWidths: make([]int, 0, 8),
+	}
+	state.releaseResultCellCaches()
+	if state.queryCellClicks != nil || state.resultCellText != nil {
+		t.Fatal("cell cache maps should release their backing storage")
+	}
+	if state.resultHeaderChildren != nil || state.resultRowChildren != nil || state.resultPixelWidths != nil {
+		t.Fatal("layout cache slices should be released")
+	}
+	if len(state.queryColumns) != 1 || len(state.queryData) != 1 || state.queryData[0][0] != "retained" {
+		t.Fatal("releasing view caches must not discard query data")
+	}
+}
 
 func TestBuildResultRowViewSortsWithoutMutatingSource(t *testing.T) {
 	rows := [][]any{{"c", 10}, {"a", 2}, {"b", 1}}
