@@ -144,7 +144,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		savedSQLListResults: make(chan savedSQLListResult, 2),
 		objectResults:    make(chan objectsResult, 8),
 		schemaResults:    make(chan schemaResult, 4),
-		queryResults:     make(chan queryEvent, 128),
+		queryResults:     make(chan queryEvent, queryResultQueueCapacity),
 		sqlWorkspace:     workspaceui.NewTabs(),
 		sqlTabStates:     map[workspaceui.TabID]sqlTabState{1: {}},
 		queryRows:        widget.List{List: layout.List{Axis: layout.Vertical}},
@@ -989,32 +989,17 @@ func (s *workspace) executeQuery() {
 		defer cancel()
 		summary, err := s.services.Queries.Execute(ctx, request,
 			func(columns []queryapp.Column) error {
-				select {
-				case s.queryResults <- queryEvent{seq: seq, tab: tab, columns: columns}:
-					return nil
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+				return s.publishQueryEvent(ctx, queryEvent{seq: seq, tab: tab, columns: columns})
 			},
 			func(rows [][]any) error {
 				batch := make([][]any, len(rows))
 				for i := range rows {
 					batch[i] = append([]any(nil), rows[i]...)
 				}
-				select {
-				case s.queryResults <- queryEvent{seq: seq, tab: tab, batch: batch}:
-					return nil
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+				return s.publishQueryEvent(ctx, queryEvent{seq: seq, tab: tab, batch: batch})
 			},
 		)
-		select {
-		case s.queryResults <- queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: connectionID, err: err, done: true}:
-		case <-ctx.Done():
-			// 标签页切换或窗口退出后不再等待无人消费的结果事件。
-		}
-		s.window.Invalidate()
+		_ = s.publishQueryEvent(ctx, queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: connectionID, err: err, done: true})
 	}()
 }
 
