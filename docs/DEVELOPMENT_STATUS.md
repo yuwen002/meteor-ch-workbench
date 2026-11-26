@@ -52,14 +52,15 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - [x] Windows 启动退出修复和窗口尺寸计算：提交 `eb11e16a` 的 CI Run [45780318904](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45780318904) 中 Linux、Windows 的测试、vet 和构建均成功。
 - [x] 收藏 SQL 面板拆分与控件稳定绑定：最新提交 `16c0b432` 的 CI Run [45791265139](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45791265139) Linux / Windows 检查成功。
 - [x] 新架构设置模块、设置文件持久化、查询行数 / 侧栏 / 编辑器比例和深浅色主题切换已接入；提交 `ee5ff06` 对应 CI Run [45798026060](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45798026060) 的 Linux / Windows 检查成功。
-- [ ] Explorer 视图拆分已提交；等待本轮最新 head CI。
+- [x] Explorer 视图拆分已通过 CI：提交 `54b10ac` 对应 Run [45855866259](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855866259)，Linux / Windows 测试、vet、预览构建成功。
+- [x] 提取 Explorer 元数据响应有效性判断到 `explorer_state.go`，新增 `explorer_state_test.go`，覆盖过期序号、连接、数据库和表的响应过滤；当前提交待最新 head CI。
 
 **注意：** GitHub Actions 成功只能证明对应提交在 CI 环境中的测试、静态检查和构建通过，不等于真实桌面交互已验收。
 
 ## 4. 尚未完成 / 正在推进
 
 ### 高优先级：当前迁移主线
-- [ ] 继续拆分 `internal/gui/gioapp/app/run.go` 中的 Explorer 状态与元数据交互协调，评估下沉到独立 presenter / model；当前只拆出了视图，状态仍由 `workspace` 持有。
+- [ ] 继续将 Explorer 的请求序号、取消函数和当前导航上下文从 `workspace` 聚合到可独立测试的协调器；本轮仅抽取纯响应有效性判断，尚未迁移请求生命周期和 UI 控件状态。
 - [ ] 将 workspace、editor、result、explorer、history、snippets、settings 按职责继续拆分；已有子模块不重复创建。
 - [ ] 检查所有后台 goroutine 和 `goWorker` 调用点，补齐生命周期边界测试。
 - [ ] 验证保存对话框在父窗口销毁后的真实平台行为，以及关闭后进程是否退出。
@@ -101,7 +102,7 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 2. Windows 实机验收 app.Main 退出修复和不同 DPI / 屏幕尺寸下的初始窗口。
 3. 补充保存对话框返回、窗口关闭、任务登记失败等生命周期边界测试。
 4. 全量检查后台任务入口及窗口关闭后回调，排除遗漏的 goroutine 和窗口访问。
-5. 继续拆分 Explorer / 对象导航视图与状态，避免继续向 `run.go` 堆叠布局代码；SQL 工作区布局与收藏 SQL 面板已分别拆出。
+5. 继续拆分 Explorer 请求生命周期与导航状态；本轮已抽取异步响应有效性判断并增加回归测试，下一步评估请求序号 / 取消函数的统一所有权。
 6. 验证主题切换与设置面板回归测试，再继续拆分 workspace / editor / result 模块。
 7. 在功能替代验收后再清理旧代码，不提前删除仍用于兼容对照的数据迁移逻辑。
 
@@ -133,3 +134,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - `run.go` 从 1,122 行减少到 926 行；视图方法仍接收原有 `workspace`，未改变数据库选择、对象加载、请求序号和元数据状态生命周期。
 - 当前只完成视图层拆分，不将其误记为 Explorer 状态模型已独立；下一步应先为数据库展开 / 折叠和对象选择提取纯状态协调逻辑，再决定是否建立 presenter。
 - 本轮未执行本地 gofmt、go test、go vet、build 或真实桌面 GUI 验收；以最新 head 的 Linux / Windows CI 为代码验收依据。
+
+
+## 2026-11-27：Explorer 异步响应状态校验
+
+- [x] 将数据库对象列表响应校验提取为 `isCurrentObjectsResult`，统一检查请求序号、连接 ID、数据库名。
+- [x] 将表结构响应校验提取为 `isCurrentSchemaResult`，额外检查表名，避免切换表后迟到的旧表结构覆盖新选择。
+- [x] 新增 `explorer_state_test.go`，覆盖当前响应、旧序号、不同连接、不同数据库和不同表等场景。
+- [ ] 最新提交的 Linux / Windows CI 尚待完成；未声称本地测试已执行。
