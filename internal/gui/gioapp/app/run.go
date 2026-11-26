@@ -987,7 +987,11 @@ func (s *workspace) executeQuery() {
 	tab := s.sqlWorkspace.ActiveID()
 	activeState := s.sqlTabStates[tab]
 	if activeState.ConnectionID != "" && activeState.ConnectionID != s.selectedID {
-		s.queryStatus = "当前标签页关联连接与已选连接不一致，请切回关联连接或新建查询标签页"
+		if s.selectedID == "" {
+			s.queryStatus = "当前标签页关联的连接不可用，请重新选择连接"
+		} else {
+			s.queryStatus = "当前标签页关联连接与已选连接不一致，请切回关联连接或新建查询标签页"
+		}
 		return
 	}
 	if !s.connected || s.selectedID == "" {
@@ -1978,7 +1982,8 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 		if target == nil {
 			s.selectedID, s.selectedName, s.connected = "", "", false
 			s.selectedDatabase = ""
-			s.queryStatus = "此查询标签页关联的连接已不存在，请重新选择连接"
+			next.Status = "此查询标签页关联的连接已不存在，请重新选择连接"
+			s.sqlTabStates[tabID] = next
 		} else {
 			s.selectConnection(*target)
 		}
