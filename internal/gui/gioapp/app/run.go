@@ -1997,6 +1997,7 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 	current := s.sqlTabStates[activeID]
 	s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
 	current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
+	s.saveResultViewState(&current)
 	s.sqlTabStates[activeID] = current
 	s.sqlWorkspace.Activate(tabID)
 	next := s.sqlTabStates[tabID]
@@ -2025,6 +2026,7 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
 	s.clearQueryCellSelection()
 	s.resetResultWidgets(s.queryColumns)
+	s.restoreResultViewState(next)
 }
 func (s *workspace) treeGroupLabel(gtx layout.Context, title string) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(2), Left: unit.Dp(26), Right: unit.Dp(8)}.Layout(gtx, styledText(s.theme, title, unit.Sp(10), colorTextMuted))
