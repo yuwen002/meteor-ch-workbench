@@ -129,6 +129,7 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		explorer:         explorer,
 		services:         services,
 		queryRowLimit:    preferences.QueryRowLimit,
+		settingsPreferences: preferences,
 		connections:      model,
 		theme:            material.NewTheme(),
 		checkResults:     make(chan connectionCheck, 4),
@@ -258,6 +259,11 @@ type workspace struct {
 	queryStatus       string
 	queryRunning      bool
 	queryRowLimit     int
+	settingsToggle    widget.Clickable
+	settingsVisible   bool
+	settingsRowLimitEditor widget.Editor
+	settingsStatus    string
+	settingsPreferences settingsdomain.Preferences
 
 	resultView           []resultRowView
 	resultViewDirty      bool
@@ -644,6 +650,10 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return s.connectionView.Modal(gtx, s.theme)
 		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			if !s.settingsVisible { return layout.Dimensions{} }
+			return s.layoutSettingsPanel(gtx)
+		}),
 	)
 }
 
@@ -774,6 +784,11 @@ func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
 				}))
 				children = append(children, layout.Rigid(layout.Spacer{Width: spaceXS}.Layout))
 			}
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.settingsToggle.Clicked(gtx) { s.openSettings() }
+				return s.smallButton(gtx, &s.settingsToggle, "设置", false)
+			}))
+			children = append(children, layout.Rigid(layout.Spacer{Width: spaceXS}.Layout))
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if s.refreshConnection.Clicked(gtx) {
 					s.reloadConnections()
