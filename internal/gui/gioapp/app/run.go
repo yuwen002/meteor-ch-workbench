@@ -52,18 +52,6 @@ type schemaResult struct {
 	err          error
 }
 
-type queryEvent struct {
-	seq     uint64
-	tab     workspaceui.TabID
-	columns []queryapp.Column
-	batch   [][]any
-	summary queryapp.Summary
-	sql string
-	connectionID string
-	err     error
-	done    bool
-}
-
 type queryCellSelection struct {
 	row    int
 	column queryapp.Column
