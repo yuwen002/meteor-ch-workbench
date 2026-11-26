@@ -353,3 +353,12 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - goWorker 返回是否成功登记，处理“文件对话框返回时窗口已开始关闭”的竞态；登记失败会关闭并清理刚创建的文件。
 - invalidateIfActive 在生命周期锁内检查关闭状态并调用窗口 Invalidate，避免独立对话框 goroutine 在窗口销毁后访问窗口。
 - 当前仍需目标桌面平台验证原生对话框是否随父窗口正常关闭；CI 不能替代此项验证。
+
+
+### 启动窗口尺寸与 Windows 退出生命周期（2026-11-26）
+- `cmd/meteor-ch-gio` 启动时按 Windows 主显示器工作区和系统 DPI 计算 Gio 逻辑尺寸，初始窗口目标占用约 82% 工作区，并限制最大尺寸及边缘留白。
+- 小屏幕按可用工作区缩小，避免固定 1080×660 在高 DPI / 小屏幕设备上超出可见区域。
+- 非 Windows 平台当前使用保守默认尺寸；后续需分别接入 macOS / Linux 工作区与 DPI 查询，不能把回退值视为已完成跨平台自适应。
+- Gio 0.10.3 的 Windows `app.Main` 进入主线程的永久等待；窗口 DestroyEvent 后，窗口事件循环返回时必须完成服务关闭并主动结束进程，否则主 goroutine 仍停在 `app.Main`，可能触发 runtime deadlock fatal error。
+- 启动 goroutine 现在在 `gioapp.Run` 返回后显式关闭服务，再按正常关闭 / 错误退出码结束进程；不得依赖 `app.Main()` 返回后再执行清理。
+- 仍需 Windows 实机验证正常关闭、启动初始化失败和窗口创建失败三种退出路径。
