@@ -5,8 +5,6 @@ import (
 	"os"
 
 	gio "gioui.org/app"
-	"gioui.org/unit"
-
 	"github.com/yuwen002/meteor-ch-workbench/internal/bootstrap"
 	gioapp "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/app"
 )
@@ -47,6 +45,3 @@ func main() {
 	gio.Main()
 }
 
-// Keep unit imported here to make the initial size contract explicit in the
-// platform-specific implementations.
-var _ = unit.Dp(0)
