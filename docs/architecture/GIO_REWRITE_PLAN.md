@@ -328,7 +328,7 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 ### 窗口关闭与资源释放（2026-11-26）
 
 - 后台任务通过 workspace.goWorker 统一登记，并继承窗口生命周期 Context；窗口销毁后先取消请求，再等待任务退出。
-- cmd/meteor-ch-gio/main.go 在 Gio 主循环退出后等待 Run goroutine 完成，再由 defer 调用 services.Close()，关闭 ClickHouse 连接池。
+- 历史实现曾尝试在 Gio 主循环返回后等待 Run goroutine 并 defer 关闭连接池；Windows 的 Gio app.Main 不会返回，该清理顺序不可用。当前实现已调整为 gioapp.Run 返回后直接关闭 services，再显式结束进程。
 - 生命周期单测覆盖 WaitGroup 等待和取消后拒绝新任务；Linux / Windows CI 负责测试、vet 和构建。
 - 尚未完成：在 Windows / Linux / macOS 实际桌面环境验证关闭窗口后进程退出、文件选择器关闭、查询取消及连接池释放；CI 构建成功不能替代这项实机验收。
 - 正确构建入口：go build ./cmd/meteor-ch-gio；根目录不存在 main.go。
