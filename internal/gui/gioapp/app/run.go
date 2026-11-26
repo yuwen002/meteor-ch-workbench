@@ -1009,11 +1009,19 @@ func (s *workspace) executeQuery() {
 				return s.publishQueryEvent(ctx, queryEvent{seq: seq, tab: tab, batch: batch})
 			},
 		)
-		_ = s.publishQueryEvent(ctx, queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: connectionID, err: err, done: true})
+		_ = s.publishQueryCompletion(queryEvent{seq: seq, tab: tab, summary: summary, sql: sqlText, connectionID: connectionID, err: err, done: true})
 	}()
 }
 
 // cancelActiveQuery 在离开当前 SQL 标签页时取消仍在执行的请求，并使其后续事件失效。
+func (s *workspace) publishQueryCompletion(event queryEvent) error {
+	if err := enqueueQueryCompletion(s.queryResults, event); err != nil {
+		return err
+	}
+	s.window.Invalidate()
+	return nil
+}
+
 func (s *workspace) cancelActiveQuery(reason string) {
 	if !s.queryRunning {
 		return
