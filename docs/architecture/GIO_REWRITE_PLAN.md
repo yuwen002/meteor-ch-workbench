@@ -330,3 +330,10 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 - 生命周期单测覆盖 WaitGroup 等待和取消后拒绝新任务；Linux / Windows CI 负责测试、vet 和构建。
 - 尚未完成：在 Windows / Linux / macOS 实际桌面环境验证关闭窗口后进程退出、文件选择器关闭、查询取消及连接池释放；CI 构建成功不能替代这项实机验收。
 - 正确构建入口：go build ./cmd/meteor-ch-gio；根目录不存在 main.go。
+
+
+### 窗口关闭竞态加固（2026-11-26）
+- 后台任务注册现在由 `lifecycleMu` 保护：检查窗口关闭状态与 `WaitGroup.Add` 在同一临界区内完成。
+- `shutdownWorkers` 先关闭新任务入口并取消窗口生命周期，再等待已登记任务全部退出，避免 `WaitGroup.Wait` 与并发 `Add` 在计数归零时发生竞态。
+- DestroyEvent 先取消当前请求和活动查询，再关闭任务入口并等待任务退出，随后 Run 才返回；main 的 `runDone` 同步保证服务容器在窗口 Run 结束后关闭。
+- 新增并发注册 / 关闭交错测试。CI 通过仍不替代 Windows、macOS、Linux 实机关闭与进程退出验证。
