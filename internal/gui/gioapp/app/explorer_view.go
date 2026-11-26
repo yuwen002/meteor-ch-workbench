@@ -64,7 +64,7 @@ func (s *workspace) layoutDatabaseNode(gtx layout.Context, name string) layout.D
 	}
 	if click.Clicked(gtx) {
 		if name == s.selectedDatabase {
-			s.explorerSelection.ClearDatabase()
+			s.resetDatabaseContext()
 		} else {
 			s.selectDatabase(name)
 		}
