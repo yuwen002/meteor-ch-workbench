@@ -347,7 +347,7 @@ Gio 编辑区读取并恢复 `TabsManager` 保存的标签快照，支持新建�
 
 - workspace 增加统一后台任务登记；连接配置、连接测试、数据库 / 表元数据、查询执行、查询历史、收藏 SQL 和结果导出任务均纳入 WaitGroup。
 - 所有可取消的后台请求使用窗口生命周期 Context 作为父上下文。收到 Gio DestroyEvent 时，先取消生命周期和当前请求，再等待已登记任务结束。
-- Run 完成退出后，入口 main 执行 services.Close()，关闭 ClickHouse database/sql 连接池，避免连接池先于仍在执行的查询被关闭。
+- Run 完成退出后，窗口 goroutine 通知 main；main 在 gio.Main() 返回后等待窗口 goroutine 完成，再执行 services.Close()，关闭 ClickHouse database/sql 连接池，避免连接池先于仍在执行的查询被关闭。
 - 新增生命周期单元测试，覆盖任务退出等待与取消后不再启动任务。
 - 本轮通过 GitHub Actions 验证 go test ./...、go vet ./... 与 Linux / Windows 构建；该 CI 不等同于实际桌面运行时退出验收。Gio Explorer 的系统文件选择器关闭行为仍需在 Windows / Linux / macOS 实机确认。
 - 本项目入口是 cmd/meteor-ch-gio/main.go，构建命令为 go build ./cmd/meteor-ch-gio，仓库根目录没有 main.go。
