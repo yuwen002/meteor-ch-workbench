@@ -316,7 +316,7 @@ type workspace struct {
 
 func (s *workspace) saveConnection(item connection.Connection) {
 	s.goWorker(func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 10*time.Second)
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 10*time.Second)
 		defer cancel()
 		saved, err := s.connections.Save(ctx, item)
 		result := saveResult{item: saved, err: err}
@@ -332,7 +332,7 @@ func (s *workspace) reloadSavedSQL() {
 	s.savedSQLListSeq++
 	seq := s.savedSQLListSeq
 	s.goWorker(func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 5*time.Second)
 		defer cancel()
 		items, err := s.services.SavedSQL.List(ctx)
 		select {
@@ -436,7 +436,7 @@ func (s *workspace) renameSavedSQL(id string) {
 	}
 	if item.ID == "" { return }
 	s.goWorker(func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 5*time.Second)
 		defer cancel()
 		updated, err := s.services.SavedSQL.Update(ctx, id, name, item.SQL)
 		select {
@@ -449,7 +449,7 @@ func (s *workspace) renameSavedSQL(id string) {
 
 func (s *workspace) deleteSavedSQL(id string) {
 	s.goWorker(func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 5*time.Second)
 		defer cancel()
 		err := s.services.SavedSQL.Delete(ctx, id)
 		select {
@@ -467,7 +467,7 @@ func (s *workspace) saveCurrentSQL() {
 	}
 	connectionID := s.selectedID
 	s.goWorker(func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 5*time.Second)
 		defer cancel()
 		item, err := s.services.SavedSQL.Add(ctx, savedsqldomain.Entry{
 			SQL:          sqlText,
@@ -483,7 +483,7 @@ func (s *workspace) saveCurrentSQL() {
 
 func (s *workspace) deleteConnection(id string) {
 	s.goWorker(func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleCtx, 10*time.Second)
+		ctx, cancel := context.WithTimeout(s.lifecycleParent(), 10*time.Second)
 		defer cancel()
 		err := s.connections.Delete(ctx, id)
 		select {
@@ -495,7 +495,7 @@ func (s *workspace) deleteConnection(id string) {
 }
 
 func (s *workspace) reloadConnections() {
-	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 10*time.Second)
 	defer cancel()
 	if err := s.connections.Reload(ctx); err != nil {
 		// 配置读取失败时不能静默显示空侧栏；侧栏空状态直接展示实际路径和错误。
@@ -544,7 +544,7 @@ func (s *workspace) selectConnectionForTab(item connection.Connection, preserveD
 	}
 	s.requestSeq++
 	seq := s.requestSeq
-	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 15*time.Second)
 	s.cancelRequest = cancel
 	s.goWorker(func() {
 		defer cancel()
@@ -582,7 +582,7 @@ func (s *workspace) selectDatabase(name string) {
 	}
 	s.requestSeq++
 	seq, connectionID := s.requestSeq, s.selectedID
-	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 20*time.Second)
 	s.cancelRequest = cancel
 	s.goWorker(func() {
 		defer cancel()
@@ -1555,7 +1555,7 @@ func (s *workspace) loadTableSchema(table string) {
 	s.columns = nil
 	s.tableDetails = metadataapp.TableDetails{}
 	s.loading = "正在读取表结构与 DDL…"
-	ctx, cancel := context.WithTimeout(s.lifecycleCtx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 20*time.Second)
 	s.cancelRequest = cancel
 	s.goWorker(func() {
 		defer cancel()
