@@ -30,7 +30,7 @@ cmd/meteor-ch-gio
 - `internal/infrastructure/storage/historyfile`：兼容旧 `history.json` 数组格式的查询历史仓库。
 - `internal/infrastructure/storage/savedsqlfile`：兼容旧 `saved_sql.json` 数组格式的收藏 SQL 仓库。
 - `internal/platform/osfs`：本地文件系统适配。
-- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口与交互； `explorer_view.go` 负责对象树布局，`explorer_selection.go` 聚合数据库 / 表 / 视图 / 字段与选中上下文，`explorer_request_state.go` 管理元数据请求序号和取消，`explorer_state.go` 校验异步响应上下文；`run.go` 负责主事件循环、窗口状态和页面组合；SQL 工作区布局在 `query_workspace_view.go`，对象导航树在 `explorer_view.go`，标签生命周期在 `sql_tabs.go`，查询事件生产/消费在 `query_events.go` / `query_result_consumer.go`，结果展示与筛选在 `result_view.go` / `result_panel.go`。
+- `internal/gui/gioapp/app`：当前实际使用的 Gio 窗口与交互； `explorer_view.go` 负责对象树布局，`explorer_selection.go` 聚合数据库 / 表 / 视图 / 字段与选中上下文，`explorer_request_state.go` 管理元数据请求序号和取消，`explorer_state.go` 校验异步响应上下文；`run.go` 负责主事件循环、窗口状态和页面组合；SQL 工作区布局在 `query_workspace_view.go`，对象导航树在 `explorer_view.go`，标签生命周期在 `sql_tabs.go`，查询事件生产/消费在 `query_events.go` / `query_result_consumer.go`，活动查询结果快照由 `query_result_state.go` 管理，标签归档仍由 `sql_tabs.go` 管理，结果展示与筛选在 `result_view.go` / `result_panel.go`。
 - `internal/gui/gioapp/connection`：连接侧栏模型、样式和视图。
 - `internal/gui/gioapp/workspace`：与 Gio 控件解耦的 SQL 标签工作区模型。
 
@@ -120,3 +120,11 @@ cmd/meteor-ch-gio
 - `internal/gui/gioapp/app/explorer_state_test.go`：覆盖对象列表响应的序号 / 连接 / 数据库失效，以及表结构响应的序号 / 连接 / 数据库 / 表失效。
 
 - `internal/gui/gioapp/app/query_runtime_state.go`：聚合 SQL 查询执行代次、取消函数和运行标记；查询事件通过有界队列与 Gio 窗口事件循环交互。
+
+
+## SQL 活动结果状态
+
+- `internal/gui/gioapp/app/query_result_state.go`：聚合当前活动标签的列元数据、结果行和状态文本；通过 `apply(queryEvent)` 处理有效事件并返回列变化、行追加和完成标记，不持有 Gio 控件或查询取消生命周期。
+- `query_result_consumer.go`：负责事件有效性、历史写入、活动 / 非活动标签分流；活动标签的纯数据合并委托给 `queryResultState`，窗口层只处理列控件重置、结果视图失效和执行代次结束。
+- `sql_tabs.go`：继续保存每个标签自己的结果快照与筛选 / 排序 / 滚动视图状态。活动快照与标签归档不是同一份状态，切换标签时仍按原有流程保存和恢复。
+- `query_result_state_test.go`：覆盖列元数据替换、批次追加、完成状态更新，以及无列错误完成时保留已有结果快照。
