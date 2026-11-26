@@ -1918,8 +1918,11 @@ func (s *workspace) primaryButton(gtx layout.Context, click *widget.Clickable, l
 
 // switchSQLTab 在标签之间切换时保存当前编辑内容与查询结果，并载入目标标签的状态。
 func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
-	s.cancelActiveQuery("查询已取消（切换标签页）")
 	activeID := s.sqlWorkspace.ActiveID()
+	if tabID == activeID {
+		return
+	}
+	s.cancelActiveQuery("查询已取消（切换标签页）")
 	current := s.sqlTabStates[activeID]
 	s.sqlWorkspace.UpdateSQL(activeID, s.queryEditor.Text())
 	current.Columns, current.Data, current.Status = s.queryColumns, s.queryData, s.queryStatus
