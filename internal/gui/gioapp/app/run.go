@@ -705,12 +705,10 @@ func (s *workspace) drainResults() {
 				s.status = fmt.Sprintf("连接成功 · %d 个数据库", len(result.databases))
 				if tabID := s.sqlWorkspace.ActiveID(); tabID != 0 {
 					tabState := s.sqlTabStates[tabID]
-					if tabState.ConnectionID == result.id && tabState.Database != "" {
-						if databaseNameExists(result.databases, tabState.Database) {
-							s.selectDatabase(tabState.Database)
-						} else {
-							s.queryStatus = "此标签页上次使用的数据库已不存在：" + tabState.Database
-						}
+					if database, missing := databaseForConnectedTab(tabState, result.id, result.databases); database != "" {
+						s.selectDatabase(database)
+					} else if missing {
+						s.queryStatus = "此标签页上次使用的数据库已不存在：" + tabState.Database
 					}
 				}
 			}
