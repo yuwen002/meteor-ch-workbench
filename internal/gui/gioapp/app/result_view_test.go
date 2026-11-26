@@ -39,7 +39,6 @@ func TestResultColumnLabelShowsSortDirection(t *testing.T) {
 	}
 }
 
-
 func TestCompareResultSortKeysMatchesExistingSemantics(t *testing.T) {
 	values := []any{
 		nil,
@@ -62,7 +61,7 @@ func TestCompareResultSortKeysMatchesExistingSemantics(t *testing.T) {
 		for j := range values {
 			want := compareResultValues(values[i], values[j])
 			got := compareResultSortKeys(keys[i], keys[j])
-			if sign(got) != sign(want) {
+			if resultCompareSign(got) != resultCompareSign(want) {
 				t.Errorf("compare(%#v, %#v) = %d, want sign %d", values[i], values[j], got, want)
 			}
 		}
@@ -83,7 +82,7 @@ func TestBuildResultRowViewKeepsEqualSortValuesStable(t *testing.T) {
 	}
 }
 
-func sign(value int) int {
+func resultCompareSign(value int) int {
 	switch {
 	case value < 0:
 		return -1
