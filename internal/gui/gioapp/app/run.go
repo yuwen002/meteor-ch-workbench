@@ -882,12 +882,12 @@ func (s *workspace) loadTableSchema(table string) {
 	if s.selectedID == "" || s.selectedDatabase == "" || table == "" {
 		return
 	}
-	seq, connectionID, database := s.explorerRequests.Begin(cancel), s.selectedID, s.selectedDatabase
 	s.selectedTable = table
 	s.columns = nil
 	s.tableDetails = metadataapp.TableDetails{}
 	s.loading = "正在读取表结构与 DDL…"
 	ctx, cancel := context.WithTimeout(s.lifecycleParent(), 20*time.Second)
+	seq, connectionID, database := s.explorerRequests.Begin(cancel), s.selectedID, s.selectedDatabase
 	s.goWorker(func() {
 		defer cancel()
 		columns, err := s.services.Metadata.GetTableSchema(ctx, connectionID, database, table)
