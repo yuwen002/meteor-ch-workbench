@@ -129,3 +129,16 @@ func TestQueryExecutorHonorsTimeout(t *testing.T) {
 		t.Fatalf("期望 context.DeadlineExceeded，得到 %v", err)
 	}
 }
+
+func TestQueryExecutorZeroMaxRowsMeansUnlimited(t *testing.T) {
+	executor, pools := newQueryTestExecutor(t)
+	defer pools.Close()
+	var count int
+	summary, err := executor.Execute(context.Background(), queryTestConnection(), query.Request{SQL: "select number, label", MaxRows: 0, BatchSize: 2}, nil, func(batch [][]any) error {
+		count += len(batch)
+		return nil
+	})
+	if err != nil { t.Fatal(err) }
+	if count != 3 || summary.RowCount != 3 { t.Fatalf("unlimited query returned %d rows, summary=%+v", count, summary) }
+	if summary.Truncated { t.Fatal("unlimited query must not be marked truncated") }
+}
