@@ -78,7 +78,7 @@ cmd/meteor-ch-gio
 ## 当前验收基线
 
 - 当前分支：`feat/native-gui-foundation`
-- 最近确认成功的代码基线：`2ac0002e32d16ff97ea13a20defbff35ccf16c83`，对应 CI Run [45855044244](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855044244) 的 Linux / Windows 测试、vet 和预览构建均成功。其后的 Explorer 视图拆分正在等待新 head CI。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
+- 最近确认成功的代码基线：`54b10ac688494b5b02d89c7880b920b5d33ca819`，对应 CI Run [45855866259](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45855866259) 的 Linux / Windows 测试、vet 和预览构建均成功。其后的 Explorer 状态响应校验与测试仍待最新 head CI。当前分支完成情况见 [开发进度与已完成功能](DEVELOPMENT_STATUS.md)。
 - PR #1：Open / Draft / 未合并，base 为 `main`。
 
 - CI 成功不等于 Windows 实机 GUI 验收；窗口布局、连接加载、真实 ClickHouse 查询仍需在目标环境验证。
@@ -112,3 +112,7 @@ cmd/meteor-ch-gio
 - `screen_size_test.go` 覆盖大屏、标准屏、小屏和无效输入回退。Windows / macOS / Linux 实机显示比例仍需验收。
 
 - `internal/gui/gioapp/app/settings_view.go`：工作台设置面板，提供深浅色主题切换、查询结果行数上限、侧栏折叠和编辑器高度比例设置；主题令牌集中在 `theme.go`，由 `setPalette` 统一切换。
+
+
+- `internal/gui/gioapp/app/explorer_state.go`：集中判断数据库对象列表、表结构异步响应是否仍匹配当前请求序号、连接、数据库和表，阻止过期响应覆盖当前 Explorer 状态。
+- `internal/gui/gioapp/app/explorer_state_test.go`：覆盖对象列表响应的序号 / 连接 / 数据库失效，以及表结构响应的序号 / 连接 / 数据库 / 表失效。
