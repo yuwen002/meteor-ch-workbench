@@ -264,3 +264,22 @@ func TestShouldPreserveTabDatabaseWhenRetryingSameConnection(t *testing.T) {
 		t.Fatal("tab restoration should preserve its saved database context")
 	}
 }
+
+func TestSQLTabResultViewIgnoresChangedColumnType(t *testing.T) {
+	columns := []query.Column{{Name: "payload", DatabaseType: "JSON"}}
+	state := &workspace{queryColumns: columns}
+	state.resetResultWidgets(columns)
+	state.restoreResultViewState(sqlTabState{
+		ColumnNames:   []string{"payload"},
+		ColumnTypes:   []string{"String"},
+		ColumnFilters: []string{"contains"},
+		SortColumn:    0,
+		ColumnWidths:  []unit.Dp{300},
+	})
+	if state.columnFilterEditors[0].Text() != "" || state.resultSortColumn != -1 {
+		t.Fatal("view settings from a different column type must not be restored")
+	}
+	if state.columnWidths[0] == 300 {
+		t.Fatal("column width from a different column type must not be restored")
+	}
+}
