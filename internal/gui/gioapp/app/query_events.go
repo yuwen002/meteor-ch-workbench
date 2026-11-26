@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // queryResultQueueCapacity 限制 GUI 尚未消费的结果事件数量。
 // 每个批次最多 128 行，因此容量为 8 时最多缓存约 1024 行结果。
@@ -23,4 +26,11 @@ func (s *workspace) publishQueryEvent(ctx context.Context, event queryEvent) err
 	}
 	s.window.Invalidate()
 	return nil
+}
+
+// enqueueQueryCompletion 使用独立的短超时投递终态事件，避免查询上下文超时后无法通知 GUI。
+func enqueueQueryCompletion(queue chan<- queryEvent, event queryEvent) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return enqueueQueryEvent(ctx, queue, event)
 }
