@@ -87,3 +87,11 @@ cmd/meteor-ch-gio
 - 标签切换与关闭回调均使用稳定 TabID；列表重排后，原标签的点击状态仍绑定原标签，不会因索引变化而错位。
 - 关闭标签时同步删除其切换 / 关闭 Clickable 引用与 `sqlTabStates` 状态，其他标签控件保持不变。
 - 回归测试覆盖重排前后控件身份稳定，以及关闭后仅释放目标标签控件。
+
+
+## 窗口关闭与后台任务生命周期
+
+- internal/gui/gioapp/app/lifecycle.go 提供 lifecycleParent 和 goWorker：后台任务统一继承窗口生命周期 Context，并登记到 workspace.workers。
+- run.go 收到 gio.DestroyEvent 后先取消生命周期和当前请求，再等待已登记任务退出；Run 返回后，cmd/meteor-ch-gio/main.go 的 defer services.Close() 关闭 ClickHouse 连接池。
+- 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果导出均纳入后台任务登记。文件选择器由 Gio Explorer 提供，关闭行为仍需在目标桌面平台实测。
+- lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务，以及父 Context 选择。
