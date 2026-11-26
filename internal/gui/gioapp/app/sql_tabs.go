@@ -84,12 +84,23 @@ func (s *workspace) restoreResultViewState(state sqlTabState) {
 	s.queryRows.Position = state.ResultPosition
 	s.queryHorizontal.Position = state.HorizontalPosition
 	s.queryDetailRows.Position = state.DetailPosition
-	if state.SelectedCell != nil {
+	if sameColumns && state.SelectedCell != nil && resultColumnExists(s.queryColumns, state.SelectedCell.column) {
 		selection := *state.SelectedCell
 		s.selectedQueryCell = &selection
+		s.queryDetailRows.Position = state.DetailPosition
 	} else {
 		s.selectedQueryCell = nil
+		s.queryDetailRows.Position = layout.Position{}
 	}
+}
+
+func resultColumnExists(columns []query.Column, target query.Column) bool {
+	for _, column := range columns {
+		if column.Name == target.Name && column.DatabaseType == target.DatabaseType {
+			return true
+		}
+	}
+	return false
 }
 
 // Apply 将一个查询事件归档到所属标签页，不依赖当前活动标签。
