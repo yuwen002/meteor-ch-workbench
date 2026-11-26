@@ -71,7 +71,8 @@ func (e *QueryExecutor) Execute(ctx context.Context, item connection.Connection,
 	}
 
 	maxRows := request.MaxRows
-	if maxRows <= 0 { maxRows = defaultQueryMaxRows }
+	// 0 表示用户显式选择不限制；负数表示调用方未指定，使用安全默认值。
+	if maxRows < 0 { maxRows = defaultQueryMaxRows }
 	batchSize := request.BatchSize
 	if batchSize <= 0 { batchSize = defaultQueryBatchSize }
 	batch := make([][]any, 0, batchSize)
