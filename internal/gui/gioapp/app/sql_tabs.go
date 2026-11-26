@@ -153,6 +153,7 @@ func (s *workspace) closeSQLTab(index int) {
 		s.queryStatus = "已重置查询标签页"
 		s.clearQueryCellSelection()
 		s.resetResultWidgets(nil)
+		s.resetConnectionContext()
 		return
 	}
 
@@ -172,5 +173,6 @@ func (s *workspace) closeSQLTab(index int) {
 		s.clearQueryCellSelection()
 		s.resetResultWidgets(s.queryColumns)
 		s.restoreResultViewState(next)
+		s.restoreSQLTabConnection(nextID)
 	}
 }
