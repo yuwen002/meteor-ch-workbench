@@ -73,8 +73,16 @@ func (s *workspace) resetResultWidgets(columns []queryapp.Column) {
 	s.resultSortKeysColumn = -1
 	s.resultSortKeysValid = false
 	s.queryRows.Position = layout.Position{}
-	clear(s.queryCellClicks)
-	clear(s.resultCellText)
+	s.releaseResultCellCaches()
+}
+
+// releaseResultCellCaches 释放与当前结果视图绑定的临时缓存，避免关闭/切换标签后保留大 map。
+func (s *workspace) releaseResultCellCaches() {
+	s.queryCellClicks = nil
+	s.resultCellText = nil
+	s.resultHeaderChildren = nil
+	s.resultRowChildren = nil
+	s.resultPixelWidths = nil
 }
 
 // syncResultFilters 检测筛选条件变化，变化时标记展示行需要重建并回到顶部。
