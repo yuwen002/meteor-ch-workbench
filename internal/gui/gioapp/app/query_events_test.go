@@ -270,3 +270,30 @@ func TestEnqueueQueryCompletionStopsWhenWindowLifecycleEnds(t *testing.T) {
 		t.Fatal("completion remained blocked after window lifecycle ended")
 	}
 }
+
+func TestDrainQueryResultsRespectsPerFrameBudget(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	tabID := tabs.ActiveID()
+	var execution workspaceui.QueryExecution
+	state := &workspace{
+		sqlWorkspace: tabs,
+		queryExecution: execution,
+		queryResults: make(chan queryEvent, queryResultQueueCapacity),
+		queryStatus: "保持当前查询状态",
+	}
+	for i := 0; i < queryResultQueueCapacity; i++ {
+		state.queryResults <- queryEvent{seq: uint64(i + 1), tab: tabID}
+	}
+
+	state.drainQueryResults()
+	if got := len(state.queryResults); got != queryResultQueueCapacity-maxQueryEventsPerFrame {
+		t.Fatalf("queued events after one frame = %d, want %d", got, queryResultQueueCapacity-maxQueryEventsPerFrame)
+	}
+	if state.queryStatus != "保持当前查询状态" {
+		t.Fatalf("stale events changed query status: %q", state.queryStatus)
+	}
+	state.drainQueryResults()
+	if got := len(state.queryResults); got != 0 {
+		t.Fatalf("queued events after second frame = %d, want 0", got)
+	}
+}
