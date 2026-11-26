@@ -230,8 +230,8 @@ type workspace struct {
 	queryEditor       widget.Editor
 	sqlWorkspace      *workspaceui.Tabs
 	sqlTabStates      map[workspaceui.TabID]sqlTabState
-	sqlTabClicks      []*widget.Clickable
-	sqlTabCloseClicks []*widget.Clickable
+	sqlTabClicks      map[workspaceui.TabID]*widget.Clickable
+	sqlTabCloseClicks map[workspaceui.TabID]*widget.Clickable
 	sqlTabList        widget.List
 	sqlNewTab         widget.Clickable
 	queryRows         widget.List
@@ -1133,19 +1133,14 @@ func (s *workspace) layoutQueryToolbar(gtx layout.Context) layout.Dimensions {
 // layoutTabStrip 是查询标签页栏：标签之间用细缝分隔，末尾固定一个新建按钮。
 func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
 	items := s.sqlWorkspace.Items()
-	for len(s.sqlTabClicks) < len(items) {
-		s.sqlTabClicks = append(s.sqlTabClicks, new(widget.Clickable))
-	}
-	for len(s.sqlTabCloseClicks) < len(items) {
-		s.sqlTabCloseClicks = append(s.sqlTabCloseClicks, new(widget.Clickable))
-	}
+	s.ensureSQLTabClickables(items)
 	return layout.Inset{Top: spaceXS, Bottom: spaceXS, Left: spaceS, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				s.sqlTabList.Axis = layout.Horizontal
 				return material.List(s.theme, &s.sqlTabList).Layout(gtx, len(items), func(gtx layout.Context, index int) layout.Dimensions {
 					return layout.Inset{Right: spaceXS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return s.layoutSQLTab(gtx, items[index], index)
+						return s.layoutSQLTab(gtx, items[index])
 					})
 				})
 			}),
@@ -1173,13 +1168,13 @@ func (s *workspace) layoutTabStrip(gtx layout.Context) layout.Dimensions {
 }
 
 // layoutSQLTab 绘制单个查询标签页：整块可点击切换，关闭按钮嵌在标签内部。
-func (s *workspace) layoutSQLTab(gtx layout.Context, tab workspaceui.Tab, index int) layout.Dimensions {
+func (s *workspace) layoutSQLTab(gtx layout.Context, tab workspaceui.Tab) layout.Dimensions {
 	active := tab.ID == s.sqlWorkspace.ActiveID()
-	click := s.sqlTabClicks[index]
+	click := s.sqlTabClicks[tab.ID]
 	if click.Clicked(gtx) && !active {
 		s.switchSQLTab(tab.ID)
 	}
-	closeClick := s.sqlTabCloseClicks[index]
+	closeClick := s.sqlTabCloseClicks[tab.ID]
 	marker := colorTextMuted
 	if active {
 		marker = colorAccent
@@ -1216,7 +1211,7 @@ func (s *workspace) layoutSQLTab(gtx layout.Context, tab workspaceui.Tab, index 
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if closeClick.Clicked(gtx) {
-					s.closeSQLTab(index)
+					s.closeSQLTab(tab.ID)
 				}
 				return closeClick.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(5), Bottom: unit.Dp(5), Left: unit.Dp(2), Right: spaceS}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
