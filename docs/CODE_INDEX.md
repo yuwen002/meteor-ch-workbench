@@ -100,3 +100,10 @@ cmd/meteor-ch-gio
 - 当前导出限制：原生对话框随父窗口销毁的实际行为仍需在 Windows / macOS / Linux 实机确认；代码层已避免关闭流程等待对话框。
 
 - `internal/infrastructure/clickhouse/pool_test.go` 验证 `PoolManager.Close()` 会关闭已创建的 `sql.DB`，关闭后不能再获取连接，且重复调用关闭保持幂等。
+
+
+## 启动尺寸与 Windows 进程退出
+
+- `cmd/meteor-ch-gio/main.go` 在窗口运行结束后先调用 `services.Close()`，再显式结束进程。Gio 0.10.3 的 Windows `app.Main` 不返回；不能把服务清理放在 `gio.Main()` 之后，否则窗口事件循环退出后主 goroutine 仍可能永久阻塞并触发 runtime deadlock。
+- `cmd/meteor-ch-gio/screen_size.go` 提供工作区尺寸到 Gio Dp 尺寸的限幅计算；`screen_size_windows.go` 读取 Windows 主显示器工作区和系统 DPI；`screen_size_other.go` 为非 Windows 暂提供保守默认值。
+- `screen_size_test.go` 覆盖大屏、标准屏、小屏和无效输入回退。Windows / macOS / Linux 实机显示比例仍需验收。
