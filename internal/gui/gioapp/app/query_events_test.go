@@ -98,7 +98,7 @@ func TestEnqueueQueryCompletionDeliversTerminalEventAfterQueueUnblocks(t *testin
 	}()
 
 	want := queryEvent{seq: 2, done: true}
-	if err := enqueueQueryCompletion(queue, want); err != nil {
+	if err := enqueueQueryCompletion(context.Background(), queue, want); err != nil {
 		t.Fatalf("enqueue terminal event: %v", err)
 	}
 	got := <-queue
@@ -243,5 +243,30 @@ func TestHandleQueryResultAppendsBatchesAndFinishesActiveQuery(t *testing.T) {
 	}
 	if state.queryStatus == "正在执行 SQL…" || state.queryStatus == "" {
 		t.Fatalf("terminal event did not update query status: %q", state.queryStatus)
+	}
+}
+
+
+func TestEnqueueQueryCompletionStopsWhenWindowLifecycleEnds(t *testing.T) {
+	queue := make(chan queryEvent, 1)
+	queue <- queryEvent{seq: 1}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- enqueueQueryCompletion(ctx, queue, queryEvent{seq: 2, done: true})
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("completion returned before lifecycle cancellation: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("completion error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("completion remained blocked after window lifecycle ended")
 	}
 }
