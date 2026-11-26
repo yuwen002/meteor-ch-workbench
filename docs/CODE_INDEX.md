@@ -95,3 +95,5 @@ cmd/meteor-ch-gio
 - run.go 收到 gio.DestroyEvent 后先取消生命周期和当前请求，再等待已登记任务退出；Run 返回后，窗口 goroutine 关闭 runDone；main 在 gio.Main() 返回后等待 runDone，再由 defer services.Close() 关闭 ClickHouse 连接池。
 - 查询执行、查询历史写入、历史 / 收藏读写、连接与元数据请求、结果导出均纳入后台任务登记。文件选择器由 Gio Explorer 提供，关闭行为仍需在目标桌面平台实测。
 - lifecycle_test.go 覆盖后台任务等待、生命周期取消后拒绝启动新任务，以及父 Context 选择。
+- result_export.go 的 writeResultExportContext 在每行写入前检查生命周期 Context；窗口关闭后停止继续处理大型 CSV / TSV 导出，关闭文件并尝试清理不完整的本地文件。Gio Explorer 的文件保存对话框本身仍需用户关闭或返回，当前 API 不支持由 Context 主动打断对话框。
+- result_export_test.go 覆盖已取消 Context 下不写出表头或数据。
