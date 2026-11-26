@@ -515,6 +515,7 @@ func (s *workspace) selectConnection(item connection.Connection) {
 }
 
 func (s *workspace) selectConnectionForTab(item connection.Connection, preserveDatabase bool) {
+	preserveDatabase = shouldPreserveTabDatabase(s.selectedID, item.ID, preserveDatabase)
 	if s.queryRunning {
 		s.cancelActiveQuery("查询已取消（切换连接）")
 	}
@@ -2019,8 +2020,17 @@ func (s *workspace) switchSQLTab(tabID workspaceui.TabID) {
 		} else {
 			s.selectConnectionForTab(*target, true)
 		}
-	} else if next.ConnectionID != "" && next.ConnectionID == s.selectedID && next.Database != "" && s.connected {
-		s.selectDatabase(next.Database)
+	} else if next.ConnectionID != "" && next.ConnectionID == s.selectedID {
+		if s.connected && next.Database != "" {
+			s.selectDatabase(next.Database)
+		} else if !s.connected && s.loading == "" {
+			for _, item := range s.connections.Snapshot().Items {
+				if item.ID == next.ConnectionID {
+					s.selectConnectionForTab(item, true)
+					break
+				}
+			}
+		}
 	}
 	s.queryEditor.SetText(nextTab.Editor.Text())
 	s.queryColumns, s.queryData, s.queryStatus = next.Columns, next.Data, next.Status
