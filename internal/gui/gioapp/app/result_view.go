@@ -34,12 +34,13 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 func buildResultRowViewWithPreparedSortKeys(rows [][]any, filter string, columnFilters []string, sortColumn int, descending bool, sortKeys []resultSortKey) []resultRowView {
 	filter = strings.TrimSpace(filter)
 	filterNeedle := strings.ToLower(filter)
+	preparedColumnFilters := prepareResultColumnFilters(columnFilters)
 	view := make([]resultRowView, 0, len(rows))
 	for i, row := range rows {
 		if filterNeedle != "" && !resultRowMatchesLowerFilter(row, filterNeedle) {
 			continue
 		}
-		if !resultRowMatchesColumnFilters(row, columnFilters) {
+		if !resultRowMatchesPreparedColumnFilters(row, preparedColumnFilters) {
 			continue
 		}
 		view = append(view, resultRowView{Index: i})
@@ -149,84 +150,154 @@ func compareResultSortKeys(left, right resultSortKey) int {
 	}
 }
 
-func resultRowMatchesColumnFilters(row []any, filters []string) bool {
-	for column, filter := range filters {
-		filter = strings.TrimSpace(filter)
-		if filter == "" {
+type resultColumnFilterKind uint8
+
+const (
+	resultColumnFilterContains resultColumnFilterKind = iota
+	resultColumnFilterNull
+	resultColumnFilterBetween
+	resultColumnFilterCompare
+)
+
+type preparedResultColumnFilter struct {
+	kind          resultColumnFilterKind
+	operator      string
+	expected      string
+	expectedLower string
+	number        *big.Rat
+	timestamp     time.Time
+	timeValid     bool
+	lowerNumber   *big.Rat
+	upperNumber   *big.Rat
+	lowerTime     time.Time
+	upperTime     time.Time
+	rangeNumeric  bool
+	rangeTime     bool
+	valid         bool
+}
+
+// prepareResultColumnFilters 在扫描结果行之前解析列条件，避免逐行重复拆分表达式。
+func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
+	prepared := make([]preparedResultColumnFilter, 0, len(filters))
+	for _, raw := range filters {
+		expression := strings.TrimSpace(raw)
+		if expression == "" {
 			continue
 		}
-		if column >= len(row) || !resultValueMatchesColumnCondition(row[column], filter) {
+		condition := preparedResultColumnFilter{valid: true, expected: expression}
+		if strings.EqualFold(expression, "is:null") || strings.EqualFold(expression, "is:not-null") {
+			condition.kind = resultColumnFilterNull
+			condition.operator = strings.ToLower(expression)
+			prepared = append(prepared, condition)
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(expression), "between:") {
+			condition.kind = resultColumnFilterBetween
+			bounds := strings.SplitN(strings.TrimSpace(expression[len("between:"):]), "..", 2)
+			if len(bounds) != 2 || strings.TrimSpace(bounds[0]) == "" || strings.TrimSpace(bounds[1]) == "" {
+				condition.valid = false
+			} else {
+				lower, upper := strings.TrimSpace(bounds[0]), strings.TrimSpace(bounds[1])
+				condition.lowerNumber, condition.rangeNumeric = new(big.Rat).SetString(lower)
+				if condition.rangeNumeric {
+					condition.upperNumber, condition.rangeNumeric = new(big.Rat).SetString(upper)
+					if condition.rangeNumeric {
+						condition.rangeNumeric = condition.lowerNumber.Cmp(condition.upperNumber) <= 0
+					}
+				}
+				if !condition.rangeNumeric {
+					var lowerErr, upperErr error
+					condition.lowerTime, lowerErr = parseResultTime(lower)
+					condition.upperTime, upperErr = parseResultTime(upper)
+					condition.rangeTime = lowerErr == nil && upperErr == nil && !condition.lowerTime.After(condition.upperTime)
+				}
+				condition.valid = condition.rangeNumeric || condition.rangeTime
+			}
+			prepared = append(prepared, condition)
+			continue
+		}
+		condition.kind = resultColumnFilterContains
+		for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<", "!"} {
+			if strings.HasPrefix(expression, candidate) {
+				condition.operator = candidate
+				condition.expected = strings.TrimSpace(strings.TrimPrefix(expression, candidate))
+				condition.kind = resultColumnFilterCompare
+				break
+			}
+		}
+		condition.expectedLower = strings.ToLower(condition.expected)
+		if condition.kind == resultColumnFilterCompare {
+			condition.number, condition.valid = new(big.Rat).SetString(strings.TrimSpace(condition.expected))
+			if !condition.valid {
+				condition.timestamp, errTime := parseResultTime(condition.expected)
+				condition.timeValid = errTime == nil
+			}
+		}
+		prepared = append(prepared, condition)
+	}
+	return prepared
+}
+
+func resultRowMatchesColumnFilters(row []any, filters []string) bool {
+	return resultRowMatchesPreparedColumnFilters(row, prepareResultColumnFilters(filters))
+}
+
+func resultRowMatchesPreparedColumnFilters(row []any, filters []preparedResultColumnFilter) bool {
+	for column, filter := range filters {
+		if column >= len(row) || !filter.matches(row[column]) {
 			return false
 		}
 	}
 	return true
 }
 
-// resultValueMatchesColumnCondition 支持包含、!不包含、=、!=、>、<、>=、<=、区间和 NULL 判断。
-func resultValueMatchesColumnCondition(value any, expression string) bool {
-	expression = strings.TrimSpace(expression)
-	if expression == "" {
-		return true
+func (filter preparedResultColumnFilter) matches(value any) bool {
+	if !filter.valid {
+		return false
 	}
-	if strings.EqualFold(expression, "is:null") {
-		return value == nil
-	}
-	if strings.EqualFold(expression, "is:not-null") {
+	if filter.kind == resultColumnFilterNull {
+		if filter.operator == "is:null" {
+			return value == nil
+		}
 		return value != nil
-	}
-	if strings.HasPrefix(strings.ToLower(expression), "between:") {
-		if value == nil {
-			return false
-		}
-		bounds := strings.SplitN(strings.TrimSpace(expression[len("between:"):]), "..", 2)
-		if len(bounds) != 2 || strings.TrimSpace(bounds[0]) == "" || strings.TrimSpace(bounds[1]) == "" {
-			return false
-		}
-		lower, upper := strings.TrimSpace(bounds[0]), strings.TrimSpace(bounds[1])
-		actual := fmt.Sprint(value)
-		if lowerCmp, lowerOK := compareResultNumbers(actual, lower); lowerOK {
-			upperCmp, upperOK := compareResultNumbers(actual, upper)
-			if !upperOK {
-				return false
-			}
-			boundOrder, orderOK := compareResultNumbers(lower, upper)
-			return orderOK && boundOrder <= 0 && lowerCmp >= 0 && upperCmp <= 0
-		}
-		actualTime, actualErr := parseResultTime(actual)
-		lowerTime, lowerErr := parseResultTime(lower)
-		upperTime, upperErr := parseResultTime(upper)
-		return actualErr == nil && lowerErr == nil && upperErr == nil &&
-			!actualTime.Before(lowerTime) && !actualTime.After(upperTime) && !lowerTime.After(upperTime)
-	}
-
-	operator, expected := "", expression
-	for _, candidate := range []string{">=", "<=", "!=", "=", ">", "<", "!"} {
-		if strings.HasPrefix(expression, candidate) {
-			operator, expected = candidate, strings.TrimSpace(strings.TrimPrefix(expression, candidate))
-			break
-		}
 	}
 	actual := "NULL"
 	if value != nil {
 		actual = fmt.Sprint(value)
 	}
-	if operator == "" || operator == "!" {
-		matched := resultValueMatchesFilter(value, expected)
-		if operator == "!" {
+	if filter.kind == resultColumnFilterContains {
+		return strings.Contains(strings.ToLower(actual), filter.expectedLower)
+	}
+	if filter.kind == resultColumnFilterBetween {
+		if value == nil {
+			return false
+		}
+		if filter.rangeNumeric {
+			actualNumber, ok := new(big.Rat).SetString(strings.TrimSpace(actual))
+			return ok && actualNumber.Cmp(filter.lowerNumber) >= 0 && actualNumber.Cmp(filter.upperNumber) <= 0
+		}
+		actualTime, err := parseResultTime(actual)
+		return filter.rangeTime && err == nil && !actualTime.Before(filter.lowerTime) && !actualTime.After(filter.upperTime)
+	}
+	if filter.operator == "" || filter.operator == "!" {
+		matched := strings.Contains(strings.ToLower(actual), filter.expectedLower)
+		if filter.operator == "!" {
 			return !matched
 		}
 		return matched
 	}
-	if operator == "=" || operator == "!=" {
-		matched := strings.EqualFold(actual, expected)
-		if comparison, ok := compareResultNumbers(actual, expected); ok {
-			matched = comparison == 0
-		} else if leftTime, err := parseResultTime(actual); err == nil {
-			if rightTime, rightErr := parseResultTime(expected); rightErr == nil {
-				matched = leftTime.Equal(rightTime)
+	if filter.operator == "=" || filter.operator == "!=" {
+		matched := strings.EqualFold(actual, filter.expected)
+		if filter.number != nil {
+			if actualNumber, ok := new(big.Rat).SetString(strings.TrimSpace(actual)); ok {
+				matched = actualNumber.Cmp(filter.number) == 0
+			}
+		} else if filter.timeValid {
+			if actualTime, err := parseResultTime(actual); err == nil {
+				matched = actualTime.Equal(filter.timestamp)
 			}
 		}
-		if operator == "!=" {
+		if filter.operator == "!=" {
 			return !matched
 		}
 		return matched
@@ -234,36 +305,51 @@ func resultValueMatchesColumnCondition(value any, expression string) bool {
 	if value == nil {
 		return false
 	}
-	if comparison, ok := compareResultNumbers(actual, expected); ok {
-		switch operator {
-		case ">":
-			return comparison > 0
-		case "<":
-			return comparison < 0
-		case ">=":
-			return comparison >= 0
-		case "<=":
-			return comparison <= 0
+	if filter.number != nil {
+		if actualNumber, ok := new(big.Rat).SetString(strings.TrimSpace(actual)); ok {
+			comparison := actualNumber.Cmp(filter.number)
+			switch filter.operator {
+			case ">":
+				return comparison > 0
+			case "<":
+				return comparison < 0
+			case ">=":
+				return comparison >= 0
+			case "<=":
+				return comparison <= 0
+			}
+			return false
 		}
-		return false
 	}
-	leftTime, leftTimeErr := parseResultTime(actual)
-	rightTime, rightTimeErr := parseResultTime(expected)
-	if leftTimeErr != nil || rightTimeErr != nil {
-		return false
+	if filter.timeValid {
+		actualTime, err := parseResultTime(actual)
+		if err == nil {
+			switch filter.operator {
+			case ">":
+				return actualTime.After(filter.timestamp)
+			case "<":
+				return actualTime.Before(filter.timestamp)
+			case ">=":
+				return !actualTime.Before(filter.timestamp)
+			case "<=":
+				return !actualTime.After(filter.timestamp)
+			}
+		}
 	}
-	switch operator {
-	case ">":
-		return leftTime.After(rightTime)
-	case "<":
-		return leftTime.Before(rightTime)
-	case ">=":
-		return !leftTime.Before(rightTime)
-	case "<=":
-		return !leftTime.After(rightTime)
-	default:
-		return false
+	return false
+}
+
+// resultValueMatchesColumnCondition 保留单值调用入口，统一使用预解析条件。
+func resultValueMatchesColumnCondition(value any, expression string) bool {
+	return preparedResultColumnFilterFor(expression).matches(value)
+}
+
+func preparedResultColumnFilterFor(expression string) preparedResultColumnFilter {
+	filters := prepareResultColumnFilters([]string{expression})
+	if len(filters) == 0 {
+		return preparedResultColumnFilter{valid: true, kind: resultColumnFilterContains, expectedLower: ""}
 	}
+	return filters[0]
 }
 
 func resultValueMatchesFilter(value any, filter string) bool {
