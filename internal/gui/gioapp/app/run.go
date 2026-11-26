@@ -249,12 +249,11 @@ type workspace struct {
 	queryDetailCopy   widget.Clickable
 	queryRun          widget.Clickable
 	queryCancel       widget.Clickable
-	queryExecution    workspaceui.QueryExecution
-	queryCancelFunc   context.CancelFunc
+	queryRuntimeState
+
 	queryColumns      []queryapp.Column
 	queryData         [][]any
 	queryStatus       string
-	queryRunning      bool
 	queryRowLimit     int
 	settingsToggle    widget.Clickable
 	settingsVisible   bool
