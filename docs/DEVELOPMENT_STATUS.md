@@ -178,3 +178,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 新增 `TestExplorerSelectionSelectTableClearsPreviousSchema`，验证切换表时清除旧字段 / DDL 详情，同时保留当前数据库选择。
 - 测试提交：`4e10718249236f900ea7fb7405e4a2ee1919d57b`（`test(explorer): 覆盖切换表时旧结构清理`）。
 - 当前 head 后续文档提交的 CI 结果仍需以最新 SHA 对应的 Actions 为准；此前 Run `45858260758` 仅对应更早提交，不作为当前 head 验收。
+
+
+## 11. 2026-11-27：收拢 SQL 查询执行生命周期状态
+
+- 当前 Explorer 状态拆分对应 CI Run [45858357453](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45858357453) 已成功完成 Linux / Windows 测试、vet 与预览构建。
+- 新增 `internal/gui/gioapp/app/query_runtime_state.go`，将查询代次（`workspaceui.QueryExecution`）、执行取消函数和运行标记收拢到 `queryRuntimeState`。
+- `workspace` 通过匿名嵌入该状态对象维持现有调用方式，查询事件处理、标签切换和取消流程的行为不变；同步调整查询结果与 SQL 标签测试中的状态初始化。
+- 本轮尚未获得新 head 的 CI 结果；未执行本地 Go 测试 / vet / build，也未进行真实桌面 GUI 验收。
