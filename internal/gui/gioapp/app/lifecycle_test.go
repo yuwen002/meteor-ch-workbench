@@ -45,7 +45,9 @@ func TestGoWorkerDoesNotStartAfterLifecycleCancellation(t *testing.T) {
 	state := &workspace{lifecycleCtx: ctx}
 
 	started := false
-	state.goWorker(func() { started = true })
+	if state.goWorker(func() { started = true }) {
+		t.Fatal("goWorker accepted task after lifecycle cancellation")
+	}
 	state.workers.Wait()
 	if started {
 		t.Fatal("background task started after lifecycle cancellation")
@@ -97,5 +99,15 @@ func TestLifecycleParentUsesWorkspaceContext(t *testing.T) {
 	}
 	if got := (*workspace)(nil).lifecycleParent(); got == nil {
 		t.Fatal("lifecycleParent returned a nil fallback context")
+	}
+}
+
+func TestGoWorkerReportsRejectedTaskDuringShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	state := &workspace{lifecycleCtx: ctx, cancelLifecycle: cancel}
+	state.shutdownWorkers()
+	if state.goWorker(func() {}) {
+		t.Fatal("goWorker accepted task after shutdown")
 	}
 }
