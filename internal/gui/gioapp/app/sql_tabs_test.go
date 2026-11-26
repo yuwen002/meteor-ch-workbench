@@ -56,6 +56,30 @@ func TestSQLTabStateNewColumnsResetPreviousRows(t *testing.T) {
 	}
 }
 
+func TestDatabaseForConnectedTabUsesOnlyActiveTabContext(t *testing.T) {
+	databases := []string{"default", "analytics", "reporting"}
+	cases := []struct {
+		name       string
+		tab        sqlTabState
+		connection string
+		want       string
+		missing    bool
+	}{
+		{name: "same connection", tab: sqlTabState{ConnectionID: "connection-a", Database: "analytics"}, connection: "connection-a", want: "analytics"},
+		{name: "different connection", tab: sqlTabState{ConnectionID: "connection-b", Database: "reporting"}, connection: "connection-a"},
+		{name: "no saved database", tab: sqlTabState{ConnectionID: "connection-a"}, connection: "connection-a"},
+		{name: "database removed", tab: sqlTabState{ConnectionID: "connection-a", Database: "missing"}, connection: "connection-a", missing: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, missing := databaseForConnectedTab(tc.tab, tc.connection, databases)
+			if got != tc.want || missing != tc.missing {
+				t.Fatalf("databaseForConnectedTab() = (%q, %t), want (%q, %t)", got, missing, tc.want, tc.missing)
+			}
+		})
+	}
+}
+
 func TestDatabaseNameExists(t *testing.T) {
 	if !databaseNameExists([]string{"default", "analytics"}, "analytics") {
 		t.Fatal("expected existing database to be found")
