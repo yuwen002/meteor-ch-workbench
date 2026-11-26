@@ -6,7 +6,25 @@ import (
 	"time"
 
 	"github.com/yuwen002/meteor-ch-workbench/internal/application/query"
+	workspaceui "github.com/yuwen002/meteor-ch-workbench/internal/gui/gioapp/workspace"
 )
+
+func TestSwitchingToActiveSQLTabDoesNotCancelQuery(t *testing.T) {
+	tabs := workspaceui.NewTabs()
+	activeID := tabs.ActiveID()
+	state := &workspace{
+		sqlWorkspace: tabs,
+		queryRunning: true,
+		queryStatus: "正在执行 SQL…",
+	}
+	state.switchSQLTab(activeID)
+	if !state.queryRunning {
+		t.Fatal("clicking the active tab should not cancel its running query")
+	}
+	if state.queryStatus != "正在执行 SQL…" {
+		t.Fatalf("query status = %q, want running status preserved", state.queryStatus)
+	}
+}
 
 func TestSQLTabStateAppliesQueryBatchesAndCompletion(t *testing.T) {
 	state := sqlTabState{Data: [][]any{{"old"}}}
