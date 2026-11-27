@@ -533,3 +533,22 @@ func TestParseResultFilterNumberPreservesBigRatSyntax(t *testing.T) {
 		}
 	}
 }
+
+
+func TestPrepareResultColumnFiltersAvoidsInactiveAllocationAndPreservesColumns(t *testing.T) {
+	if got := prepareResultColumnFilters([]string{"", "  ", ""}); got != nil {
+		t.Fatalf("inactive filters = %#v, want nil", got)
+	}
+
+	got := prepareResultColumnFilters([]string{"", ">=10", "", "is:null"})
+	if len(got) != 4 {
+		t.Fatalf("prepared filter count = %d, want original column count 4", len(got))
+	}
+	if got[0].active || !got[1].active || got[2].active || !got[3].active {
+		t.Fatalf("prepared filters lost column positions: %#v", got)
+	}
+	row := []any{"text", int64(12), "ignored", nil}
+	if !resultRowMatchesPreparedColumnFilters(row, got) {
+		t.Fatal("filters should continue to target their original column indexes")
+	}
+}
