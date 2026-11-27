@@ -409,3 +409,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 连接右键操作复用当前“更多操作”区域；对象和结果右键菜单当前采用窄窗口友好的纵向操作列表。后续仍需补充表创建 / 编辑 / 删除的专用表单和确认流程、列隐藏交互测试，以及 Windows / Linux 实机鼠标验证。
 - 本轮未执行本地 Go 测试、vet、gofmt 或 build；以本轮最新 head 的 Linux / Windows CI 为准。上一文档提交 head 的 CI Run [45967175813](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45967175813) 已通过，但不代表本轮右键代码已通过验收。
 - PR #1 继续保持 Open / Draft、base `main`、未合并。
+
+### 2026-11-27：修复 Gio 右键事件未注册命中区域
+
+- 回查第一阶段右键实现发现，`watchSecondaryClick` 只调用了通用 `event.Op` 注册事件目标，却没有添加 `pointer.InputOp`。Gio 因此没有对应的鼠标命中区域，数据库、对象、结果单元格和表头的右键回调都无法收到次要按键事件；这解释了界面看似接入了右键、实际仍无法触发的问题。
+- 已改为显式注册 `pointer.InputOp{Tag: tag, Types: pointer.Press}`，保留现有菜单动作与业务回调，不改变左键点击、排序和单元格详情行为。
+- 目前数据库和对象菜单中的创建 / 编辑 / 删除仍是 SQL 模板或待迁移项，不应视为旧版完整功能已恢复；下一步继续补齐安全确认与真实应用动作，并增加 Gio 事件级测试。
+- 本轮未执行本地 Go 测试、vet、gofmt 或桌面实机操作；必须以本次提交对应的 Linux / Windows CI 和用户实机右键验收为准。
