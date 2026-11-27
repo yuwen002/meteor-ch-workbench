@@ -60,7 +60,7 @@ func (s *workspace) contextActions() []contextAction {
 	case "database":
 		return []contextAction{
 			{"复制数据库名", func(gtx layout.Context) { s.copyText(gtx, menu.database) }},
-			{"创建表 SQL", func(gtx layout.Context) { s.queryEditor.SetText("CREATE TABLE IF NOT EXISTS `" + strings.ReplaceAll(menu.database, "`", "``") + "`.`table_name` (\n    id UInt64\n) ENGINE = MergeTree ORDER BY id;"); s.contextMenu.open = false }},
+			{"创建表 SQL", func(gtx layout.Context) { sql, err := buildCreateTableSQL(createTableDefinition{Database: menu.database, Table: "table_name", Columns: []createTableColumn{{Name: "id", Type: "UInt64"}}}); if err != nil { s.queryStatus = "生成建表 SQL 失败：" + err.Error() } else { s.queryEditor.SetText(sql + ";"); s.queryStatus = "已生成建表 SQL，可修改后执行" }; s.contextMenu.open = false }},
 			{"刷新数据库对象", func(gtx layout.Context) { s.selectDatabase(menu.database); s.contextMenu.open = false }},
 		}
 	case "object":
