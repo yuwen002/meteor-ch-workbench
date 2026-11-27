@@ -103,8 +103,8 @@ type resultSortKey struct {
 	number         *big.Rat
 	timestampUnix  int64
 	text           string
-	textLower      string
 	timestampNanos int32
+	textFolded    bool
 	null           bool
 	numeric        bool
 	timeValid      bool
@@ -117,7 +117,8 @@ func newResultSortKey(value any) resultSortKey {
 	text := resultValueText(value)
 	key := resultSortKey{text: text}
 	if !isASCIIString(text) {
-		key.textLower = strings.ToLower(text)
+		key.text = strings.ToLower(text)
+		key.textFolded = true
 	}
 	if isResultSortNumberCandidate(strings.TrimSpace(text)) {
 		number := new(big.Rat)
@@ -192,14 +193,14 @@ func compareResultSortKeys(left, right resultSortKey) int {
 // compareResultSortText compares case-folded text without allocating for ASCII keys.
 // Unicode keys cache strings.ToLower once when the sort key is built.
 func compareResultSortText(left, right resultSortKey) int {
-	if left.textLower != "" && right.textLower != "" {
-		return strings.Compare(left.textLower, right.textLower)
+	if left.textFolded && right.textFolded {
+		return strings.Compare(left.text, right.text)
 	}
-	if left.textLower != "" {
-		return -compareASCIIToLowered(right.text, left.textLower)
+	if left.textFolded {
+		return -compareASCIIToLowered(right.text, left.text)
 	}
-	if right.textLower != "" {
-		return compareASCIIToLowered(left.text, right.textLower)
+	if right.textFolded {
+		return compareASCIIToLowered(left.text, right.text)
 	}
 	return compareASCIIFolded(left.text, right.text)
 }
