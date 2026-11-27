@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"gioui.org/io/clipboard"
-	"gioui.org/io/event"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -31,7 +30,9 @@ func (s *workspace) openContextMenu(kind, database, object string, row, column i
 }
 
 func (s *workspace) watchSecondaryClick(gtx layout.Context, tag *rightClickTag, onClick func()) {
-	event.Op(gtx.Ops, tag)
+	// event.Op 只注册通用事件目标，不会建立鼠标命中区域；必须添加
+	// pointer.InputOp，否则右键事件永远不会投递到该 tag。
+	pointer.InputOp{Tag: tag, Types: pointer.Press}.Add(gtx.Ops)
 	for {
 		ev, ok := gtx.Event(pointer.Filter{Target: tag, Kinds: pointer.Press})
 		if !ok {
