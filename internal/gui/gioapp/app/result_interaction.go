@@ -52,6 +52,8 @@ func adjustResultColumnWidth(current unit.Dp, delta unit.Dp) unit.Dp {
 func (s *workspace) resetResultWidgets(columns []queryapp.Column) {
 	s.resultSortColumn = -1
 	s.resultSortDescending = false
+	clear(s.hiddenResultColumns)
+	s.contextMenu.open = false
 	s.resultFilter.SetText("")
 	s.resultFilterLast = ""
 	s.columnFilterEditors = make([]widget.Editor, len(columns))
