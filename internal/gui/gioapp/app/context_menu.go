@@ -40,6 +40,7 @@ func (s *workspace) watchSecondaryClick(gtx layout.Context, tag *rightClickTag, 
 		pe, ok := ev.(pointer.Event)
 		if ok && pe.Buttons.Contain(pointer.ButtonSecondary) {
 			onClick()
+			if s.window != nil { s.window.Invalidate() }
 		}
 	}
 }
@@ -87,7 +88,20 @@ func (s *workspace) contextActions() []contextAction {
 			{"复制全部列名", func(gtx layout.Context) { names := make([]string, len(s.queryColumns)); for i,c := range s.queryColumns { names[i] = c.Name }; s.copyText(gtx, strings.Join(names, "\t")) }},
 			{"复制列值", func(gtx layout.Context) { s.copyText(gtx, s.contextColumnValues(menu.column, false)) }},
 			{"复制去重列值", func(gtx layout.Context) { s.copyText(gtx, s.contextColumnValues(menu.column, true)) }},
-			{"仅搜索此列", func(gtx layout.Context) { s.resultFilter.SetText(""); s.resultFilterLast = ""; s.resultViewDirty = true; s.contextMenu.open = false }},
+			{"仅搜索此列", func(gtx layout.Context) {
+				keyword := strings.TrimSpace(s.resultFilter.Text())
+				if keyword == "" {
+					s.queryStatus = "请先输入全局关键字，再选择仅搜索此列"
+				} else if menu.column >= 0 && menu.column < len(s.columnFilterEditors) {
+					s.columnFilterEditors[menu.column].SetText(keyword)
+					s.columnFilterLast[menu.column] = keyword
+					s.resultFilter.SetText("")
+					s.resultFilterLast = ""
+					s.resultViewDirty = true
+					s.queryRows.Position = layout.Position{}
+				}
+				s.contextMenu.open = false
+			}},
 			{"升序", func(gtx layout.Context) { s.setResultSort(menu.column, false); s.contextMenu.open = false }},
 			{"降序", func(gtx layout.Context) { s.setResultSort(menu.column, true); s.contextMenu.open = false }},
 			{"隐藏列", func(gtx layout.Context) { if len(s.hiddenResultColumns) < len(s.queryColumns)-1 { s.hiddenResultColumns[menu.column] = true }; s.contextMenu.open = false }},
