@@ -258,12 +258,12 @@ func TestResultValueTextPreservesFormatting(t *testing.T) {
 
 func TestResultValueTextUsedBySortKeysAndColumnFilters(t *testing.T) {
 	key := newResultSortKey("MiXeD")
-	if key.text != "MiXeD" || key.textLower != "" {
+	if key.text != "MiXeD" || key.textFolded {
 		t.Fatalf("ASCII sort key should retain original text without a lowercase copy: %#v", key)
 	}
 	unicodeKey := newResultSortKey("ÄBC")
-	if unicodeKey.textLower != "äbc" {
-		t.Fatalf("Unicode sort key lowercase cache = %q, want äbc", unicodeKey.textLower)
+	if unicodeKey.text != "äbc" || !unicodeKey.textFolded {
+		t.Fatalf("Unicode sort key should store its folded text in the same field: %#v", unicodeKey)
 	}
 	if !resultValueMatchesColumnCondition("MiXeD", "mixed") {
 		t.Fatal("column contains filter should match string values case-insensitively")
@@ -498,6 +498,13 @@ func TestIsResultSortNumberCandidate(t *testing.T) {
 	for _, tc := range cases {
 		if got := isResultSortNumberCandidate(tc.value); got != tc.want {
 			t.Errorf("isResultSortNumberCandidate(%q) = %v, want %v", tc.value, got, tc.want)
+		}
+		if tc.want {
+			_, parses := new(big.Rat).SetString(tc.value)
+			key := newResultSortKey(tc.value)
+			if parses != key.numeric {
+				t.Errorf("numeric candidate %q parse=%v but sort key numeric=%v", tc.value, parses, key.numeric)
+			}
 		}
 	}
 }
