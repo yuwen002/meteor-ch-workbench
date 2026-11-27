@@ -145,6 +145,9 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 	if s.resultCellText == nil {
 		s.resultCellText = make(map[int64]string)
 	}
+	if s.queryCellRightClicks == nil {
+		s.queryCellRightClicks = make(map[int64]*rightClickTag)
+	}
 	if len(s.queryCellClicks) > 4096 {
 		clear(s.queryCellClicks)
 		clear(s.resultCellText)
@@ -155,10 +158,10 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 		for i := range s.resultHeaderRightClicks { s.resultHeaderRightClicks[i] = new(rightClickTag) }
 	}
 	totalWidth := 0
-	for _, width := range s.columnWidths {
+	for index, width := range s.columnWidths {
 		pixels := gtx.Dp(width)
 		s.resultPixelWidths = append(s.resultPixelWidths, pixels)
-		totalWidth += pixels
+		if !s.hiddenResultColumns[index] { totalWidth += pixels }
 	}
 	return material.List(s.theme, &s.queryHorizontal).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		gtx.Constraints.Min.X = totalWidth
