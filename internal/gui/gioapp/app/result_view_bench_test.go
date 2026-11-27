@@ -42,3 +42,20 @@ func BenchmarkBuildResultRowViewLargeResult(b *testing.B) {
 		})
 	}
 }
+
+
+// BenchmarkExtendResultSortKeysReusesCache verifies appending no new rows does not
+// rebuild the cached sort keys for a large result set.
+func BenchmarkExtendResultSortKeysReusesCache(b *testing.B) {
+	for _, rowCount := range []int{10_000, 100_000, 500_000} {
+		b.Run(fmt.Sprintf("rows-%d", rowCount), func(b *testing.B) {
+			rows := benchmarkAppResultRows(rowCount)
+			keys := extendResultSortKeys(rows, 2, nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				keys = extendResultSortKeys(rows, 2, keys)
+			}
+		})
+	}
+}

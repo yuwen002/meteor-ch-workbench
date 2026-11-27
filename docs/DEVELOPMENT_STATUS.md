@@ -234,3 +234,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 新增测试覆盖缩小筛选、重新扩展、排序结果和底层数组复用，并确认源数据未被修改。
 - 将活动 Gio 结果视图基准扩展到 1 万、10 万、50 万行，分别覆盖全局关键字筛选与组合筛选 / 排序；基准数据在计时前构建，报告内存分配。
 - 本轮尚未在本地执行基准；性能数据需在开发机使用 `go test ./internal/gui/gioapp/app -run '^$' -bench BenchmarkBuildResultRowViewLargeResult -benchmem` 实测。CI 负责编译与常规测试，不将基准结果视为已测量。
+
+
+### 2026-11-27：恢复排序键缓存基准
+
+- 恢复 `BenchmarkExtendResultSortKeysReusesCache`，覆盖 1 万、10 万和 50 万行，观察已有结果集未增长时排序键缓存扩展是否产生额外分配。
+- 与结果视图筛选 / 排序基准共用同一套合成数据生成器，数据准备在计时区间外完成。
+- 本地基准尚未执行；性能结论仍需在目标开发机运行 `go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(BuildResultRowViewLargeResult|ExtendResultSortKeysReusesCache)' -benchmem` 获取。
