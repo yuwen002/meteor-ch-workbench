@@ -74,10 +74,11 @@ func TestResultInsertTarget(t *testing.T) {
 func TestContextInsertSQLUsesVisibleColumnsAndSelectedTable(t *testing.T) {
 	state := &workspace{
 		contextMenu: contextMenuState{row: 0},
-		selectedDatabase: "analytics",
-		selectedTable: "events",
-		queryColumns: []queryapp.Column{{Name: "id"}, {Name: "secret"}, {Name: "name"}},
-		queryData: [][]any{{int64(7), "hidden", "O'Reilly"}},
+		explorerSelection: explorerSelection{selectedDatabase: "analytics", selectedTable: "events"},
+		queryResultState: queryResultState{
+			queryColumns: []queryapp.Column{{Name: "id"}, {Name: "secret"}, {Name: "name"}},
+			queryData:    [][]any{{int64(7), "hidden", "O'Reilly"}},
+		},
 		resultView: []resultRowView{{Index: 0}},
 		hiddenResultColumns: map[int]bool{1: true},
 	}
@@ -91,8 +92,10 @@ func TestContextInsertSQLUsesVisibleColumnsAndSelectedTable(t *testing.T) {
 func TestContextRowTSVSkipsHiddenColumns(t *testing.T) {
 	state := &workspace{
 		contextMenu: contextMenuState{row: 0},
-		queryColumns: []queryapp.Column{{Name: "id"}, {Name: "secret"}, {Name: "name"}},
-		queryData: [][]any{{int64(7), "hidden", "Alice"}},
+		queryResultState: queryResultState{
+			queryColumns: []queryapp.Column{{Name: "id"}, {Name: "secret"}, {Name: "name"}},
+			queryData:    [][]any{{int64(7), "hidden", "Alice"}},
+		},
 		resultView: []resultRowView{{Index: 0}},
 		hiddenResultColumns: map[int]bool{1: true},
 	}
