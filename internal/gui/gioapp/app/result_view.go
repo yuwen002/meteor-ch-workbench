@@ -115,7 +115,7 @@ func newResultSortKey(value any) resultSortKey {
 	}
 	text := resultValueText(value)
 	key := resultSortKey{text: strings.ToLower(text)}
-	if isResultSortNumberCandidate(text) {
+	if isResultSortNumberCandidate(strings.TrimSpace(text)) {
 		number := new(big.Rat)
 		_, key.numeric = number.SetString(strings.TrimSpace(text))
 		if key.numeric {

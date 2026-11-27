@@ -473,6 +473,7 @@ func TestResultSortKeyAllocatesNumericPayloadOnlyForNumbers(t *testing.T) {
 func TestIsResultSortNumberCandidate(t *testing.T) {
 	cases := []struct { value string; want bool }{
 		{value: "42", want: true},
+		{value: " 42 ", want: false},
 		{value: "-12.50", want: true},
 		{value: "1/3", want: true},
 		{value: "1.2e+10", want: true},
