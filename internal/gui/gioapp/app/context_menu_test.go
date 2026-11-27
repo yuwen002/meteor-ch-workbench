@@ -1,6 +1,10 @@
 package app
 
-import "testing"
+import (
+	"testing"
+
+	queryapp "github.com/yuwen002/meteor-ch-workbench/internal/application/query"
+)
 
 func TestSQLLiteral(t *testing.T) {
 	tests := []struct {
@@ -37,5 +41,62 @@ func TestContextMenuActionsAreAvailableForEachTarget(t *testing.T) {
 				t.Fatalf("context menu %q contains an incomplete action: %#v", kind, action)
 			}
 		}
+	}
+}
+
+func TestVisibleResultColumnIndexes(t *testing.T) {
+	got := visibleResultColumnIndexes(map[int]bool{1: true, 3: true, -1: true, 9: true}, 4)
+	want := []int{0, 2}
+	if len(got) != len(want) {
+		t.Fatalf("visibleResultColumnIndexes() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] { t.Fatalf("visibleResultColumnIndexes() = %v, want %v", got, want) }
+	}
+}
+
+func TestResultInsertTarget(t *testing.T) {
+	tests := []struct { name, database, table, want string }{
+		{name: "selected table", database: "analytics", table: "events", want: "`analytics`.`events`"},
+		{name: "table without database", table: "events", want: "`events`"},
+		{name: "placeholder", want: "`table_name`"},
+		{name: "escaped identifiers", database: "a`b", table: "e`v", want: "`a``b`.`e``v`"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resultInsertTarget(tt.database, tt.table); got != tt.want {
+				t.Fatalf("resultInsertTarget() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContextInsertSQLUsesVisibleColumnsAndSelectedTable(t *testing.T) {
+	state := &workspace{
+		contextMenu: contextMenuState{row: 0},
+		selectedDatabase: "analytics",
+		selectedTable: "events",
+		queryColumns: []queryapp.Column{{Name: "id"}, {Name: "secret"}, {Name: "name"}},
+		queryData: [][]any{{int64(7), "hidden", "O'Reilly"}},
+		resultView: []resultRowView{{Index: 0}},
+		hiddenResultColumns: map[int]bool{1: true},
+	}
+	got := state.contextInsertSQL(false)
+	want := "INSERT INTO `analytics`.`events` (`id`, `name`) VALUES\n(7, 'O''Reilly');"
+	if got != want {
+		t.Fatalf("contextInsertSQL() = %q, want %q", got, want)
+	}
+}
+
+func TestContextRowTSVSkipsHiddenColumns(t *testing.T) {
+	state := &workspace{
+		contextMenu: contextMenuState{row: 0},
+		queryColumns: []queryapp.Column{{Name: "id"}, {Name: "secret"}, {Name: "name"}},
+		queryData: [][]any{{int64(7), "hidden", "Alice"}},
+		resultView: []resultRowView{{Index: 0}},
+		hiddenResultColumns: map[int]bool{1: true},
+	}
+	if got, want := state.contextRowTSV(), "7\tAlice"; got != want {
+		t.Fatalf("contextRowTSV() = %q, want %q", got, want)
 	}
 }
