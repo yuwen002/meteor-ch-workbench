@@ -41,6 +41,7 @@ func (s *workspace) layoutResultsPanel(gtx layout.Context) layout.Dimensions {
 				)
 			})
 		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return s.layoutContextMenu(gtx, "results") }),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if len(s.queryColumns) == 0 {
 				return layout.Dimensions{}
@@ -149,6 +150,10 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 		clear(s.resultCellText)
 	}
 	s.resultPixelWidths = s.resultPixelWidths[:0]
+	if len(s.resultHeaderRightClicks) != len(s.queryColumns) {
+		s.resultHeaderRightClicks = make([]*rightClickTag, len(s.queryColumns))
+		for i := range s.resultHeaderRightClicks { s.resultHeaderRightClicks[i] = new(rightClickTag) }
+	}
 	totalWidth := 0
 	for _, width := range s.columnWidths {
 		pixels := gtx.Dp(width)
@@ -163,9 +168,13 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					s.resultHeaderChildren = s.resultHeaderChildren[:0]
 					for i, col := range s.queryColumns {
+						if s.hiddenResultColumns[i] { continue }
 						columnIndex, name, databaseType := i, col.Name, col.DatabaseType
 						width := s.resultPixelWidths[columnIndex]
 						s.resultHeaderChildren = append(s.resultHeaderChildren, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							s.watchSecondaryClick(gtx, s.resultHeaderRightClicks[columnIndex], func() {
+								s.openContextMenu("header", "", "", -1, columnIndex)
+							})
 							gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -241,6 +250,7 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						s.resultRowChildren = s.resultRowChildren[:0]
 						for cellIndex := range s.queryColumns {
+							if s.hiddenResultColumns[cellIndex] { continue }
 							var cell any
 							if cellIndex < len(row) {
 								cell = row[cellIndex]
@@ -252,10 +262,13 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 								s.resultCellText[key] = value
 							}
 							click := s.queryCellClicks[key]
+							rightTag := s.queryCellRightClicks[key]
+							if rightTag == nil { rightTag = new(rightClickTag); s.queryCellRightClicks[key] = rightTag }
 							if click == nil {
 								click = new(widget.Clickable)
 								s.queryCellClicks[key] = click
 							}
+							s.watchSecondaryClick(gtx, rightTag, func() { s.openContextMenu("cell", "", "", index, cellIndex) })
 							if click.Clicked(gtx) {
 								column := s.queryColumns[cellIndex]
 								s.selectedQueryCell = &queryCellSelection{row: display.Index + 1, column: column, value: resultCellRawValue(cell)}
