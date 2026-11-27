@@ -23,7 +23,7 @@ type contextMenuState struct {
 	object   string
 	row      int
 	column   int
-	clicks   [9]widget.Clickable
+	clicks   [10]widget.Clickable
 }
 
 func (s *workspace) openContextMenu(kind, database, object string, row, column int) {
@@ -120,13 +120,13 @@ func (s *workspace) layoutContextMenu(gtx layout.Context, scope string) layout.D
 					}))
 				}
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					close := &s.contextMenu.clicks[8]
+					close := &s.contextMenu.clicks[9]
 					if close.Clicked(gtx) { s.contextMenu.open = false }
 					button := material.Button(s.theme, close, "关闭")
 					button.TextSize = unit.Sp(10)
 					return button.Layout(gtx)
 				}))
-				return layout.Flex{Axis: layout.Horizontal, Wrap: true}.Layout(gtx, children...)
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 			}),
 		)
 	})
@@ -164,13 +164,15 @@ func (s *workspace) contextInsertSQL(all bool) string {
 	for i, col := range s.queryColumns { columns[i] = "`" + strings.ReplaceAll(col.Name, "`", "``") + "`" }
 	var b strings.Builder
 	fmt.Fprintf(&b, "INSERT INTO `table_name` (%s) VALUES\n", strings.Join(columns, ", "))
+	wroteRow := false
 	for i := start; i < end; i++ {
 		rowIndex := s.resultView[i].Index
 		if rowIndex < 0 || rowIndex >= len(s.queryData) { continue }
 		values := make([]string, len(s.queryColumns))
 		for col := range values { if col < len(s.queryData[rowIndex]) { values[col] = sqlLiteral(s.queryData[rowIndex][col]) } else { values[col] = "NULL" } }
-		if b.Len() > 0 && i > start { b.WriteString(",\n") }
+		if wroteRow { b.WriteString(",\n") }
 		b.WriteString("(" + strings.Join(values, ", ") + ")")
+		wroteRow = true
 	}
 	b.WriteString(";")
 	return b.String()
