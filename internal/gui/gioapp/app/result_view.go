@@ -293,14 +293,17 @@ type preparedResultColumnFilter struct {
 // prepareResultColumnFilters 在扫描结果行之前解析列条件，避免逐行重复拆分表达式。
 func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 	// 没有启用列条件时直接返回 nil，避免每次刷新结果视图都分配与列数等长的空条件切片。
+	hasActiveFilter := false
 	for _, raw := range filters {
 		if strings.TrimSpace(raw) != "" {
-			goto hasActiveFilter
+			hasActiveFilter = true
+			break
 		}
 	}
-	return nil
+	if !hasActiveFilter {
+		return nil
+	}
 
-hasActiveFilter:
 	prepared := make([]preparedResultColumnFilter, len(filters))
 	for column, raw := range filters {
 		expression := strings.TrimSpace(raw)
