@@ -123,3 +123,38 @@ func BenchmarkResultTextContainsLowerNeedle(b *testing.B) {
 }
 
 var benchmarkResultTextContainsSink bool
+
+
+// BenchmarkBuildResultSortKeys measures the one-time cost of preparing sort keys.
+// The cache is rebuilt on each iteration so parsing and key allocations are included.
+func BenchmarkBuildResultSortKeys(b *testing.B) {
+	cases := []struct {
+		name string
+		value func(int) any
+	}{
+		{name: "int64", value: func(i int) any { return int64(i) }},
+		{name: "decimal-string", value: func(i int) any { return fmt.Sprintf("%d.%09d", i, i%1_000_000_000) }},
+		{name: "timestamp", value: func(i int) any { return fmt.Sprintf("2026-11-%02d 10:15:%02d", i%28+1, i%60) }},
+		{name: "plain-text", value: func(i int) any { return fmt.Sprintf("query-event-%06d", i) }},
+		{name: "null", value: func(int) any { return nil }},
+	}
+	for _, item := range cases {
+		for _, rowCount := range []int{10_000, 100_000, 500_000} {
+			b.Run(fmt.Sprintf("%s/rows-%d", item.name, rowCount), func(b *testing.B) {
+				rows := make([][]any, rowCount)
+				for i := range rows {
+					rows[i] = []any{item.value(i)}
+				}
+				b.ReportAllocs()
+				b.ResetTimer()
+				var keys []resultSortKey
+				for b.Loop() {
+					keys = extendResultSortKeys(rows, 0, nil)
+				}
+				benchmarkResultSortKeyCountSink = len(keys)
+			})
+		}
+	}
+}
+
+var benchmarkResultSortKeyCountSink int

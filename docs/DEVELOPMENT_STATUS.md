@@ -273,3 +273,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 全局关键字筛选、列包含条件和单值筛选统一使用该入口；筛选关键词仍由调用方预先转为小写，不在每个单元格重复转换。
 - 新增 ASCII 大小写、混合大小写及 Unicode 回退测试，并补充新旧实现对照基准；基准覆盖小写 ASCII、混合 ASCII 和 Unicode。
 - 本轮未在本地执行 Go 测试或基准；需以最新 head 的 Linux / Windows CI 验证正确性，并在开发机运行 `go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(ResultTextContainsLowerNeedle|BuildResultRowViewLargeResult)' -benchmem` 获取实际性能数据。未测量前不宣称性能提升幅度。
+
+
+### 2026-11-27：补充排序键首次构建基准
+
+- 现有 BenchmarkExtendResultSortKeysReusesCache 只测量缓存已建立且没有新增行时的复用成本，无法反映首次排序时数值解析、时间解析和文本归一化的成本。
+- 新增 BenchmarkBuildResultSortKeys，分别覆盖 int64、Decimal 字符串、时间字符串、普通文本和 NULL，规模为 1 万 / 10 万 / 50 万行；每轮重新构建缓存，将解析和分配纳入计时。
+- 该基准用于识别不同 ClickHouse 列类型的排序键构建成本，不改变排序语义或缓存策略。CI 不执行性能基准，本地结果尚未取得。
+- 推荐命令：go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(BuildResultSortKeys|ExtendResultSortKeysReusesCache)' -benchmem。
