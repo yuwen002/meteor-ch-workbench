@@ -535,20 +535,24 @@ func TestParseResultFilterNumberPreservesBigRatSyntax(t *testing.T) {
 }
 
 
-func TestPrepareResultColumnFiltersAvoidsInactiveAllocationAndPreservesColumns(t *testing.T) {
+func TestPrepareResultColumnFiltersStoresOnlyActiveColumns(t *testing.T) {
 	if got := prepareResultColumnFilters([]string{"", "  ", ""}); got != nil {
 		t.Fatalf("inactive filters = %#v, want nil", got)
 	}
 
 	got := prepareResultColumnFilters([]string{"", ">=10", "", "is:null"})
-	if len(got) != 4 {
-		t.Fatalf("prepared filter count = %d, want original column count 4", len(got))
+	if len(got) != 2 {
+		t.Fatalf("prepared filter count = %d, want 2 active filters", len(got))
 	}
-	if got[0].active || !got[1].active || got[2].active || !got[3].active {
-		t.Fatalf("prepared filters lost column positions: %#v", got)
+	if got[0].column != 1 || got[1].column != 3 {
+		t.Fatalf("prepared column indexes = (%d, %d), want (1, 3)", got[0].column, got[1].column)
 	}
 	row := []any{"text", int64(12), "ignored", nil}
 	if !resultRowMatchesPreparedColumnFilters(row, got) {
 		t.Fatal("filters should continue to target their original column indexes")
+	}
+	row[1] = int64(9)
+	if resultRowMatchesPreparedColumnFilters(row, got) {
+		t.Fatal("numeric filter should reject a value below its threshold")
 	}
 }
