@@ -77,6 +77,7 @@ func (s *workspace) resetResultWidgets(columns []queryapp.Column) {
 // releaseResultCellCaches 释放与当前结果视图绑定的临时缓存，避免关闭/切换标签后保留大 map。
 func (s *workspace) releaseResultCellCaches() {
 	s.queryCellClicks = nil
+	s.queryCellRightClicks = nil
 	s.resultCellText = nil
 	s.resultHeaderChildren = nil
 	s.resultRowChildren = nil
