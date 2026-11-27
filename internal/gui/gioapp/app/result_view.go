@@ -103,6 +103,7 @@ type resultSortKey struct {
 	number         *big.Rat
 	timestampUnix  int64
 	text           string
+	textLower      string
 	timestampNanos int32
 	null           bool
 	numeric        bool
@@ -114,7 +115,10 @@ func newResultSortKey(value any) resultSortKey {
 		return resultSortKey{null: true}
 	}
 	text := resultValueText(value)
-	key := resultSortKey{text: strings.ToLower(text)}
+	key := resultSortKey{text: text}
+	if !isASCIIString(text) {
+		key.textLower = strings.ToLower(text)
+	}
 	if isResultSortNumberCandidate(strings.TrimSpace(text)) {
 		number := new(big.Rat)
 		_, key.numeric = number.SetString(strings.TrimSpace(text))
@@ -145,7 +149,8 @@ func isResultSortNumberCandidate(value string) bool {
 			continue
 		}
 		switch c {
-		case '+', '-', '.', '/', 'e', 'E':
+		case '+', '-', '.', '/', 'e', 'E', 'p', 'P', '_', 'x', 'X', 'b', 'B', 'o', 'O',
+			'a', 'A', 'c', 'C', 'd', 'D', 'f', 'F':
 		default:
 			return false
 		}
@@ -181,10 +186,76 @@ func compareResultSortKeys(left, right resultSortKey) int {
 			return 0
 		}
 	}
+	return compareResultSortText(left, right)
+}
+
+// compareResultSortText compares case-folded text without allocating for ASCII keys.
+// Unicode keys cache strings.ToLower once when the sort key is built.
+func compareResultSortText(left, right resultSortKey) int {
+	if left.textLower != "" && right.textLower != "" {
+		return strings.Compare(left.textLower, right.textLower)
+	}
+	if left.textLower != "" {
+		return -compareASCIIToLowered(right.text, left.textLower)
+	}
+	if right.textLower != "" {
+		return compareASCIIToLowered(left.text, right.textLower)
+	}
+	return compareASCIIFolded(left.text, right.text)
+}
+
+func isASCIIString(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func compareASCIIFolded(left, right string) int {
+	limit := len(left)
+	if len(right) < limit {
+		limit = len(right)
+	}
+	for i := 0; i < limit; i++ {
+		l, r := asciiLower(left[i]), asciiLower(right[i])
+		if l < r {
+			return -1
+		}
+		if l > r {
+			return 1
+		}
+	}
 	switch {
-	case left.text < right.text:
+	case len(left) < len(right):
 		return -1
-	case left.text > right.text:
+	case len(left) > len(right):
+		return 1
+	default:
+		return 0
+	}
+}
+
+// compareASCIIToLowered compares an ASCII string to an already lowercased Unicode string.
+func compareASCIIToLowered(ascii, lowered string) int {
+	limit := len(ascii)
+	if len(lowered) < limit {
+		limit = len(lowered)
+	}
+	for i := 0; i < limit; i++ {
+		left, right := asciiLower(ascii[i]), lowered[i]
+		if left < right {
+			return -1
+		}
+		if left > right {
+			return 1
+		}
+	}
+	switch {
+	case len(ascii) < len(lowered):
+		return -1
+	case len(ascii) > len(lowered):
 		return 1
 	default:
 		return 0
