@@ -389,9 +389,6 @@ func resultRowMatchesPreparedColumnFilters(row []any, filters []indexedResultCol
 }
 
 func (filter preparedResultColumnFilter) matches(value any) bool {
-	if !filter.active {
-		return true
-	}
 	if !filter.valid {
 		return false
 	}
