@@ -229,3 +229,90 @@ func BenchmarkBuildResultRowViewSparseColumnFilters(b *testing.B) {
 		})
 	}
 }
+
+
+// benchmarkBuildResultRowViewInFilterOrder compares equivalent AND filters while
+// changing only their evaluation order. Prepared filters are shared by both paths.
+func benchmarkBuildResultRowViewInFilterOrder(dst []resultRowView, rows [][]any, needle string, filters []indexedResultColumnFilter, columnFirst bool) []resultRowView {
+	view := dst[:0]
+	for i, row := range rows {
+		if columnFirst {
+			if !resultRowMatchesPreparedColumnFilters(row, filters) {
+				continue
+			}
+			if needle != "" && !resultRowMatchesLowerFilter(row, needle) {
+				continue
+			}
+		} else {
+			if needle != "" && !resultRowMatchesLowerFilter(row, needle) {
+				continue
+			}
+			if !resultRowMatchesPreparedColumnFilters(row, filters) {
+				continue
+			}
+		}
+		view = append(view, resultRowView{Index: i})
+	}
+	return view
+}
+
+// BenchmarkBuildResultRowViewCombinedFilters measures the scan-order trade-off
+// for a 64-column result with one sparse numeric filter and a selective keyword.
+// Rows share immutable synthetic row data to keep benchmark setup memory bounded.
+func BenchmarkBuildResultRowViewCombinedFilters(b *testing.B) {
+	for _, rowCount := range []int{10_000, 100_000, 500_000} {
+		b.Run(fmt.Sprintf("rows-%d/64-columns/keyword-1-percent/column-10-percent", rowCount), func(b *testing.B) {
+			const patternCount = 1000
+			patterns := make([][]any, patternCount)
+			for i := range patterns {
+				row := make([]any, 64)
+				for column := range row {
+					row[column] = "value"
+				}
+				if i%100 == 0 {
+					row[0] = "needle-event"
+				} else {
+					row[0] = "ordinary-event"
+				}
+				row[63] = int64(i % 1000)
+				patterns[i] = row
+			}
+			rows := make([][]any, rowCount)
+			for i := range rows {
+				rows[i] = patterns[i%patternCount]
+			}
+			columnFilters := make([]string, 64)
+			columnFilters[63] = ">=900"
+			prepared := prepareResultColumnFilters(columnFilters)
+			needle := "needle"
+			globalFirst := benchmarkBuildResultRowViewInFilterOrder(nil, rows, needle, prepared, false)
+			columnFirst := benchmarkBuildResultRowViewInFilterOrder(nil, rows, needle, prepared, true)
+			if len(globalFirst) != len(columnFirst) {
+				b.Fatalf("filter order result counts differ: global-first=%d column-first=%d", len(globalFirst), len(columnFirst))
+			}
+			for i := range globalFirst {
+				if globalFirst[i].Index != columnFirst[i].Index {
+					b.Fatalf("filter order differs at result %d: %d != %d", i, globalFirst[i].Index, columnFirst[i].Index)
+				}
+			}
+			b.Run("global-first", func(b *testing.B) {
+				view := make([]resultRowView, 0, rowCount)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					view = benchmarkBuildResultRowViewInFilterOrder(view[:0], rows, needle, prepared, false)
+				}
+				benchmarkResultSortKeyCountSink = len(view)
+			})
+			b.Run("column-first", func(b *testing.B) {
+				view := make([]resultRowView, 0, rowCount)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					view = benchmarkBuildResultRowViewInFilterOrder(view[:0], rows, needle, prepared, true)
+				}
+				benchmarkResultSortKeyCountSink = len(view)
+			})
+		})
+	}
+}

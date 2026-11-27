@@ -367,3 +367,13 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 已将断言调整为仅期待 1 个活动条件，并明确验证其原始列索引仍为 1；行匹配行为断言继续保留。
 - 修复提交：`b5a9dfa26cd0d720e2cf83fe65593d39c5221958`（`test(query): 更新稀疏列筛选数量断言`）。
 - 本地未执行 Go 测试；等待该提交对应的 Linux / Windows CI 重新验收。此前两个失败 Run 均不代表本次测试断言修复后的结果。
+
+
+### 2026-11-27：补充全局关键字与稀疏列条件组合筛选基准
+
+- 新增 `BenchmarkBuildResultRowViewCombinedFilters`，在 64 列宽表上同时启用全局关键字和第 64 列数值条件，覆盖 1 万 / 10 万 / 50 万行。
+- 基准分别测量“全局关键字优先”和“列条件优先”两种等价 AND 执行顺序；合成数据令关键字命中率约 1%、列条件命中率约 10%，用于观察先执行低成本 / 高选择性条件是否能减少后续扫描。
+- 两种顺序先校验结果索引完全一致；合成行数据按 1000 种不可变模式共享，避免 50 万行 × 64 列的基准准备占用过多内存。基准只比较扫描顺序，不修改生产筛选逻辑。
+- 推荐在开发机运行：`go test ./internal/gui/gioapp/app -run '^$' -bench '^BenchmarkBuildResultRowViewCombinedFilters$' -benchmem`。
+- 本轮未执行本地 Go 测试或性能基准；在取得目标机器实测数据前，不调整生产筛选顺序，也不宣称性能提升。
+- 当前 head `a859666d56c158bd4d0199b6c42e341a89175dc7` 的 CI Run [45962760701](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45962760701) 已通过：Linux 与 Windows 的测试、vet 和预览构建全部成功。新增基准需由后续 head CI 验证编译，性能数值仍需开发机实测。
