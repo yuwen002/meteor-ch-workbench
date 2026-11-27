@@ -27,7 +27,7 @@ func (s *workspace) layoutSidebar(gtx layout.Context) layout.Dimensions {
 			})
 		})
 	}
-	connectionHeight := connectionPaneHeight(gtx.Constraints.Max.Y, isCompact(gtx))
+	connectionHeight := connectionPaneHeight(gtx.Constraints.Max.Y, gtx.Dp(unit.Dp(220)), gtx.Dp(unit.Dp(176)), isCompact(gtx))
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = connectionHeight, connectionHeight
@@ -44,24 +44,20 @@ func (s *workspace) layoutSidebar(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-func workspaceSidebarWidth(available int, compact bool) int {
-	width := 280
-	if compact {
-		width = 220
+func workspaceSidebarWidth(available, preferred int) int {
+	if preferred > available {
+		preferred = available
 	}
-	if available < width {
-		width = available
-	}
-	if width < 0 {
+	if preferred < 0 {
 		return 0
 	}
-	return width
+	return preferred
 }
 
-func connectionPaneHeight(available int, compact bool) int {
-	height := 220
+func connectionPaneHeight(available, regularHeight, compactHeight int, compact bool) int {
+	height := regularHeight
 	if compact {
-		height = 176
+		height = compactHeight
 	}
 	if maxHeight := available / 2; height > maxHeight {
 		height = maxHeight

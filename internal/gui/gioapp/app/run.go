@@ -777,7 +777,11 @@ func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimens
 func (s *workspace) layoutWorkbench(gtx layout.Context) layout.Dimensions {
 	children := make([]layout.FlexChild, 0, 3)
 	if !s.connectionSidebarCollapsed {
-		width := workspaceSidebarWidth(gtx.Constraints.Max.X, isCompact(gtx))
+		preferredWidth := gtx.Dp(unit.Dp(280))
+		if isCompact(gtx) {
+			preferredWidth = gtx.Dp(unit.Dp(220))
+		}
+		width := workspaceSidebarWidth(gtx.Constraints.Max.X, preferredWidth)
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min = image.Pt(width, gtx.Constraints.Max.Y)
 			gtx.Constraints.Max = image.Pt(width, gtx.Constraints.Max.Y)
