@@ -1,17 +1,11 @@
 # API Reference
 
-后端 Go 方法通过 Wails v3 自动绑定为前端可调用函数。
+后端 `internal/app.App` 暴露的公开方法。**纯 Go API**，无前端绑定层。
+Fyne GUI 层通过 `fyneapp.Backend()` 全局单例直接调用：
 
-调用格式：
-```ts
-import { Call } from '@wailsio/runtime'
-await Call.ByName('main.App.<方法名>', ...args)
-```
-
-全部方法已在 `frontend/src/api.ts` 中统一封装，组件层直接：
-```ts
-import { api } from '../api'
-await api.GetAll()
+```go
+app := Backend()
+result, err := app.Query(connID, sql, queryID)
 ```
 
 ---
@@ -375,7 +369,7 @@ interface ExecResult {
 
 `insert` 与 `sql_ddl` 需要导出时提供目标表名（见下一节的 `target` 参数）。`insert` 渲染为单条 `INSERT INTO ... VALUES (...), (...);`；`sql_ddl` 在其前面追加 `CREATE TABLE IF NOT EXISTS`，列类型按该列首个非空值推断（整数 → `Int64`、浮点 → `Float64`、布尔 → `UInt8`、其余 → `String`，整列为空回落 `String`）。
 
-字符串字面量的转义规则与前端 [sqlLiteral.ts](file:///C:/works/go_works/meteor-ch-workbench/frontend/src/utils/sqlLiteral.ts) 完全一致（反斜杠双写、单引号转义为 `\'`、布尔转 `1/0`、非有限浮点转 `NULL`），两处改动必须同步。
+字符串字面量转义规则见 `clickhouse/export.go` 的 `formatLiteral` 函数（反斜杠双写、单引号转义为 `'\'`、布尔转 `1/0`、非有限浮点转 `NULL`）。
 
 其余格式均忽略 `target`：
 
@@ -683,14 +677,4 @@ interface ClusterInfo {
 
 ## DDL SQL 构建工具
 
-前端 `frontend/src/utils/ddl.ts` 提供纯 TypeScript 的 SQL 构建函数，所有 DDL 语句由前端生成、后端只负责执行：
-
-| 函数 | 用途 |
-|---|---|
-| `buildCreateTableSQL(def)` | 生成 `CREATE TABLE ... ENGINE=... ORDER BY ...` |
-| `buildAlterTableSQL(db, table, changes[])` | 根据变更列表生成一条或多条 `ALTER TABLE` |
-| `buildDropTableSQL(db, table)` | 生成 `DROP TABLE IF EXISTS` |
-| `CLICKHOUSE_ENGINES` | 26 种常用引擎常量数组 |
-| `CLICKHOUSE_TYPES` | 42 种常用列类型常量数组（供 select 下拉） |
-
-设计理由：DDL 构造放前端可以实时生成「SQL 预览」让用户确认，同时保持后端 API 极简——只需一个 `Execute` 即可覆盖所有 DDL 场景。
+DDL 语句（CREATE / ALTER / DROP TABLE）由 Fyne GUI 层直接构造 SQL 字符串，后端 `Execute` 只负责执行。这种设计保持后端 API 极简，同时让 UI 层可以实时预览 SQL 让用户确认后再执行。

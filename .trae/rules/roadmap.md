@@ -22,6 +22,7 @@
 | P12 | 批量执行 / 流式导出 / 行数上限 / 壳层瘦身 | 已完成 |
 | P13 | 结果集导出格式扩容（Excel / JSONL / TSV / DDL） | 已完成 |
 | P14 | 工程收口（查询并发正确性 / 组件测试 / 后端拆分 / 连接生命周期 / 文档纠偏） | 已完成 |
+| P15 | **Fyne GUI 迁移**（Wails v3 + Vue → Fyne v2.8.3 原生 Go GUI） | **进行中** |
 
 约定：阶段标题统一为 `### Px 主题`，其下依次是「目标」行、`**状态：...**` 行、条目表（或 `**落地结果**` 列表）；单项交付记录固定为「问题 → 方案 → 落地结果 → 验收」四段，验收始终放在末尾。
 
@@ -1071,6 +1072,74 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 
 **验收**：三份文档与代码逐项对得上（行数、格式数、文件清单）；roadmap 阶段总览 P14 状态改为「已完成」。
 
+### P15 Fyne GUI 迁移（Wails → Fyne 原生 Go GUI）
+
+**状态：进行中（2026-11-24 启动）**
+
+**背景**：Wails v3 + Vue 前端方案虽然完成了 P1–P14 全部功能，但带来了三重复杂度——① Vite + Vue + TypeScript 构建链（`npm install` / `npm run build`）与 Go 构建链并存；② Monaco / Vue UI 库体积大（Monaco chunk 2,753 kB）；③ Wails runtime 的桥接层引入隐式性能开销与调试困难。项目实际只需一个单文件原生 GUI 工具，Wails + Web 前端属于过度工程。Fyne v2 提供了纯 Go 的 GUI 方案，能让整个项目收敛为单一 Go 构建链。
+
+**方案**（渐进式迁移，保留后端全部逻辑）：
+
+| Phase | 主题 | 工作量 | 状态 |
+|---|---|---|---|
+| Phase 0 | 骨架搭建（main.go 重写 + internal/app 抽离 + fyneapp 窗口骨架） | 小 | ✅ 已完成 |
+| Phase 1 | 核心编辑体验（结果表 widget.Table + 标签页 + 查询取消 + 快捷键） | 中 | ⬜ |
+| Phase 2 | 连接管理 + 数据库树 | 中 | ⬜ |
+| Phase 3 | 结果集体验（导出 + 分页 + EXPLAIN + 搜索/排序/定时刷新） | 中 | ⬜ |
+| Phase 4 | 面板 + 侧边栏（历史 + 收藏 + 配置导入导出） | 中 | ⬜ |
+| Phase 5 | 收尾（打包 + 清理 Wails 残留 + 文档） | 小 | ⬜ |
+
+**Phase 0 已完成的落地细节**：
+
+1. **依赖调整**：`go.mod` 新增 `fyne.io/fyne/v2 v2.8.3`；后端 `internal/clickhouse` 与 `internal/config` **零改动**。
+2. **后端门面抽离**：原根包 `App` 的 40+ 公开方法完整迁出到 `internal/app/app.go`，**不 import 任何 GUI 框架**（既不 Wails 也不 Fyne），成为纯 Go 服务层。
+3. **入口重写**：`main.go` 完全重写为 `app.NewWithID("meteor-ch-workbench")` + `w.Resize(1280, 800)` + `w.SetContent(...)`，移除全部 Wails 依赖。
+4. **Fyne 界面层**：新建 `internal/gui/fyneapp/` 包，持有 `*app.App` 单例（`app_state.go`），主窗口骨架（`main_window.go`）包含左侧连接树（`widget.Tree` v2.8 模板模式）、中间 SQL 编辑器（`widget.Entry` MultiLine）、底部结果预览（后续替换为 `widget.Table`）。新建连接表单与查询执行链路已跑通。
+5. **架构关键决策**：单向依赖链 `main.go → fyneapp → internal/app → clickhouse/config`，**不会循环**。`fyneapp.Backend()` 直接返回 `*app.App`，UI 层调用后端走 Go 方法而非桥接层。
+
+**关键技术点**：
+- `widget.NewTree` v2.8 签名：`childUIDs` + `isBranch` + `create(template func(bool) CanvasObject)` + `update(func(id, branch, obj))`，模板模式缓存渲染对象。
+- `dialog.NewForm` 回调仅 `func(bool)`，表单数据在回调内从 `Widget.(*widget.Entry).Text` 直接读取。
+- 后台 goroutine 更新 UI 必须走 `fyne.Do(func() { ... })`。
+- 首次 CGO 编译较慢（Fyne 依赖 EGL/OpenGL），后续增量编译正常。
+
+**验收**（Phase 0）：`go build ./...` 通过（等待首次 CGO 编译完成）；主窗口能启动并展示连接树 + 编辑器 + 结果区骨架；新建连接 → 选中 → 输入 SQL → 执行 链路可走通。
+
+### P15 Phase 1 核心编辑体验
+
+#### P15-1.1 结果区替换为 `widget.Table`
+
+**问题**：Phase 0 的结果区用 `widget.Label` 纯文本渲染，无法选中列、无表头、无虚拟滚动。原 Wails 版本用 TanStack Virtual 自行实现了虚拟滚动（阈值 200 行），Fyne `widget.Table` 内置虚拟滚动能力。
+
+**方案**：
+- 新建 `fyneapp/result_table.go`，封装 `widget.Table`：`Length()` 返回行数，`Cell(row, col)` 返回单元格字符串，`CreateCell()` / `UpdateCell()` 模板模式。
+- 表头列用 `widget.Table.Header()` 设置，`SetColumnWidth` 首屏按前 200 行测一次后固定（复用原 `resultTable.ts` 的列宽估算逻辑）。
+- 行数阈值：≤ 200 行走普通渲染（`widget.Table` 自动判定），> 200 行自动启用虚拟滚动。
+- 右键菜单：Fyne `widget.Table` 没有内置右键，需挂 `MouseDown` / `KeyDown` 或自定义 overlay。
+
+#### P15-1.2 标签页系统
+
+**方案**：
+- `container.NewAppTabs` + `container.NewTabItem(title, content)`。
+- 每个 TabItem 内容 = 一个独立的 `fyneapp.QueryTab` struct（SQL + 结果 + 状态 + 取消句柄）。
+- 切换标签恢复 SQL 编辑器内容；关闭标签前 `CancelQuery(tab.queryID)`。
+- 持久化复用现有 `config.TabsManager`（`tabs.json`）。
+
+#### P15-1.3 查询取消
+
+**方案**：
+- 执行前生成 UUID 作为 queryID，存入按钮状态；运行中按钮变为「取消」。
+- 取消调用 `Backend().CancelQuery(queryID)`，Go 侧 `context.Canceled` 映射为 `QueryResult.Error = "查询已取消"`。
+
+#### P15-1.4 SQL 语法高亮（可选）
+
+**方案**（两种路线）：
+- **路线 A（轻量）**：用 `fyne.io/fyne/v2/widget` 的富文本 + 自定义 `text.SegmentStyle` 着色关键字，性能好但效果有限。
+- **路线 B（完整）**：接入 `github.com/fyne-io/monaco`（Fyne 官方 Monaco 绑定），体积约 2MB，与原 Wails 版一致。
+- **决策**：Phase 1 先不做，用原生 `widget.Entry` 纯文本跑通全部功能后再评估。
+
+---
+
 ## 明确不做
 
 - 目录按职责再细分（当前划分已够用）
@@ -1078,6 +1147,7 @@ P1–P13 已全部收尾，功能面无缺口。本阶段不追新功能，只�
 - 引入 AG Grid / Handsontable 等重型表格库
 - 自动 SQL 格式化、连接池参数 UI 化
 - Parquet / ClickHouse Native 结果导出（依赖体积大、收益低，CSV / TSV / JSONL 已覆盖分析场景）
+- **P15 期间不做**：SQL 语法高亮（路线 A 效果有限、路线 B 会拉回 Monaco 依赖；纯文本编辑器足够完成核心查询功能）
 
 ## 实施约定
 

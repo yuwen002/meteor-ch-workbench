@@ -2,149 +2,142 @@
 
 > 跨平台 ClickHouse GUI 工作台 / A cross-platform ClickHouse GUI workbench
 
-一个基于 **Wails v3 + Vue 3 + TypeScript + Tailwind CSS + Monaco Editor** 构建的轻量级 ClickHouse 图形化客户端，支持 Windows / macOS / Linux。
+一个基于 **Go + Fyne v2** 构建的轻量级 ClickHouse 图形化客户端，支持 Windows / macOS / Linux。
 
 ---
 
-## ✨ 特性
+## 特性
 
-- 🌐 **中英文双语** — 自动检测系统语言，一键切换，偏好持久化
-- 🗂️ **多连接管理** — 连接分组、重命名、拖拽分组，一目了然
-- ⚡ **SQL 编辑器** — Monaco Editor，语法高亮，Ctrl/Cmd + Enter 快捷执行
-- 🗂️ **多标签页** — 同时开多个查询标签，各自独立结果，重启自动恢复
-- 🕘 **查询历史** — 自动记录最近 200 条 SQL，点击回填编辑器
-- 📊 **实时查询结果** — 表格渲染、耗时统计、行数统计，错误即时提示
-- 🛡️ **大结果保护** — 单次查询上限 5 万行，超限截断并提示，避免界面卡死
-- 💾 **结果导出** — 查询结果一键导出 CSV / JSON
-- 📦 **配置导入导出** — 支持 JSON / YAML / CSV / DSN / DBeaver 五种导出，JSON / YAML / CSV / DSN 四种导入，可脱敏、可合并
-- 🗄️ **数据库 / 表 / 视图浏览** — 侧边栏树状结构，单击直接预览数据，视图单独分区
-- ➕ **可视化建表** — 表单化定义列、引擎、ORDER BY，实时 SQL 预览
-- ✏️ **可视化编辑表** — 修改列类型 / 默认值 / 注释、重命名、新增、删除
-- 🗑️ **表删除** — 右键一键删除带确认弹窗
-- 🌩️ **集群信息面板** — 一键查看 cluster、shard、replica、UUID，点击插入 SQL
-- ↔️ **可拖拽侧边栏** — 宽度自由调整，记忆上次状态
-- 🔌 **连接测试** — 创建前验证连通性
-- 🔐 **TLS / LZ4 压缩** — 支持加密传输与 Native Protocol 压缩
+- **多连接管理** — 连接分组、文件夹管理、连接测试
+- **SQL 编辑器** — 内置编辑区，Ctrl/Cmd + Enter 快捷执行，Esc 停止查询
+- **多标签页** — 同时开多个查询标签，各自独立结果，重启自动恢复
+- **查询取消** — 长查询可随时停止（CancelQuery + context）
+- **结果集分页** — 每页 50/100/200/500，上一页/下一页，自动 LIMIT/OFFSET 拼接
+- **结果集导出** — 注册表自动感知格式，CSV / JSON / Markdown / INSERT / YAML 等
+- **EXPLAIN 执行计划** — 一键查看查询计划
+- **定时刷新** — 5s/10s/30s 自动重跑当前 SQL
+- **单元格编辑** — 点击单元格生成 ALTER UPDATE 语句，支持 String / Number / DateTime 类型
+- **查询历史** — 自动记录最近 200 条 SQL，点击回填编辑器
+- **收藏 SQL** — 收藏常用查询，快速加载
+- **配置导入导出** — JSON / YAML / CSV / DSN / DBeaver 多种格式，可脱敏、可合并
+- **数据库 / 表 / 视图浏览** — 侧边栏树状结构（懒加载），单击预览
+- **连接测试** — 创建前验证连通性
+- **TLS / LZ4 压缩** — 支持加密传输与 Native Protocol 压缩
 
 ## 架构
 
 ```
-┌──────────────────────────────────────────────┐
-│                  Wails v3                     │
-│  ┌─────────────┐        ┌─────────────────┐  │
-│  │  Vue 3 SPA  │  Call  │  Go Backend     │  │
-│  │  Monaco Ed. │ ─────► │  main.App       │  │
-│  │  i18n zh/en │        │  clickhouse-driver │
-│  └─────────────┘        └─────────────────┘  │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│                 Fyne v2 GUI                      │
+│  ┌─────────────────────┐  ┌──────────────────┐  │
+│  │  fyneapp/main_window│  │  side_panels.go   │  │
+│  │  result_table       │  │  connection_dialog│  │
+│  │  tabs.go            │  │  result_export    │  │
+│  └─────────┬───────────┘  └────────┬─────────┘  │
+│            │      NewMainWindow     │            │
+└────────────┼────────────────────────┼────────────┘
+             │                       │
+             ▼                       ▼
+┌──────────────────────────────────────────────────┐
+│              internal/app.App (纯 Go)             │
+│  Query / CancelQuery / TestConnection /           │
+│  GetDatabases / GetTables / GetViews /            │
+│  GetClusters / SaveSQL / GetQueryHistory / ...    │
+└──────────────────────┬───────────────────────────┘
+                       │
+                       ▼
+          clickhouse-go/v2 driver
 ```
+
+**单向依赖链**：`main.go → fyneapp → internal/app → clickhouse/config`，无循环依赖。后端 100% 复用，UI 只负责事件分发。
 
 ## 快速开始
 
 ### 前置依赖
 
 - Go >= 1.22
-- Node.js >= 18
-- [Wails CLI](https://wails.io/docs/gettingstarted/installation) v3
 
 ### 开发模式
 
 ```bash
-wails dev
+go run .
 ```
 
 ### 构建生产版本
 
 ```bash
-wails build
+go build -ldflags "-H windowsgui -s -w" -o meteor-ch-workbench.exe .
 ```
 
-前端单独构建（可选）：
+参数说明：
+- `-H windowsgui`：PE 子系统设为 2（Windows GUI），避免弹出 DOS 黑窗口
+- `-s -w`：去掉符号表，体积约 50 MB → 33 MB
+
+### 校验命令
 
 ```bash
-cd frontend
-npm install
-npm run dev      # Vite dev server
-npm run build    # 产物输出到 frontend/dist
+go build ./...    # 编译全量
+go vet ./...      # 静态检查
+go test ./...     # 后端单元测试
 ```
 
 ## 配置文件位置
 
-连接信息保存在用户配置目录下的 `connections.json`：
-
 | 系统 | 路径 |
 |------|------|
-| Windows | `%AppData%\meteor-ch-workbench\connections.json` |
-| macOS | `~/Library/Application Support/meteor-ch-workbench/connections.json` |
-| Linux | `~/.config/meteor-ch-workbench/connections.json` |
+| Windows | `%AppData%\meteor-ch-workbench\` |
+| macOS | `~/Library/Application Support/meteor-ch-workbench/` |
+| Linux | `~/.config/meteor-ch-workbench/` |
+
+包含以下 JSON 文件：
+- `connections.json` — 连接列表 + 文件夹分组
+- `history.json` — 查询历史
+- `tabs.json` — 标签页状态（重启恢复）
 
 ## 目录结构
 
 ```
 .
-├── app.go                      # Wails App 服务，暴露给前端调用的所有方法
-├── main.go                     # 入口，注册 Wails Service
-├── wails.json                  # Wails 项目配置
+├── main.go                           # Fyne 入口：NewMainWindow + Lifecycle
 ├── internal/
-│   ├── clickhouse/service.go   # ClickHouse 连接、查询、集群、表/视图元数据
-│   └── config/manager.go       # JSON 配置读写、Folder/Connection 管理
-├── docs/
-│   ├── API.md                  # 前后端接口文档（Go 方法 → TS 封装）
-│   └── FEATURES.md             # 详细功能说明与操作指南
-└── frontend/
-    ├── src/
-    │   ├── App.vue             # 主框架：侧边栏 + 语言切换 + 拖拽分屏
-    │   ├── main.ts
-    │   ├── i18n.ts             # vue-i18n 初始化
-    │   ├── api.ts              # 所有 Wails Call.ByName 封装
-    │   ├── types.ts            # 共享类型定义
-    │   ├── stores/app.ts       # Pinia 全局状态
-    │   ├── utils/ddl.ts        # CREATE/ALTER/DROP TABLE SQL 构建工具
-    │   ├── locales/            # 语言包
-    │   │   ├── zh.ts
-    │   │   └── en.ts
-    │   ├── components/
-    │   │   ├── ConnectionModal.vue   # 新建/编辑连接
-    │   │   ├── FolderModal.vue       # 新建/编辑分组
-    │   │   ├── CreateTableModal.vue  # 可视化建表
-    │   │   └── EditTableModal.vue    # 可视化编辑表结构
-    │   └── views/
-    │       └── QueryEditor.vue       # SQL 编辑器 + 数据库/集群面板 + 结果表
-    ├── vite.config.ts
-    ├── tailwind.config.js
-    └── package.json
+│   ├── app/
+│   │   └── app.go                    # 业务门面：Query / CancelQuery / ...
+│   ├── clickhouse/
+│   │   ├── service.go                # ClickHouse 连接、查询、取消
+│   │   ├── metadata.go               # 数据库 / 表 / 视图 / 集群元数据
+│   │   ├── export.go                 # 结果集导出注册表（CSV/JSON/MD/INSERT/...）
+│   │   └── import.go                 # 结果集导入注册表
+│   ├── config/
+│   │   ├── manager.go                # 连接 + 文件夹持久化
+│   │   ├── history.go                # 查询历史持久化
+│   │   └── saved_sql.go              # 收藏 SQL 持久化
+│   └── gui/
+│       └── fyneapp/
+│           ├── main_window.go        # 主窗口：快捷键 + Tree 懒加载 + 标签页 + 分页
+│           ├── result_table.go       # Fyne Table 封装 + OnSelected 回调
+│           ├── result_export.go      # ShowFileSave + ExportResultTo
+│           ├── connection_dialog.go  # 连接新建/编辑/删除/测试 + 文件夹
+│           ├── side_panels.go        # 连接 / 历史 / 收藏 / 配置 四 Tab 侧边栏
+│           └── tabs.go               # QueryTab 结构体 + 持久化 + LIMIT/OFFSET 辅助
+└── docs/
+    ├── API.md                        # 后端公开方法契约（纯 Go）
+    ├── FEATURES.md                   # 用户视角功能说明
+    ├── CODE_INDEX.md                 # 代码索引
+    └── migration/
+        └── FYNE_PLAN.md              # Fyne 迁移进度表
 ```
-
-## 后端 ↔ 前端 调用约定
-
-Wails v3 自动绑定规则：前端通过 `Call.ByName("<包名>.<Service类型>.<方法名>", ...)` 调用。
-
-本项目中 Go 入口为 `package main`，注册的 Service 类型为 `App`，因此调用格式为：
-
-```ts
-import { Call } from '@wailsio/runtime'
-await Call.ByName('main.App.GetAll')
-await Call.ByName('main.App.Query', connectionID, sql)
-```
-
-已在 `frontend/src/api.ts` 中统一封装，组件层直接 `import { api } from '../api'` 使用。
 
 ## 技术栈
 
 | 层 | 技术 |
 |----|------|
-| 桌面框架 | [Wails v3](https://wails.io/) |
+| GUI 框架 | [Fyne v2.8+](https://fyne.io/) |
 | 后端 | Go 1.22+，[clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go) |
-| 前端 | Vue 3 `<script setup>` + TypeScript |
-| UI | Tailwind CSS |
-| 编辑器 | Monaco Editor |
-| 状态 | Pinia |
-| 国际化 | vue-i18n@9 |
-| 构建 | Vite |
+| 打包 | `go build` 直接产出可执行文件（33 MB） |
 
-## 详细功能文档
+## 迁移历史
 
-参见 [docs/FEATURES.md](./docs/FEATURES.md)。
+本项目原基于 Wails v3 + Vue 3 + TypeScript，2025 年起迁移至 Fyne v2。详见 [docs/migration/FYNE_PLAN.md](./docs/migration/FYNE_PLAN.md)。
 
 ## License
 

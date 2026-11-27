@@ -1,20 +1,13 @@
 # 项目开发规则（AI 必读）
 
-## 前端改动必须重新构建
-- `npx vue-tsc --noEmit` 只做类型检查，不产出文件。
-- Wails 运行时加载的是 `frontend/dist/`，改完 `frontend/src/` 后必须执行：
-  ```bash
-  cd frontend && npm run build
-  ```
-- 若运行的是已打包的可执行文件，需按下方「Windows 打包」重新构建并重启程序。
-
-## Windows 打包
-- 本项目是 Wails v3，本机 CLI 为 v2（不兼容），**不能用 `wails build`**，直接用 go 构建：
+## 构建与打包
+- 本项目是纯 Go + Fyne v2，**不需要前端构建**，直接 `go build`。
+- Windows 打包命令：
   ```bash
   go build -ldflags "-H windowsgui -s -w" -o meteor-ch-workbench.exe .
   ```
-- `-H windowsgui` 必须加，否则 PE 子系统为 CONSOLE（Subsystem=3），Windows 会弹出一个 DOS 黑窗口；加了之后为 Subsystem=2。
-- `-s -w` 去掉符号表，体积约 29 MB → 22 MB。
+- `-H windowsgui` 必须加，否则 PE 子系统为 CONSOLE（Subsystem=3），Windows 会弹出 DOS 黑窗口；加了之后为 Subsystem=2。
+- `-s -w` 去掉符号表，体积约从 50 MB 降到 ~33 MB。
 - 校验是否生效（PowerShell）：
   ```powershell
   $b=[System.IO.File]::ReadAllBytes((Resolve-Path 'meteor-ch-workbench.exe')); $pe=[BitConverter]::ToInt32($b,0x3C); [BitConverter]::ToUInt16($b,$pe+0x5C)  # 期望输出 2
@@ -22,23 +15,17 @@
 
 ## 校验命令
 ```bash
-cd frontend && npx vue-tsc --noEmit   # 类型检查
-cd frontend && npm run test           # 前端纯函数单元测试（Vitest，改 utils/ 必须跑）
-cd frontend && npm run build          # 必须，产出 dist
-go build ./...                        # 后端编译
-go test ./...                         # 后端测试（改 internal/ 必须跑）
+go build ./...      # 编译全量
+go vet ./...        # 静态检查
+go test ./...       # 后端测试（改 internal/ 或 fyneapp/ 必须跑）
 ```
 
-## 其他约定
-- Wails 绑定：`Call.ByName('main.App.<方法名>', ...args)`，统一封装在 `frontend/src/api.ts`。
-- 前端 i18n key 前缀分组：`common.*` / `editor.*` / `menu.*` 等，中英文都要补。
-
 ## 后端改动约定
-- **SQL 错误不入 Go error**：`Query` / `Execute` 的 SQL 执行错误放返回体的 `.error` 字段，Go error 返回 nil。前端从 `.error` 读，不要用 try/catch 捕获。
-- **注册表模式**：新增导出/导入/结果集导出格式，只需向对应 `export.go` / `import.go` 的注册表追加一项，不要改动核心分发逻辑。前端通过 `Get*Formats()` 自动感知。
+- **SQL 错误不入 Go error**：`Query` / `Execute` 的 SQL 执行错误放返回体的 `.error` 字段，Go error 返回 nil。UI 层从 `.error` 读。
+- **注册表模式**：新增导出/导入/结果集导出格式，只需向对应 `export.go` / `import.go` 的注册表追加一项，不要改动核心分发逻辑。UI 层通过 `Get*Formats()` 自动感知。
 - **持久化模式**：`connections.json` / `history.json` / `tabs.json` 统一采用「内存缓存 + `sync.RWMutex` + 变更后全量写回」。新增持久化文件照 `config/manager.go` 实现。
 - **脱敏必须深拷贝**：配置导出的 `sanitize` 必须先深拷贝再清空密码，绝不可直接改源数据。
-- **改字段同步三处**：后端 struct → `frontend/src/types.ts` → `docs/API.md`。
+- **改字段同步两处**：后端 struct → `docs/API.md`（不再需要 `frontend/src/types.ts`）。
 
 ## 后端测试约定
 - 测试文件与被测文件同目录，命名 `*_test.go`。
@@ -46,26 +33,35 @@ go test ./...                         # 后端测试（改 internal/ 必须跑�
 - 必须覆盖：正常路径 + 边界（空值 / 缺列 / 非法输入）+ 往返一致性（导出后再解析回来）。
 - 改 `internal/config` 或 `internal/clickhouse` 的解析/渲染逻辑，必须同步补或改测试。
 
-## 前端结构约定
-- 组件层不直接写 `Call.ByName`，一律走 `api.ts`。
-- `utils/` 只放纯函数（如 `ddl.ts` / `tabs.ts`），不引入 store 或 API 调用；**每个纯函数模块必须配同名 `*.test.ts`**（Vitest），测试沿用后端风格：表驱动 + 中文用例名 + 覆盖正常 / 边界。
-- 组件测试与被测组件同目录，同样命名 `*.test.ts`，共用 `src/components/testUtils.ts` 的 `mountWithI18n`；断言只查文本与 emit，不查 class 名。走 `<Teleport to="body">` 的组件必须用 `bodyText()` / `document.body` 查询，并在 `afterEach` 清空 `document.body`。
-- `npm run test` 使用独立 `frontend/vitest.config.ts`：`src/components/**` 跑 jsdom，`src/utils/**` 跑 node，**不要改动这个按路径分环境的配置**，否则 649 条纯函数用例会因 jsdom 变慢/异常。
-- Modal 统一用 `<Teleport to="body">`，z-index 2000 或 3000，关闭靠 `v-if + @click.self + Esc`。
-- 数据库树外层需要 `group` 类，内层按钮才能用 `group-hover:opacity-100` 显示。
+## Fyne GUI 约定
+- **入口唯一**：`main.go` 创建 `fyneapp.NewMainWindow(w)`，Lifecycle 停止时调 `fyneapp.Shutdown()`。
+- **单向依赖链**：`main.go → fyneapp → internal/app → clickhouse/config`，禁止循环依赖。所有业务逻辑走 `internal/app.App`，UI 只负责事件分发。
+- **快捷键用 `Canvas.AddShortcut` + 自定义 `KeyboardShortcut`**：不要尝试在 `KeyEvent` 里塞 State（Fyne 没这字段）。`runShortcut` / `stopShortcut` 是 Ctrl+Enter / Esc 的实现范式。
+- **Tree 用 4 参数模板**：`widget.NewTree(childUIDs, isBranch, create, update)`，childUIDs 返回子节点 ID 数组，create 造模板，update 填内容。
+- **Table 回调字段名**：选中回调是 `OnSelected`（不是 `OnCellSelected`），签名 `func(TableCellID)`。
+- **PopUpMenu 定位**：`widget.ShowPopUpMenuAtPosition(menu, canvas, fyne.CurrentApp().Driver().AbsolutePositionForObject(btn))`。
+- **ShowFileSave 直接写 io.Writer**：`dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) { ... })`，writer 本身就是 io.WriteCloser，配合 `clickhouse.ExportResultTo` 零拷贝。
+- **懒加载用 `OnBranchOpened`**：Tree 懒加载数据库/表/视图/集群元数据，本地 `dbCache` 缓存避免重复请求。
+- **异步回 UI 必须 `fyne.Do`**：goroutine 里不能直接调 widget 方法，用 `fyne.Do(func() { ... })` 包起来。
+- **定时刷新用 `time.Ticker` + channel 停止**：参考 `MainWindow.onToggleAutoRefresh`。
+- **对话框关闭回调 `SetOnClosed`**：`dialog.NewCustom("标题", "关闭按钮文本", content, w)` + `.SetOnClosed(func() { ... })`。
+- **Modal 弹出**：`widget.NewModalPopUp(content, canvas).Show()` — 不要用 `dialog.NewCustom` 后不设置按钮。
+- **HSplit / VSplit 比例**：设置 `.Offset` 控制分割位置（0.0 ~ 1.0）。
+- **AppTabs 选中回调参数是 `*TabItem`**：需要遍历 `tabItems` 数组映射回 `activeIdx`。
 
 ## 已知技术债（改动前注意）
-- Monaco 走 `editor.api.js` 精简入口 + SQL 语言包，两者均在 `QueryEditor.vue` 的 `onMounted` 内动态 import（**不要改回 `import * as monaco from 'monaco-editor'`，那会重新拉进全部语言包与 LSP，体积翻倍到 4 MB+**）。子路径必须写 `monaco-editor/editor/editor.api.js`：其 `exports` 为 `"./*": "./esm/vs/*.js"`，自带 `esm/vs` 前缀的写法会被重复拼接并报 TS2307。当前 Monaco chunk 2,753 kB（约 716 kB gzip），属编辑器核心固有体积，`chunkSizeWarningLimit` 已设为 3000。
-- `manualChunks` 用函数形式而非对象形式，`monaco-editor/esm/vs/languages/definitions` 单独拆到 `monaco-languages`（约 11 kB）。
-- 结果表格已接入 `@tanstack/vue-virtual`（`utils/resultTable.ts` 提供阈值与列宽纯函数）。超过 `VIRTUAL_THRESHOLD = 200` 行时走虚拟滚动，**行高必须保持 28px 固定**，否则估算高度与真实高度不一致会产生滚动抖动。
 - `clickhouse/service.go` 的 `Query` 已支持取消（`register` + `CancelQuery`，`running` map 存 context.CancelFunc）。调用方必须传 `queryID` 才能取消，传空字符串退化为不可取消。
 - `connections.json` 中密码为明文存储，P5 加密已主动跳过。
+- Fyne `widget.Table` 无内建搜索/排序。**搜索已自研**（`result_table.go` 的 `filteredRows` 行号映射），排序暂未实现。
+- Fyne `widget.Table` 行高由内容决定，无法强制固定；大量数据会有高度抖动。
+- `OnBranchOpened` 回调是 Tree 懒加载唯一入口，但 Fyne 会在滚动时频繁触发，注意去重。
+- 结果集分页是**前端拼接 LIMIT/OFFSET**（`appendLimitOffset`），不支持 ClickHouse 的 `IN` 过滤式分页。已有 LIMIT 的 SQL 跳过拼接。
 
 ## 文档同步约定
 - 后端新增/修改公开方法 → 更新 `docs/API.md`。
 - 用户可见的功能变化 → 更新 `docs/FEATURES.md`。
 - 新增文件、改变文件职责、关闭遗留问题 → 更新 `docs/CODE_INDEX.md`。
-- 阶段完成后 → 在 `.trae/rules/roadmap.md` 勾选对应条目。
+- Fyne GUI 阶段完成 → 在 `docs/migration/FYNE_PLAN.md` 勾选对应条目。
 - 只写文档不改代码时，无需重新构建。
 
 ## 文档文件分工（避免重复）
@@ -73,6 +69,6 @@ go test ./...                         # 后端测试（改 internal/ 必须跑�
 |---|---|
 | `.trae/PROJECT.md` | AI 快速检索地图：怎么改 X 看哪 |
 | `docs/CODE_INDEX.md` | 代码索引：每个文件里有什么 |
-| `docs/API.md` | Go → TS 接口契约 |
+| `docs/API.md` | 后端公开方法契约（纯 Go） |
 | `docs/FEATURES.md` | 用户视角功能说明 |
-| `.trae/rules/roadmap.md` | 已完成能力 + 后续计划（唯一真相源，不要再拆分子文件） |
+| `docs/migration/FYNE_PLAN.md` | Fyne 迁移进度表（唯一真相源） |
