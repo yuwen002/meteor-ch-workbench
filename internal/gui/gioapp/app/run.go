@@ -575,39 +575,7 @@ func (s *workspace) layout(gtx layout.Context) layout.Dimensions {
 	outer := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(s.layoutTopBar),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(14), Bottom: unit.Dp(14)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				compact := isCompact(gtx)
-				children := make([]layout.FlexChild, 0, 3)
-				if !s.connectionSidebarCollapsed {
-					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						// 统一窄屏阈值：折叠后由顶栏按钮恢复，避免两处断点不一致。
-						availableWidth := gtx.Constraints.Max.X
-						width := gtx.Dp(unit.Dp(286))
-						if compact {
-							width = gtx.Dp(unit.Dp(232))
-						}
-						if width > availableWidth {
-							width = availableWidth
-						}
-						contentHeight := gtx.Constraints.Max.Y
-						gtx.Constraints.Min = image.Pt(width, contentHeight)
-						gtx.Constraints.Max = image.Pt(width, contentHeight)
-						return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return s.connectionView.Layout(gtx, s.theme)
-							})
-						})
-					}))
-					children = append(children, layout.Rigid(layout.Spacer{Width: unit.Dp(14)}.Layout))
-				}
-				children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					if !s.connected {
-						return s.layoutWelcome(gtx)
-					}
-					return s.layoutWorkbench(gtx)
-				}))
-				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
-			})
+			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(14), Bottom: unit.Dp(14)}.Layout(gtx, s.layoutWorkbench)
 		}),
 		layout.Rigid(s.layoutStatusBar),
 	)
@@ -737,19 +705,20 @@ func (s *workspace) layoutTopBar(gtx layout.Context) layout.Dimensions {
 				return s.statusPill(gtx, dot, label, adaptiveMaxLines(gtx))
 			}))
 			children = append(children, layout.Rigid(layout.Spacer{Width: spaceXS}.Layout))
-			if compact {
-				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if s.sidebarToggle.Clicked(gtx) {
-						s.toggleSidebarPreference()
-					}
-					label := "隐藏连接"
-					if s.connectionSidebarCollapsed {
-						label = "显示连接"
-					}
-					return s.smallButton(gtx, &s.sidebarToggle, label, false)
-				}))
-				children = append(children, layout.Rigid(layout.Spacer{Width: spaceXS}.Layout))
-			}
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if s.sidebarToggle.Clicked(gtx) {
+					s.toggleSidebarPreference()
+				}
+				label := "收起侧栏"
+				if s.connectionSidebarCollapsed {
+					label = "展开侧栏"
+				}
+				if compact {
+					label = "侧栏"
+				}
+				return s.smallButton(gtx, &s.sidebarToggle, label, false)
+			}))
+			children = append(children, layout.Rigid(layout.Spacer{Width: spaceXS}.Layout))
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if s.settingsToggle.Clicked(gtx) { s.openSettings() }
 				return s.smallButton(gtx, &s.settingsToggle, "设置", false)
@@ -803,25 +772,26 @@ func (s *workspace) panel(gtx layout.Context, child layout.Widget) layout.Dimens
 	)
 }
 
-// layoutWorkbench 按 DBeaver / Navicat 的主界面组织右侧工作区：
-// 左列是 Navigator 对象树（数据库 → 表 / 视图），右列是 SQL 编辑器与查询结果。
+// layoutWorkbench 采用单一左侧工作区：连接列表与对象树纵向合并，
+// 右侧只保留 SQL 编辑器和结果，避免连接侧栏与对象导航并排重复占宽。
 func (s *workspace) layoutWorkbench(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			width := gtx.Dp(unit.Dp(300))
-			if isCompact(gtx) {
-				width = gtx.Dp(unit.Dp(232))
-			}
-			if width > gtx.Constraints.Max.X {
-				width = gtx.Constraints.Max.X
-			}
+	children := make([]layout.FlexChild, 0, 3)
+	if !s.connectionSidebarCollapsed {
+		width := workspaceSidebarWidth(gtx.Constraints.Max.X, isCompact(gtx))
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min = image.Pt(width, gtx.Constraints.Max.Y)
 			gtx.Constraints.Max = image.Pt(width, gtx.Constraints.Max.Y)
-			return s.panel(gtx, s.layoutNavigator)
-		}),
-		layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout),
-		layout.Flexed(1, s.layoutQueryWorkspace),
-	)
+			return s.layoutSidebar(gtx)
+		}))
+		children = append(children, layout.Rigid(layout.Spacer{Width: unit.Dp(10)}.Layout))
+	}
+	children = append(children, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+		if !s.connected {
+			return s.layoutWelcome(gtx)
+		}
+		return s.layoutQueryWorkspace(gtx)
+	}))
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 }
 
 // primaryButton 用于主操作（执行查询），用强调色与次要按钮区分开。

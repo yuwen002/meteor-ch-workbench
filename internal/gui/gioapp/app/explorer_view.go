@@ -16,6 +16,62 @@ import (
 
 // Explorer 对象导航视图。连接与元数据状态仍由 workspace 持有，视图只负责绘制和触发既有用例。
 
+
+// layoutSidebar 将连接列表与数据库对象树合并为一个左侧导航栏。
+// 未连接时只展示连接管理，不绘制空的数据库对象区。
+func (s *workspace) layoutSidebar(gtx layout.Context) layout.Dimensions {
+	if !s.connected {
+		return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: spaceM, Bottom: spaceS, Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return s.connectionView.Layout(gtx, s.theme)
+			})
+		})
+	}
+	connectionHeight := connectionPaneHeight(gtx.Constraints.Max.Y, isCompact(gtx))
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = connectionHeight, connectionHeight
+			return s.panel(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: spaceS, Bottom: spaceXS, Left: spaceM, Right: spaceM}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return s.connectionView.Layout(gtx, s.theme)
+				})
+			})
+		}),
+		layout.Rigid(layout.Spacer{Height: spaceS}.Layout),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return s.panel(gtx, s.layoutNavigator)
+		}),
+	)
+}
+
+func workspaceSidebarWidth(available int, compact bool) int {
+	width := 280
+	if compact {
+		width = 220
+	}
+	if available < width {
+		width = available
+	}
+	if width < 0 {
+		return 0
+	}
+	return width
+}
+
+func connectionPaneHeight(available int, compact bool) int {
+	height := 220
+	if compact {
+		height = 176
+	}
+	if maxHeight := available / 2; height > maxHeight {
+		height = maxHeight
+	}
+	if height < 0 {
+		return 0
+	}
+	return height
+}
+
 // layoutNavigator 是单一对象树：连接下的数据库可展开，展开后按“表 / 视图”分组列出对象。
 func (s *workspace) layoutNavigator(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,

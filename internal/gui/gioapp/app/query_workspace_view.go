@@ -99,9 +99,9 @@ func (s *workspace) layoutQueryWorkspace(gtx layout.Context) layout.Dimensions {
 			if s.selectedTable == "" && len(s.columns) == 0 {
 				return layout.Dimensions{}
 			}
-			height := gtx.Dp(unit.Dp(150))
-			if height > gtx.Constraints.Max.Y/3 {
-				height = gtx.Constraints.Max.Y / 3
+			height := gtx.Dp(unit.Dp(120))
+			if height > gtx.Constraints.Max.Y/4 {
+				height = gtx.Constraints.Max.Y / 4
 			}
 			gtx.Constraints.Min.Y = height
 			gtx.Constraints.Max.Y = height
@@ -167,7 +167,10 @@ func (s *workspace) layoutQueryToolbar(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if s.historyToggle.Clicked(gtx) {
 					s.historyVisible = !s.historyVisible
-					if s.historyVisible { s.reloadHistory() }
+					if s.historyVisible {
+						s.savedSQLVisible = false
+						s.reloadHistory()
+					}
 				}
 				label := "查询历史"
 				if s.historyVisible { label = "收起历史" }
@@ -177,7 +180,10 @@ func (s *workspace) layoutQueryToolbar(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if s.savedSQLToggle.Clicked(gtx) {
 					s.savedSQLVisible = !s.savedSQLVisible
-					if s.savedSQLVisible { s.reloadSavedSQL() }
+					if s.savedSQLVisible {
+						s.historyVisible = false
+						s.reloadSavedSQL()
+					}
 				}
 				label := "收藏 SQL"
 				if s.savedSQLVisible { label = "收起收藏" }
