@@ -42,6 +42,29 @@ func (c *Connection) GenID() {
 	c.ID = hex.EncodeToString(b)
 }
 
+// sanitizeOrphanFolders 清理 folder_id 指向不存在文件夹的连接，将其 FolderID 清空。
+// 旧版 Wails 前端可能残留已删除文件夹的 ID，导致这些连接在 Tree 中不可见。
+// 返回值表示是否有连接被修改。
+func sanitizeOrphanFolders(df *DataFile) bool {
+	changed := false
+	exists := make(map[string]struct{}, len(df.Folders))
+	for _, f := range df.Folders {
+		if f.ID != "" {
+			exists[f.ID] = struct{}{}
+		}
+	}
+	for i := range df.Connections {
+		if df.Connections[i].FolderID == "" {
+			continue
+		}
+		if _, ok := exists[df.Connections[i].FolderID]; !ok {
+			df.Connections[i].FolderID = ""
+			changed = true
+		}
+	}
+	return changed
+}
+
 // Normalize 对连接配置做兼容性归一化。
 // 早期版本的配置没有 protocol 字段，这里根据端口自动推断，保证旧配置开箱可用，
 // 用户无需手动修改即可正常连接。
@@ -149,6 +172,7 @@ func (m *Manager) ImportData(raw string) error {
 		}
 		df.Connections[i].Normalize()
 	}
+	sanitizeOrphanFolders(&df)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data = df
@@ -189,6 +213,9 @@ func (m *Manager) LoadAll() (*DataFile, error) {
 			m.data.Connections[i].Normalize()
 			changed = true
 		}
+	}
+	if sanitizeOrphanFolders(&m.data) {
+		changed = true
 	}
 	if changed {
 		_ = m.flush()
