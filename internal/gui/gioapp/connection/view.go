@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -20,6 +22,18 @@ import (
 
 // View 是连接侧栏的 Gio 展示组件。数据操作由 Model / 应用服务负责，
 // 组件只处理点击并通过回调通知上层窗口。
+type rightClickTag struct{}
+
+func watchSecondaryClick(gtx layout.Context, tag *rightClickTag, onClick func()) {
+	event.Op(gtx.Ops, tag)
+	for {
+		ev, ok := gtx.Event(pointer.Filter{Target: tag, Kinds: pointer.Press})
+		if !ok { break }
+		pe, ok := ev.(pointer.Event)
+		if ok && pe.Buttons.Contain(pointer.ButtonSecondary) { onClick() }
+	}
+}
+
 type sidebarRow struct {
 	folder     *domain.Folder
 	item       *domain.Connection
@@ -128,6 +142,7 @@ type View struct {
 	folderDelete           map[string]*widget.Clickable
 	folderMore             map[string]*widget.Clickable
 	folderActionsOpen      map[string]bool
+	folderRightClicks      map[string]*rightClickTag
 	folderMove             map[string]*widget.Clickable
 	rowEdit                map[string]*widget.Clickable
 	rowUp                  map[string]*widget.Clickable
@@ -136,6 +151,7 @@ type View struct {
 	rowTest                map[string]*widget.Clickable
 	rowMore                map[string]*widget.Clickable
 	rowActionsOpen         map[string]bool
+	rowRightClicks         map[string]*rightClickTag
 	editingConnectionID    string
 	formFolderID           string
 	folderPick             widget.Clickable
@@ -166,6 +182,7 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		folderDelete:      make(map[string]*widget.Clickable),
 		folderMore:        make(map[string]*widget.Clickable),
 		folderActionsOpen: make(map[string]bool),
+		folderRightClicks: make(map[string]*rightClickTag),
 		folderMove:        make(map[string]*widget.Clickable),
 		rowEdit:           make(map[string]*widget.Clickable),
 		rowUp:             make(map[string]*widget.Clickable),
@@ -174,6 +191,7 @@ func NewView(model *Model, onRefresh func(), onSelect func(domain.Connection)) (
 		rowTest:           make(map[string]*widget.Clickable),
 		rowMore:           make(map[string]*widget.Clickable),
 		rowActionsOpen:    make(map[string]bool),
+		rowRightClicks:    make(map[string]*rightClickTag),
 		folderPickOptions: make(map[string]*widget.Clickable),
 		onRefresh:         onRefresh,
 		onSelect:          onSelect,
@@ -428,6 +446,8 @@ func (v *View) layoutFolderRow(gtx layout.Context, theme *material.Theme, folder
 		v.folderMore[folder.ID] = new(widget.Clickable)
 	}
 	key := "folder:" + folder.ID
+	if v.folderRightClicks[folder.ID] == nil { v.folderRightClicks[folder.ID] = new(rightClickTag) }
+	watchSecondaryClick(gtx, v.folderRightClicks[folder.ID], func() { v.folderActionsOpen[folder.ID] = true })
 	if v.rows[key] == nil {
 		v.rows[key] = new(widget.Clickable)
 	}
@@ -558,6 +578,8 @@ func (v *View) layoutConnectionRow(gtx layout.Context, theme *material.Theme, it
 	if v.rows[item.ID] == nil {
 		v.rows[item.ID] = new(widget.Clickable)
 	}
+	if v.rowRightClicks[item.ID] == nil { v.rowRightClicks[item.ID] = new(rightClickTag) }
+	watchSecondaryClick(gtx, v.rowRightClicks[item.ID], func() { v.rowActionsOpen[item.ID] = true })
 	if v.rowMore[item.ID] == nil {
 		v.rowMore[item.ID] = new(widget.Clickable)
 	}
