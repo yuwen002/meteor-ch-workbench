@@ -182,3 +182,25 @@ func BenchmarkBuildResultRowViewTextNumericFilter(b *testing.B) {
 		})
 	}
 }
+
+
+// BenchmarkBuildResultRowViewManyInactiveColumnFilters measures a wide result
+// where the user has not enabled any of the available column filter controls.
+func BenchmarkBuildResultRowViewManyInactiveColumnFilters(b *testing.B) {
+	for _, rowCount := range []int{10_000, 100_000, 500_000} {
+		b.Run(fmt.Sprintf("rows-%d/64-columns", rowCount), func(b *testing.B) {
+			rows := make([][]any, rowCount)
+			for i := range rows {
+				rows[i] = []any{fmt.Sprintf("row-%06d", i)}
+			}
+			filters := make([]string, 64)
+			view := make([]resultRowView, 0, rowCount)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				view = buildResultRowViewWithPreparedSortKeysInto(view[:0], rows, "", filters, -1, false, nil)
+			}
+			benchmarkResultSortKeyCountSink = len(view)
+		})
+	}
+}
