@@ -204,3 +204,28 @@ func BenchmarkBuildResultRowViewManyInactiveColumnFilters(b *testing.B) {
 		})
 	}
 }
+
+
+// BenchmarkBuildResultRowViewSparseColumnFilters measures a wide result with
+// only one active condition in the final column.
+func BenchmarkBuildResultRowViewSparseColumnFilters(b *testing.B) {
+	for _, rowCount := range []int{10_000, 100_000, 500_000} {
+		b.Run(fmt.Sprintf("rows-%d/64-columns/1-active", rowCount), func(b *testing.B) {
+			rows := make([][]any, rowCount)
+			for i := range rows {
+				row := make([]any, 64)
+				row[63] = int64(i % 1000)
+				rows[i] = row
+			}
+			filters := make([]string, 64)
+			filters[63] = ">=100"
+			view := make([]resultRowView, 0, rowCount)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				view = buildResultRowViewWithPreparedSortKeysInto(view[:0], rows, "", filters, -1, false, nil)
+			}
+			benchmarkResultSortKeyCountSink = len(view)
+		})
+	}
+}
