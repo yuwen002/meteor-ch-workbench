@@ -360,3 +360,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 已将两处分支统一改为追加 `{column, filter}`，保留原始列索引；单值适配函数改为返回包装结构中的 `filter`。这修复的是类型不匹配编译错误，不改变筛选表达式语义。
 - 修复提交：`b6c3e389ce6612c0fcd0c08a09b959de8b7babff`（`fix(query): 修复紧凑列筛选条件写入`）。
 - 本次未执行本地 Go 测试、vet、build 或性能基准；必须以该修复提交触发的 Linux / Windows CI 结果验收。此前 Run `45960486234` 对应旧 head，不能作为修复后的验收结论。
+
+### 2026-11-27：同步稀疏筛选测试断言
+
+- 修复类型错误后，CI 已进入测试阶段；Run `45961781776`（提交 `b6c3e38`）和 Run `45961800277`（提交 `0b4014f`）的 Linux / Windows 测试均发现同一条旧断言失败：`TestPreparedResultColumnFiltersPreserveColumnPositions` 仍期待保存 2 个筛选项，但紧凑切片设计只保留非空活动条件。
+- 已将断言调整为仅期待 1 个活动条件，并明确验证其原始列索引仍为 1；行匹配行为断言继续保留。
+- 修复提交：`b5a9dfa26cd0d720e2cf83fe65593d39c5221958`（`test(query): 更新稀疏列筛选数量断言`）。
+- 本地未执行 Go 测试；等待该提交对应的 Linux / Windows CI 重新验收。此前两个失败 Run 均不代表本次测试断言修复后的结果。
