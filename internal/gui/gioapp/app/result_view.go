@@ -272,8 +272,12 @@ const (
 	resultColumnFilterCompare
 )
 
+type indexedResultColumnFilter struct {
+	column  int
+	filter  preparedResultColumnFilter
+}
+
 type preparedResultColumnFilter struct {
-	active        bool
 	kind          resultColumnFilterKind
 	operator      string
 	expected      string
@@ -291,7 +295,7 @@ type preparedResultColumnFilter struct {
 }
 
 // prepareResultColumnFilters 在扫描结果行之前解析列条件，避免逐行重复拆分表达式。
-func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
+func prepareResultColumnFilters(filters []string) []indexedResultColumnFilter {
 	// 没有启用列条件时直接返回 nil，避免每次刷新结果视图都分配与列数等长的空条件切片。
 	hasActiveFilter := false
 	for _, raw := range filters {
@@ -304,7 +308,7 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 		return nil
 	}
 
-	prepared := make([]preparedResultColumnFilter, len(filters))
+	prepared := make([]indexedResultColumnFilter, 0, len(filters))
 	for column, raw := range filters {
 		expression := strings.TrimSpace(raw)
 		if expression == "" {
@@ -314,7 +318,7 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 		if strings.EqualFold(expression, "is:null") || strings.EqualFold(expression, "is:not-null") {
 			condition.kind = resultColumnFilterNull
 			condition.operator = strings.ToLower(expression)
-			prepared[column] = condition
+			prepared = append(prepared, indexedResultColumnFilter{column: column, filter: condition})
 			continue
 		}
 		if strings.HasPrefix(strings.ToLower(expression), "between:") {
@@ -375,12 +379,9 @@ func resultRowMatchesColumnFilters(row []any, filters []string) bool {
 	return resultRowMatchesPreparedColumnFilters(row, prepareResultColumnFilters(filters))
 }
 
-func resultRowMatchesPreparedColumnFilters(row []any, filters []preparedResultColumnFilter) bool {
-	for column, filter := range filters {
-		if !filter.active {
-			continue
-		}
-		if column >= len(row) || !filter.matches(row[column]) {
+func resultRowMatchesPreparedColumnFilters(row []any, filters []indexedResultColumnFilter) bool {
+	for _, indexed := range filters {
+		if indexed.column >= len(row) || !indexed.filter.matches(row[indexed.column]) {
 			return false
 		}
 	}
