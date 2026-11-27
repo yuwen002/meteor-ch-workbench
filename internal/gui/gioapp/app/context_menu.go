@@ -140,7 +140,7 @@ func (s *workspace) layoutContextMenu(gtx layout.Context, scope string) layout.D
 					button.TextSize = unit.Sp(10)
 					return button.Layout(gtx)
 				}))
-				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 			}),
 		)
 	})
