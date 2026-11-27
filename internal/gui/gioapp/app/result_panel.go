@@ -288,6 +288,7 @@ func (s *workspace) layoutResultGrid(gtx layout.Context) layout.Dimensions {
 					})
 				})
 				pruneResultCellCaches(s.queryCellClicks, s.resultCellText, s.queryRows.Position, len(s.resultView), 2)
+				pruneRightClickTags(s.queryCellRightClicks, s.queryRows.Position, len(s.resultView), 2)
 				return dims
 			}),
 		)
