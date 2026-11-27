@@ -72,7 +72,7 @@ func (s *workspace) contextActions() []contextAction {
 	case "cell":
 		return []contextAction{
 			{"复制单元格", func(gtx layout.Context) { s.copyText(gtx, s.contextCellValue()) }},
-			{"复制 SQL 字面量", func(gtx layout.Context) { s.copyText(gtx, sqlLiteral(s.contextCellValue())) }},
+			{"复制 SQL 字面量", func(gtx layout.Context) { s.copyText(gtx, sqlLiteral(s.contextCellRawValue())) }},
 			{"复制整行", func(gtx layout.Context) { s.copyText(gtx, s.contextRowTSV()) }},
 			{"复制 INSERT", func(gtx layout.Context) { s.copyText(gtx, s.contextInsertSQL(false)) }},
 			{"复制全部 INSERT", func(gtx layout.Context) { s.copyText(gtx, s.contextInsertSQL(true)) }},
@@ -151,12 +151,16 @@ func (s *workspace) copyText(gtx layout.Context, value string) {
 	s.queryStatus = "已请求复制到剪贴板"
 }
 
-func (s *workspace) contextCellValue() string {
+func (s *workspace) contextCellRawValue() any {
 	menu := s.contextMenu
-	if menu.row < 0 || menu.row >= len(s.resultView) { return "" }
+	if menu.row < 0 || menu.row >= len(s.resultView) { return nil }
 	rowIndex := s.resultView[menu.row].Index
-	if rowIndex < 0 || rowIndex >= len(s.queryData) || menu.column < 0 || menu.column >= len(s.queryData[rowIndex]) { return "" }
-	return resultCellRawValue(s.queryData[rowIndex][menu.column])
+	if rowIndex < 0 || rowIndex >= len(s.queryData) || menu.column < 0 || menu.column >= len(s.queryData[rowIndex]) { return nil }
+	return s.queryData[rowIndex][menu.column]
+}
+
+func (s *workspace) contextCellValue() string {
+	return resultCellRawValue(s.contextCellRawValue())
 }
 
 func (s *workspace) contextRowTSV() string {
