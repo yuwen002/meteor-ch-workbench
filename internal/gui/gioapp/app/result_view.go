@@ -111,7 +111,7 @@ func newResultSortKey(value any) resultSortKey {
 	if value == nil {
 		return resultSortKey{null: true}
 	}
-	text := fmt.Sprint(value)
+	text := resultValueText(value)
 	key := resultSortKey{text: strings.ToLower(text)}
 	_, key.numeric = key.number.SetString(strings.TrimSpace(text))
 	if !key.numeric {
@@ -282,10 +282,7 @@ func (filter preparedResultColumnFilter) matches(value any) bool {
 		}
 		return value != nil
 	}
-	actual := "NULL"
-	if value != nil {
-		actual = fmt.Sprint(value)
-	}
+	actual := resultValueText(value)
 	if filter.kind == resultColumnFilterContains {
 		matched := strings.Contains(strings.ToLower(actual), filter.expectedLower)
 		if filter.operator == "!" {
@@ -378,19 +375,15 @@ func preparedResultColumnFilterFor(expression string) preparedResultColumnFilter
 }
 
 func resultValueMatchesFilter(value any, filter string) bool {
-	text := "NULL"
-	if value != nil {
-		text = fmt.Sprint(value)
-	}
-	return strings.Contains(strings.ToLower(text), strings.ToLower(filter))
+	return strings.Contains(strings.ToLower(resultValueText(value)), strings.ToLower(filter))
 }
 
 func resultRowMatchesFilter(row []any, filter string) bool {
 	return resultRowMatchesLowerFilter(row, strings.ToLower(filter))
 }
 
-// resultFilterText 保留结果筛选的既有格式语义，同时避免对原生 string 调用 fmt.Sprint。
-func resultFilterText(value any) string {
+// resultValueText 保留结果筛选的既有格式语义，同时避免对原生 string 调用 fmt.Sprint。
+func resultValueText(value any) string {
 	if value == nil {
 		return "NULL"
 	}
@@ -403,7 +396,7 @@ func resultFilterText(value any) string {
 // resultRowMatchesLowerFilter 接收已标准化的关键词，避免每一行重复转换筛选词大小写。
 func resultRowMatchesLowerFilter(row []any, needle string) bool {
 	for _, value := range row {
-		if strings.Contains(strings.ToLower(resultFilterText(value)), needle) {
+		if strings.Contains(strings.ToLower(resultValueText(value)), needle) {
 			return true
 		}
 	}
@@ -423,7 +416,7 @@ func compareResultValues(left, right any) int {
 		return -1
 	}
 
-	ls, rs := fmt.Sprint(left), fmt.Sprint(right)
+	ls, rs := resultValueText(left), resultValueText(right)
 	if comparison, ok := compareResultNumbers(ls, rs); ok {
 		return comparison
 	}

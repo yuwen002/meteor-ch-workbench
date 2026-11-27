@@ -231,7 +231,7 @@ func TestPreparedResultColumnFiltersKeepTextNumericTimeAndNullSemantics(t *testi
 	}
 }
 
-func TestResultFilterTextPreservesFormatting(t *testing.T) {
+func TestResultValueTextPreservesFormatting(t *testing.T) {
 	cases := []struct {
 		name string
 		value any
@@ -244,10 +244,24 @@ func TestResultFilterTextPreservesFormatting(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := resultFilterText(tc.value); got != tc.want {
-				t.Fatalf("resultFilterText(%#v) = %q, want %q", tc.value, got, tc.want)
+			if got := resultValueText(tc.value); got != tc.want {
+				t.Fatalf("resultValueText(%#v) = %q, want %q", tc.value, got, tc.want)
 			}
 		})
+	}
+}
+
+
+func TestResultValueTextUsedBySortKeysAndColumnFilters(t *testing.T) {
+	key := newResultSortKey("MiXeD")
+	if key.text != "mixed" {
+		t.Fatalf("sort key text = %q, want mixed", key.text)
+	}
+	if !resultValueMatchesColumnCondition("MiXeD", "mixed") {
+		t.Fatal("column contains filter should match string values case-insensitively")
+	}
+	if !resultValueMatchesFilter("MiXeD", "mixed") {
+		t.Fatal("single-value filter should match string values case-insensitively")
 	}
 }
 
