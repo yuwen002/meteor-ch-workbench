@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func benchmarkAppResultRows(count int) [][]any {
@@ -152,6 +153,7 @@ func BenchmarkBuildResultSortKeys(b *testing.B) {
 					keys = extendResultSortKeys(rows, 0, nil)
 				}
 				benchmarkResultSortKeyCountSink = len(keys)
+				b.ReportMetric(float64(unsafe.Sizeof(resultSortKey{})), "B/key")
 			})
 		}
 	}

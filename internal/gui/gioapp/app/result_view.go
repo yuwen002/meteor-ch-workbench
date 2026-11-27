@@ -100,12 +100,13 @@ func extendResultSortKeys(rows [][]any, sortColumn int, keys []resultSortKey) []
 
 // resultSortKey 将排序值的昂贵转换预计算一次，供稳定排序的比较器复用。
 type resultSortKey struct {
-	null      bool
-	numeric   bool
-	timeValid bool
-	number    big.Rat
-	timestamp time.Time
-	text      string
+	number         big.Rat
+	timestampUnix  int64
+	text           string
+	timestampNanos int32
+	null           bool
+	numeric        bool
+	timeValid      bool
 }
 
 func newResultSortKey(value any) resultSortKey {
@@ -117,8 +118,13 @@ func newResultSortKey(value any) resultSortKey {
 	_, key.numeric = key.number.SetString(strings.TrimSpace(text))
 	if !key.numeric {
 		var timeErr error
-		key.timestamp, timeErr = parseResultTime(text)
-		key.timeValid = timeErr == nil
+		var timestamp time.Time
+		timestamp, timeErr = parseResultTime(text)
+		if timeErr == nil {
+			key.timestampUnix = timestamp.Unix()
+			key.timestampNanos = int32(timestamp.Nanosecond())
+			key.timeValid = true
+		}
 	}
 	return key
 }
@@ -139,9 +145,13 @@ func compareResultSortKeys(left, right resultSortKey) int {
 	}
 	if left.timeValid && right.timeValid {
 		switch {
-		case left.timestamp.Before(right.timestamp):
+		case left.timestampUnix < right.timestampUnix:
 			return -1
-		case left.timestamp.After(right.timestamp):
+		case left.timestampUnix > right.timestampUnix:
+			return 1
+		case left.timestampNanos < right.timestampNanos:
+			return -1
+		case left.timestampNanos > right.timestampNanos:
 			return 1
 		default:
 			return 0

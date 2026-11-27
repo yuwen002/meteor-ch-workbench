@@ -416,3 +416,36 @@ func TestParseResultTimeAcceptsSupportedDateLayouts(t *testing.T) {
 		}
 	}
 }
+
+
+func TestCompareResultSortKeysPreservesTimestampInstantAndPrecision(t *testing.T) {
+	values := []any{
+		"0000-01-01T00:00:00Z",
+		"2026-11-27T10:15:30.123456789Z",
+		"2026-11-27T12:15:30.123456789+02:00",
+		"2026-11-27T10:15:30.123456788Z",
+		"9999-12-31T23:59:59.999999999Z",
+	}
+	keys := make([]resultSortKey, len(values))
+	for i, value := range values {
+		keys[i] = newResultSortKey(value)
+		if !keys[i].timeValid {
+			t.Fatalf("value %q should be parsed as a timestamp", value)
+		}
+	}
+	for i := range values {
+		for j := range values {
+			want := compareResultValues(values[i], values[j])
+			got := compareResultSortKeys(keys[i], keys[j])
+			if resultCompareSign(got) != resultCompareSign(want) {
+				t.Errorf("compare(%q, %q) = %d, want sign %d", values[i], values[j], got, resultCompareSign(want))
+			}
+		}
+	}
+	if got := compareResultSortKeys(keys[1], keys[2]); got != 0 {
+		t.Fatalf("equivalent instants with different offsets compare as %d, want 0", got)
+	}
+	if got := compareResultSortKeys(keys[3], keys[1]); got >= 0 {
+		t.Fatalf("nanosecond precision lost: preceding instant compare = %d", got)
+	}
+}
