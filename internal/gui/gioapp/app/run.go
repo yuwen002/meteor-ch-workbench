@@ -148,6 +148,10 @@ func Run(window *gio.Window, services *bootstrap.Services) error {
 		queryHorizontal:  widget.List{List: layout.List{Axis: layout.Horizontal}},
 		queryDetailRows:  widget.List{List: layout.List{Axis: layout.Vertical}},
 		queryCellClicks:  make(map[int64]*widget.Clickable),
+		queryCellRightClicks: make(map[int64]*rightClickTag),
+		databaseRightClicks: make(map[string]*rightClickTag),
+		objectRightClicks: make(map[string]*rightClickTag),
+		hiddenResultColumns: make(map[int]bool),
 		resultCellText:   make(map[int64]string),
 		exportResults:    make(chan exportResult, 4),
 		resultSortColumn: -1,
@@ -243,6 +247,12 @@ type workspace struct {
 	queryHorizontal   widget.List
 	queryDetailRows   widget.List
 	queryCellClicks   map[int64]*widget.Clickable
+	queryCellRightClicks map[int64]*rightClickTag
+	resultHeaderRightClicks []*rightClickTag
+	databaseRightClicks map[string]*rightClickTag
+	objectRightClicks map[string]*rightClickTag
+	contextMenu contextMenuState
+	hiddenResultColumns map[int]bool
 	selectedQueryCell *queryCellSelection
 	queryDetailClose  widget.Clickable
 	queryDetailCopy   widget.Clickable
