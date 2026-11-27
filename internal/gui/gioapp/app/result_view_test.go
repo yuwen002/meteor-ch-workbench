@@ -197,8 +197,11 @@ func TestExtendResultSortKeysGrowsCapacityGeometrically(t *testing.T) {
 func TestPreparedResultColumnFiltersPreserveColumnPositions(t *testing.T) {
 	rows := [][]any{{"alpha", 3}, {"beta", 8}, {"gamma", 5}}
 	filters := prepareResultColumnFilters([]string{"", ">=5"})
-	if len(filters) != 2 {
-		t.Fatalf("prepared filter count = %d, want 2", len(filters))
+	if len(filters) != 1 {
+		t.Fatalf("prepared filter count = %d, want 1 active filter", len(filters))
+	}
+	if filters[0].column != 1 {
+		t.Fatalf("prepared filter column = %d, want original column index 1", filters[0].column)
 	}
 	if resultRowMatchesPreparedColumnFilters(rows[0], filters) {
 		t.Fatal("row below numeric threshold should not match")
