@@ -457,3 +457,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 本轮未执行本地 Go 测试、vet、gofmt、build 或桌面实机操作；上一 head 的 CI Run [45975108075](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45975108075) 已通过，但它不包含本轮两项提交。本轮必须以最新 head 对应的 Linux / Windows CI 为准。
 - 下一步继续处理右键菜单的真实功能迁移：对象树的可视化建表 / 编辑表 / 删除确认，以及结果表头的编辑定位键和 SQL 投影隐藏等缺口；不将 SQL 模板视为功能完成。
 - PR #1 继续保持 Open / Draft、base `main`、未合并；不推进版本号。
+### 2026-11-27：修复结果右键回归测试的状态初始化
+
+- 最新 head `331a179dd8c6334fa3b20b48f681fd3363475806` 对应 CI Run [45980671484](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45980671484) 的 Linux / Windows `Run tests` 均失败，失败位置为 `internal/gui/gioapp/app/context_menu_test.go`：测试直接初始化 `workspace.selectedDatabase`、`selectedTable`、`queryColumns`、`queryData`，但这些字段分别嵌入在 `explorerSelection` 与 `queryResultState` 中。
+- 已按实际状态聚合结构修正测试：选中数据库 / 表通过 `explorerSelection` 初始化，结果列与数据通过 `queryResultState` 初始化；生产代码未因此改变。
+- 修复提交：`feb4272670188076aed913e46c006ff3470ee3b0`（修复结果右键测试状态初始化）。
+- 本地未执行 Go 测试、vet、gofmt 或 build；等待新 head 的 Linux / Windows CI 验证。
+- 后续迁移仍按旧版 `docs/FEATURES.md` 对照：优先补齐数据库 / 表的可视化建表、编辑和删除确认，再恢复结果表头定位键、SQL 投影隐藏及服务端筛选 / 排序等行为。
