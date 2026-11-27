@@ -13,3 +13,11 @@ build/
 bin/
 *.log
 *.tsbuildinfofrontend/
+
+.tmp-recover/
+
+tmp_capture/
+
+.idea/shelf/
+
+_*.go

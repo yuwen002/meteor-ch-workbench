@@ -2,7 +2,8 @@ package fyneapp
 
 import (
 	"fmt"
-		"strings"
+	"regexp"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -358,19 +359,39 @@ func (mw *MainWindow) refreshAppTabs() {
 }
 
 func (mw *MainWindow) layout() fyne.CanvasObject {
-	runBtn := widget.NewButton("▶ 执行 (Ctrl+Enter)", mw.onRunQuery)
+	runBtn := widget.NewButton("▶ 执行", mw.onRunQuery)
 	runBtn.Importance = widget.HighImportance
-	stopBtn := widget.NewButton("■ 停止 (Esc)", mw.onStopQuery)
-	newTabBtn := widget.NewButton("+ 新标签", mw.onNewTab)
+	stopBtn := widget.NewButton("■ 停止", mw.onStopQuery)
+
+	connNames := mw.connSelectNames()
+	connSelect := widget.NewSelect(connNames, func(s string) {
+		mw.onSelectConnByName(s)
+	})
+	connSelect.PlaceHolder = "选择连接..."
+	if mw.activeConnID != "" {
+		for i, c := range mw.connections {
+			if c.ID == mw.activeConnID && i < len(connNames) {
+				connSelect.Selected = connNames[i]
+				break
+			}
+		}
+	}
 
 	toolbar := container.NewHBox(
-		runBtn, stopBtn, newTabBtn,
+		runBtn, stopBtn,
+		widget.NewButton("// 注释", mw.onToggleComment),
+		widget.NewButton("🗑 清空", mw.onClearEditor),
+		widget.NewButton("⟳ 格式化", mw.onFormatSQL),
+		layout.NewSpacer(),
+		widget.NewLabel("连接:"), connSelect,
+		widget.NewButton("+ 新连接", mw.onNewConnection),
+		widget.NewButton("+ 新标签", mw.onNewTab),
 		layout.NewSpacer(),
 		widget.NewLabelWithStyle("Meteor CH Workbench", fyne.TextAlignTrailing, fyne.TextStyle{Bold: true}),
 	)
 
 	editorBox := container.NewBorder(
-		toolbar, nil, nil, nil,
+		nil, nil, nil, nil,
 		mw.editor,
 	)
 
@@ -451,13 +472,13 @@ func (mw *MainWindow) layout() fyne.CanvasObject {
 	mainSplit := container.NewVSplit(editorBox, resultBox)
 	mainSplit.Offset = 0.55
 
-	center := container.NewBorder(
-		mw.appTabs, nil, nil, nil,
-		mainSplit,
-	)
+	topArea := container.NewBorder(toolbar, nil, nil, nil, mw.appTabs)
+	center := container.NewBorder(topArea, nil, nil, nil, mainSplit)
 
 	mw.sidePanels = NewSidePanels(mw.window, mw.editor, mw)
-	return container.NewHSplit(mw.sidePanels.Content(), center)
+	split := container.NewHSplit(mw.sidePanels.Content(), center)
+	split.Offset = 0.22
+	return split
 }
 
 func (mw *MainWindow) refreshSidebar() {
@@ -986,4 +1007,96 @@ func (mw *MainWindow) onNewConnection() {
 
 func (mw *MainWindow) onEditConnection(connID string) {
 	mw.connDialog.showEdit(connID)
+}
+
+func (mw *MainWindow) connSelectNames() []string {
+	names := make([]string, 0, len(mw.connections))
+	for _, c := range mw.connections {
+		if c.Name != "" {
+			names = append(names, c.Name)
+		} else {
+			names = append(names, c.Host)
+		}
+	}
+	return names
+}
+
+func (mw *MainWindow) onSelectConnByName(name string) {
+	for _, c := range mw.connections {
+		if c.Name == name || (c.Name == "" && c.Host == name) {
+			mw.activeConnID = c.ID
+			mw.updateStatus()
+			mw.refreshSidebar()
+			if mw.dbCache[c.ID] == nil || !mw.dbCache[c.ID].loaded {
+				mw.loadConnectionMeta(c.ID)
+			}
+			return
+		}
+	}
+}
+
+func (mw *MainWindow) onToggleComment() {
+	text := mw.editor.Text
+	cursor := mw.editor.CursorRow
+	if cursor < 0 || cursor >= len(text) {
+		return
+	}
+	lines := strings.Split(text, "\n")
+	if cursor >= len(lines) {
+		return
+	}
+	line := lines[cursor]
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "--") {
+		lines[cursor] = strings.Replace(line, "-- ", "", 1)
+		lines[cursor] = strings.Replace(lines[cursor], "--", "", 1)
+	} else {
+		if strings.HasPrefix(line, "\t") {
+			lines[cursor] = strings.Replace(line, "\t", "\t-- ", 1)
+		} else {
+			lines[cursor] = "-- " + line
+		}
+	}
+	mw.editor.SetText(strings.Join(lines, "\n"))
+}
+
+func (mw *MainWindow) onClearEditor() {
+	if strings.TrimSpace(mw.editor.Text) == "" {
+		return
+	}
+	confirm := dialog.NewConfirm("清空编辑器", "确定要清空当前 SQL 吗？", func(ok bool) {
+		if ok {
+			mw.editor.SetText("")
+		}
+	}, mw.window)
+	confirm.SetConfirmText("清空")
+	confirm.SetDismissText("取消")
+	confirm.Show()
+}
+
+var sqlKeywords = []string{
+	"SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "IS", "NULL", "LIKE", "BETWEEN",
+	"INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "CREATE", "TABLE", "DROP",
+	"ALTER", "ADD", "COLUMN", "INDEX", "VIEW", "AS", "JOIN", "LEFT", "RIGHT", "INNER",
+	"OUTER", "ON", "GROUP", "BY", "ORDER", "HAVING", "LIMIT", "OFFSET", "UNION",
+	"ALL", "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END", "EXISTS", "DESCRIBE",
+	"SHOW", "USE", "DATABASE", "DATABASES", "TABLES", "CLUSTER", "CLUSTERS", "WITH",
+	"EXPLAIN", "FORMAT", "JSON", "TSV", "CSV", "PREPARE", "EXECUTE", "KILL", "QUERY",
+	"SYSTEM", "SELECT", "TRUNCATE", "PARTITION", "PRIMARY", "KEY", "FOREIGN",
+	"REFERENCES", "CHECK", "DEFAULT", "AUTO_INCREMENT", "ENGINE", "TYPE",
+	"TINYINT", "SMALLINT", "INT", "BIGINT", "FLOAT", "DOUBLE", "DECIMAL", "CHAR",
+	"VARCHAR", "TEXT", "BLOB", "DATE", "DATETIME", "TIMESTAMP", "BOOLEAN",
+}
+
+func (mw *MainWindow) onFormatSQL() {
+	text := mw.editor.Text
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	result := text
+	for _, kw := range sqlKeywords {
+		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(kw) + `\b`)
+		result = re.ReplaceAllString(result, kw)
+	}
+	mw.editor.SetText(result)
 }
