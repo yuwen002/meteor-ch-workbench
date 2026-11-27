@@ -100,7 +100,7 @@ func extendResultSortKeys(rows [][]any, sortColumn int, keys []resultSortKey) []
 
 // resultSortKey 将排序值的昂贵转换预计算一次，供稳定排序的比较器复用。
 type resultSortKey struct {
-	number         big.Rat
+	number         *big.Rat
 	timestampUnix  int64
 	text           string
 	timestampNanos int32
@@ -115,7 +115,11 @@ func newResultSortKey(value any) resultSortKey {
 	}
 	text := resultValueText(value)
 	key := resultSortKey{text: strings.ToLower(text)}
-	_, key.numeric = key.number.SetString(strings.TrimSpace(text))
+	number := new(big.Rat)
+	_, key.numeric = number.SetString(strings.TrimSpace(text))
+	if key.numeric {
+		key.number = number
+	}
 	if !key.numeric {
 		var timeErr error
 		var timestamp time.Time
@@ -141,7 +145,7 @@ func compareResultSortKeys(left, right resultSortKey) int {
 		return -1
 	}
 	if left.numeric && right.numeric {
-		return left.number.Cmp(&right.number)
+		return left.number.Cmp(right.number)
 	}
 	if left.timeValid && right.timeValid {
 		switch {

@@ -449,3 +449,22 @@ func TestCompareResultSortKeysPreservesTimestampInstantAndPrecision(t *testing.T
 		t.Fatalf("nanosecond precision lost: preceding instant compare = %d", got)
 	}
 }
+
+
+func TestResultSortKeyAllocatesNumericPayloadOnlyForNumbers(t *testing.T) {
+	numeric := newResultSortKey("18446744073709551615.0000000001")
+	if !numeric.numeric || numeric.number == nil {
+		t.Fatalf("numeric key = %#v, want allocated arbitrary-precision payload", numeric)
+	}
+	text := newResultSortKey("query-event-000123")
+	if text.numeric || text.number != nil {
+		t.Fatalf("text key allocated numeric payload: %#v", text)
+	}
+	timestamp := newResultSortKey("2026-11-27T10:15:30Z")
+	if timestamp.numeric || timestamp.number != nil || !timestamp.timeValid {
+		t.Fatalf("timestamp key should not allocate numeric payload: %#v", timestamp)
+	}
+	if got := compareResultSortKeys(numeric, newResultSortKey("18446744073709551615.0000000002")); got >= 0 {
+		t.Fatalf("high precision numeric comparison = %d, want less than zero", got)
+	}
+}
