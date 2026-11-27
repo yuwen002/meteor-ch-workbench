@@ -8,8 +8,8 @@ import (
 	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/pointer"
-	"gioui.org/op/clip"
 	"gioui.org/layout"
+	"gioui.org/op/clip"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -32,8 +32,7 @@ func (s *workspace) openContextMenu(kind, database, object string, row, column i
 }
 
 func (s *workspace) watchSecondaryClick(gtx layout.Context, tag *rightClickTag, onClick func()) {
-	// Gio 通过当前裁剪区域确定指针命中范围，再由 event.Op 注册事件目标。
-	// pointer.InputOp 并非当前 Gio 版本提供的 API。
+	// 将事件目标限制在当前控件的可见区域内，避免右键命中整块父容器。
 	area := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	event.Op(gtx.Ops, tag)
 	area.Pop()
