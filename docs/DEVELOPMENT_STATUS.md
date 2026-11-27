@@ -3,7 +3,7 @@
 > 本文是当前开发状态的快速入口，按代码是否接入、是否测试、是否完成桌面验收分开记录。
 > 最后更新：2026-11-27
 > 当前分支：`feat/native-gui-foundation`
-> 最近代码变更基线：Explorer 选中状态已抽取；Run `45857969115` 的 Linux `go test ./...` 发现 `sql_tabs_test.go` 仍引用旧 workspace 字段，已在提交 `eb3f575` 修正，当前 head 的 CI Run `45858167585` 排队中。
+> 最近代码变更基线：右键复制 / INSERT 回归修复提交 `1a004e64` 对应 CI Run [45981715927](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45981715927) 已通过 Linux / Windows 检查；当前继续迁移建表 DDL 生成核心。
 >
 > **统计规则：**「已实现」只表示代码路径已完成并接入，不自动等于本地测试通过或真实桌面验收通过。没有对应证据的项目不得标记为验收完成。本文不使用容易失真的单一迁移百分比。
 
@@ -464,3 +464,12 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 修复提交：`feb4272670188076aed913e46c006ff3470ee3b0`（修复结果右键测试状态初始化）。
 - 本地未执行 Go 测试、vet、gofmt 或 build；等待新 head 的 Linux / Windows CI 验证。
 - 后续迁移仍按旧版 `docs/FEATURES.md` 对照：优先补齐数据库 / 表的可视化建表、编辑和删除确认，再恢复结果表头定位键、SQL 投影隐藏及服务端筛选 / 排序等行为。
+
+## 13. 2026-11-27：迁入建表 DDL 生成核心
+
+- 新增 `internal/gui/gioapp/app/create_table_ddl.go`，建立 Gio 建表定义模型与纯函数 SQL 生成器；覆盖数据库 / 表名反引号转义、列名转义、默认表达式、列注释与表注释转义、引擎、ORDER BY、PARTITION BY、PRIMARY KEY、SETTINGS。
+- 对 MergeTree 系列默认补充 `ORDER BY tuple()`；非 MergeTree 引擎不擅自添加排序键。
+- 增加数据库 / 表名 / 列定义校验和重复列名检查，避免空定义或重复列直接生成 DDL。
+- 数据库右键「创建表 SQL」已改为调用新生成器，生成可编辑 SQL 到编辑器；这只是迁移了 DDL 核心和 SQL 模板入口，**尚未实现旧版可视化建表表单、列增删排序和实时预览 UI**。
+- 新增 `create_table_ddl_test.go`，覆盖复杂标识符、注释引号、默认值、MergeTree 默认排序、Memory 引擎和无效定义。
+- 代码提交：`996fa868`（DDL 核心）、`de5d867c`（测试）、`c2890204`（右键入口接入）。当前最新 head 的 CI 尚待检查；本轮未执行本地 gofmt / go test / go vet / build，也未进行真实桌面 GUI 验收。
