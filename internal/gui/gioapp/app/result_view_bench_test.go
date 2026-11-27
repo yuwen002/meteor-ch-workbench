@@ -160,3 +160,25 @@ func BenchmarkBuildResultSortKeys(b *testing.B) {
 }
 
 var benchmarkResultSortKeyCountSink int
+
+
+// BenchmarkBuildResultRowViewTextNumericFilter measures numeric comparisons over
+// ordinary text columns, where the numeric prefilter should skip big.Rat parsing.
+func BenchmarkBuildResultRowViewTextNumericFilter(b *testing.B) {
+	for _, rowCount := range []int{10_000, 100_000, 500_000} {
+		b.Run(fmt.Sprintf("rows-%d", rowCount), func(b *testing.B) {
+			rows := make([][]any, rowCount)
+			for i := range rows {
+				rows[i] = []any{fmt.Sprintf("query-event-%06d", i), "event"}
+			}
+			view := make([]resultRowView, 0, rowCount)
+			filters := []string{">=100", ""}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				view = buildResultRowViewWithPreparedSortKeysInto(view[:0], rows, "", filters, -1, false, nil)
+			}
+			benchmarkResultSortKeyCountSink = len(view)
+		})
+	}
+}

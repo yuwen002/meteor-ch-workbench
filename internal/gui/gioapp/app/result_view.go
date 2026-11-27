@@ -402,7 +402,7 @@ func (filter preparedResultColumnFilter) matches(value any) bool {
 			return false
 		}
 		if filter.rangeNumeric {
-			actualNumber, ok := new(big.Rat).SetString(strings.TrimSpace(actual))
+			actualNumber, ok := parseResultFilterNumber(actual)
 			return ok && actualNumber.Cmp(filter.lowerNumber) >= 0 && actualNumber.Cmp(filter.upperNumber) <= 0
 		}
 		actualTime, err := parseResultTime(actual)
@@ -418,7 +418,7 @@ func (filter preparedResultColumnFilter) matches(value any) bool {
 	if filter.operator == "=" || filter.operator == "!=" {
 		matched := strings.EqualFold(actual, filter.expected)
 		if filter.number != nil {
-			if actualNumber, ok := new(big.Rat).SetString(strings.TrimSpace(actual)); ok {
+			if actualNumber, ok := parseResultFilterNumber(actual); ok {
 				matched = actualNumber.Cmp(filter.number) == 0
 			}
 		} else if filter.timeValid {
@@ -435,7 +435,7 @@ func (filter preparedResultColumnFilter) matches(value any) bool {
 		return false
 	}
 	if filter.number != nil {
-		if actualNumber, ok := new(big.Rat).SetString(strings.TrimSpace(actual)); ok {
+		if actualNumber, ok := parseResultFilterNumber(actual); ok {
 			comparison := actualNumber.Cmp(filter.number)
 			switch filter.operator {
 			case ">":
@@ -466,6 +466,15 @@ func (filter preparedResultColumnFilter) matches(value any) bool {
 		}
 	}
 	return false
+}
+
+// parseResultFilterNumber 在进入高精度解析前排除普通文本，避免筛选时为非数值单元格创建 big.Rat。
+func parseResultFilterNumber(value string) (*big.Rat, bool) {
+	value = strings.TrimSpace(value)
+	if !isResultSortNumberCandidate(value) {
+		return nil, false
+	}
+	return new(big.Rat).SetString(value)
 }
 
 // resultValueMatchesColumnCondition 保留单值调用入口，统一使用预解析条件。

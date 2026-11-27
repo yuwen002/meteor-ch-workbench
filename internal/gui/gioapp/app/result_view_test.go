@@ -2,6 +2,7 @@ package app
 
 import (
 	"math/big"
+	"strings"
 	"testing"
 
 	"gioui.org/layout"
@@ -218,7 +219,10 @@ func TestPreparedResultColumnFiltersKeepTextNumericTimeAndNullSemantics(t *testi
 		{name: "text contains", value: "ClickHouse Server", expression: "click", want: true},
 		{name: "text not contains", value: "ClickHouse", expression: "!mysql", want: true},
 		{name: "numeric greater", value: int64(12), expression: ">=10", want: true},
+		{name: "numeric text greater", value: "query-event-12", expression: ">=10", want: false},
+		{name: "numeric text equality falls back to text", value: "query-event-12", expression: "=query-event-12", want: true},
 		{name: "numeric between", value: int64(12), expression: "between:10..15", want: true},
+		{name: "numeric between rejects ordinary text", value: "query-event-12", expression: "between:10..15", want: false},
 		{name: "numeric reversed range", value: int64(12), expression: "between:15..10", want: false},
 		{name: "timestamp greater", value: "2026-11-26 12:00:00", expression: ">2026-11-26 11:00:00", want: true},
 		{name: "timestamp between", value: "2026-11-26", expression: "between:2026-11-25..2026-11-27", want: true},
@@ -506,6 +510,26 @@ func TestIsResultSortNumberCandidate(t *testing.T) {
 			if parses != key.numeric {
 				t.Errorf("numeric candidate %q parse=%v but sort key numeric=%v", tc.value, parses, key.numeric)
 			}
+		}
+	}
+}
+
+
+func TestParseResultFilterNumberPreservesBigRatSyntax(t *testing.T) {
+	for _, value := range []string{"42", "-12.50", "1/3", "1.2e+10", "0xFF", "0b1010", "0o17", "0x10/0x2", "1_000", " 42 "} {
+		got, ok := parseResultFilterNumber(value)
+		want, wantOK := new(big.Rat).SetString(strings.TrimSpace(value))
+		if ok != wantOK {
+			t.Errorf("parseResultFilterNumber(%q) ok=%v, want %v", value, ok, wantOK)
+			continue
+		}
+		if ok && got.Cmp(want) != 0 {
+			t.Errorf("parseResultFilterNumber(%q) = %s, want %s", value, got, want)
+		}
+	}
+	for _, value := range []string{"query-event-42", "2026-11-27T10:00:00Z", "NULL", ""} {
+		if got, ok := parseResultFilterNumber(value); ok || got != nil {
+			t.Errorf("parseResultFilterNumber(%q) = (%v, %v), want (nil, false)", value, got, ok)
 		}
 	}
 }
