@@ -292,18 +292,26 @@ type preparedResultColumnFilter struct {
 
 // prepareResultColumnFilters 在扫描结果行之前解析列条件，避免逐行重复拆分表达式。
 func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
-	prepared := make([]preparedResultColumnFilter, 0, len(filters))
+	// 没有启用列条件时直接返回 nil，避免每次刷新结果视图都分配与列数等长的空条件切片。
 	for _, raw := range filters {
+		if strings.TrimSpace(raw) != "" {
+			goto hasActiveFilter
+		}
+	}
+	return nil
+
+hasActiveFilter:
+	prepared := make([]preparedResultColumnFilter, len(filters))
+	for column, raw := range filters {
 		expression := strings.TrimSpace(raw)
 		if expression == "" {
-			prepared = append(prepared, preparedResultColumnFilter{})
 			continue
 		}
 		condition := preparedResultColumnFilter{active: true, valid: true, expected: expression}
 		if strings.EqualFold(expression, "is:null") || strings.EqualFold(expression, "is:not-null") {
 			condition.kind = resultColumnFilterNull
 			condition.operator = strings.ToLower(expression)
-			prepared = append(prepared, condition)
+			prepared[column] = condition
 			continue
 		}
 		if strings.HasPrefix(strings.ToLower(expression), "between:") {
@@ -328,7 +336,7 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 				}
 				condition.valid = condition.rangeNumeric || condition.rangeTime
 			}
-			prepared = append(prepared, condition)
+			prepared[column] = condition
 			continue
 		}
 		condition.kind = resultColumnFilterContains
@@ -355,7 +363,7 @@ func prepareResultColumnFilters(filters []string) []preparedResultColumnFilter {
 				condition.valid = condition.timeValid || condition.operator == "=" || condition.operator == "!="
 			}
 		}
-		prepared = append(prepared, condition)
+		prepared[column] = condition
 	}
 	return prepared
 }
