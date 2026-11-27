@@ -389,14 +389,21 @@ func resultRowMatchesFilter(row []any, filter string) bool {
 	return resultRowMatchesLowerFilter(row, strings.ToLower(filter))
 }
 
+// resultFilterText 保留结果筛选的既有格式语义，同时避免对原生 string 调用 fmt.Sprint。
+func resultFilterText(value any) string {
+	if value == nil {
+		return "NULL"
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
 // resultRowMatchesLowerFilter 接收已标准化的关键词，避免每一行重复转换筛选词大小写。
 func resultRowMatchesLowerFilter(row []any, needle string) bool {
 	for _, value := range row {
-		text := "NULL"
-		if value != nil {
-			text = fmt.Sprint(value)
-		}
-		if strings.Contains(strings.ToLower(text), needle) {
+		if strings.Contains(strings.ToLower(resultFilterText(value)), needle) {
 			return true
 		}
 	}

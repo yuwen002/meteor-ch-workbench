@@ -241,3 +241,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 恢复 `BenchmarkExtendResultSortKeysReusesCache`，覆盖 1 万、10 万和 50 万行，观察已有结果集未增长时排序键缓存扩展是否产生额外分配。
 - 与结果视图筛选 / 排序基准共用同一套合成数据生成器，数据准备在计时区间外完成。
 - 本地基准尚未执行；性能结论仍需在目标开发机运行 `go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(BuildResultRowViewLargeResult|ExtendResultSortKeysReusesCache)' -benchmem` 获取。
+
+
+### 2026-11-27：减少全局结果筛选的字符串转换开销
+
+- 全局关键字筛选新增 `resultFilterText`：对原生 `string` 直接读取，避免每个字符串单元格都经过 `fmt.Sprint`；数字及其他类型仍使用原有格式化回退。
+- `nil` 仍显示为 `NULL`，`[]byte` 继续保留 `fmt.Sprint` 的 `[97 98]` 形式，避免改变既有筛选结果。
+- 新增格式语义测试，覆盖字符串、数值、NULL 和字节切片；现有 1 万 / 10 万 / 50 万行筛选基准可用于后续量化。
+- 当前尚未运行本地测试或性能基准；需要最新 head 的 Linux / Windows CI 验证，且不能据此提前宣称筛选性能提升幅度。

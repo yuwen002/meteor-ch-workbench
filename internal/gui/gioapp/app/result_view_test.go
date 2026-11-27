@@ -231,8 +231,28 @@ func TestPreparedResultColumnFiltersKeepTextNumericTimeAndNullSemantics(t *testi
 	}
 }
 
+func TestResultFilterTextPreservesFormatting(t *testing.T) {
+	cases := []struct {
+		name string
+		value any
+		want string
+	}{
+		{name: "string", value: "ClickHouse", want: "ClickHouse"},
+		{name: "number", value: int64(42), want: "42"},
+		{name: "null", value: nil, want: "NULL"},
+		{name: "byte slice", value: []byte("ab"), want: "[97 98]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resultFilterText(tc.value); got != tc.want {
+				t.Fatalf("resultFilterText(%#v) = %q, want %q", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResultRowMatchesLowerFilter(t *testing.T) {
-	row := []any{"ClickHouse", int64(42), nil}
+	row := []any{"ClickHouse", int64(42), nil, []byte("ab")}
 	if !resultRowMatchesLowerFilter(row, "click") {
 		t.Fatal("case-insensitive keyword should match string values")
 	}
@@ -241,6 +261,9 @@ func TestResultRowMatchesLowerFilter(t *testing.T) {
 	}
 	if !resultRowMatchesLowerFilter(row, "null") {
 		t.Fatal("keyword should match NULL values")
+	}
+	if !resultRowMatchesLowerFilter(row, "[97 98]") {
+		t.Fatal("byte slices should retain fmt.Sprint matching semantics")
 	}
 	if resultRowMatchesLowerFilter(row, "missing") {
 		t.Fatal("unmatched keyword should not match the row")
