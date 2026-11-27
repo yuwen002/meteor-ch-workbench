@@ -115,10 +115,12 @@ func newResultSortKey(value any) resultSortKey {
 	}
 	text := resultValueText(value)
 	key := resultSortKey{text: strings.ToLower(text)}
-	number := new(big.Rat)
-	_, key.numeric = number.SetString(strings.TrimSpace(text))
-	if key.numeric {
-		key.number = number
+	if isResultSortNumberCandidate(text) {
+		number := new(big.Rat)
+		_, key.numeric = number.SetString(strings.TrimSpace(text))
+		if key.numeric {
+			key.number = number
+		}
 	}
 	if !key.numeric {
 		var timeErr error
@@ -131,6 +133,24 @@ func newResultSortKey(value any) resultSortKey {
 		}
 	}
 	return key
+}
+
+// isResultSortNumberCandidate 先排除普通文本和时间字符串，避免为非数值创建 big.Rat。
+func isResultSortNumberCandidate(value string) bool {
+	hasDigit := false
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c >= '0' && c <= '9' {
+			hasDigit = true
+			continue
+		}
+		switch c {
+		case '+', '-', '.', '/', 'e', 'E':
+		default:
+			return false
+		}
+	}
+	return hasDigit
 }
 
 // compareResultSortKeys 保持原有排序语义：NULL 置底，随后依次尝试数值、时间和不区分大小写文本。

@@ -468,3 +468,22 @@ func TestResultSortKeyAllocatesNumericPayloadOnlyForNumbers(t *testing.T) {
 		t.Fatalf("high precision numeric comparison = %d, want less than zero", got)
 	}
 }
+
+
+func TestIsResultSortNumberCandidate(t *testing.T) {
+	cases := []struct { value string; want bool }{
+		{value: "42", want: true},
+		{value: "-12.50", want: true},
+		{value: "1/3", want: true},
+		{value: "1.2e+10", want: true},
+		{value: "query-event-42", want: false},
+		{value: "2026-11-27T10:00:00Z", want: false},
+		{value: "", want: false},
+		{value: "---", want: false},
+	}
+	for _, tc := range cases {
+		if got := isResultSortNumberCandidate(tc.value); got != tc.want {
+			t.Errorf("isResultSortNumberCandidate(%q) = %v, want %v", tc.value, got, tc.want)
+		}
+	}
+}
