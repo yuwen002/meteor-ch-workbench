@@ -343,7 +343,7 @@ func prepareResultColumnFilters(filters []string) []indexedResultColumnFilter {
 				}
 				condition.valid = condition.rangeNumeric || condition.rangeTime
 			}
-			prepared[column] = condition
+			prepared = append(prepared, indexedResultColumnFilter{column: column, filter: condition})
 			continue
 		}
 		condition.kind = resultColumnFilterContains
@@ -370,7 +370,7 @@ func prepareResultColumnFilters(filters []string) []indexedResultColumnFilter {
 				condition.valid = condition.timeValid || condition.operator == "=" || condition.operator == "!="
 			}
 		}
-		prepared[column] = condition
+		prepared = append(prepared, indexedResultColumnFilter{column: column, filter: condition})
 	}
 	return prepared
 }
@@ -496,7 +496,7 @@ func preparedResultColumnFilterFor(expression string) preparedResultColumnFilter
 	if len(filters) == 0 {
 		return preparedResultColumnFilter{valid: true, kind: resultColumnFilterContains, expectedLower: ""}
 	}
-	return filters[0]
+	return filters[0].filter
 }
 
 func resultValueMatchesFilter(value any, filter string) bool {
