@@ -1,0 +1,44 @@
+main.go
+  h_a3f313f3d96276 4-5,7,11-13,16-19
+.trae/rules/project_rules.md
+  h_a3f313f3d96276 3-5,9-10,18-20,24-25,28,36-50,55-58,64,72,74
+internal/gui/fyneapp/connection_dialog.go
+  h_a3f313f3d96276 1-288
+.trae/rules/roadmap.md
+  h_a3f313f3d96276 25,1075-1142,1150
+docs/migration/FYNE_PLAN.md
+  h_a3f313f3d96276 1-150
+docs/CODE_INDEX.md
+  h_a3f313f3d96276 4,12-13,15-48,51,54-59,64-130,134,136,138-146,149-173,175,177,179-183,185-186,188-189,191-196,199-200,202-203,205-206,208-209,211,213,215-219,221-222,224-225,227-228,230-231,233-234,236-237,239,241,243-258,261,265,267-272,274,276
+README.md
+  h_a3f313f3d96276 5,10-12,14-23,30-49,52-53,63,69,72-76,79-81,88-95,101,103-127,134,136,138,140
+docs/FEATURES.md
+  h_a3f313f3d96276 3-6,9-11,13-14,18-20,22,24-32,34,36-43,45,47,49-52,54,56-57,59,61-62,64,66,70,77,80,84,88,90,95-105
+internal/app/app.go
+  h_a3f313f3d96276 1,15-20,23,35,37,55-57,59-62,67-68,72-73,75,77,80-82,109,129,132,137,139,192-233,235-236
+internal/gui/fyneapp/main_window.go
+  h_a3f313f3d96276 1-989
+internal/gui/fyneapp/app_state.go
+  h_a3f313f3d96276 1-13
+docs/API.md
+  h_a3f313f3d96276 3-4,6-8,372,680
+internal/gui/fyneapp/side_panels.go
+  h_a3f313f3d96276 1-251
+internal/gui/fyneapp/tabs.go
+  h_a3f313f3d96276 1-137
+internal/gui/fyneapp/result_table.go
+  h_a3f313f3d96276 1-304
+internal/gui/fyneapp/tree_wrapper.go
+  h_a3f313f3d96276 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "1bf6430656170e39e4af60c2856db02c04501005",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
