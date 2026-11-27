@@ -59,3 +59,35 @@ func BenchmarkExtendResultSortKeysReusesCache(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkResultValueText compares the native string fast path with fmt.Sprint.
+// It isolates conversion cost; end-to-end filter benchmarks remain the measure of UI-path impact.
+func BenchmarkResultValueText(b *testing.B) {
+	values := []struct {
+		name  string
+		value any
+	}{
+		{name: "string/fast-path", value: "clickhouse-event-name"},
+		{name: "string/fmt-sprint", value: "clickhouse-event-name"},
+		{name: "int64/fallback", value: int64(123456789)},
+		{name: "nil/null", value: nil},
+		{name: "bytes/fallback", value: []byte("clickhouse")},
+	}
+	for _, item := range values {
+		b.Run(item.name, func(b *testing.B) {
+			b.ReportAllocs()
+			var result string
+			b.ResetTimer()
+			for b.Loop() {
+				if item.name == "string/fmt-sprint" {
+					result = fmt.Sprint(item.value)
+				} else {
+					result = resultValueText(item.value)
+				}
+			}
+			benchmarkResultValueTextSink = result
+		})
+	}
+}
+
+var benchmarkResultValueTextSink string

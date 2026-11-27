@@ -257,3 +257,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 全局关键字筛选、列条件筛选、单值筛选以及排序键 / 通用比较共用该转换入口，避免字符串值在这些路径重复经过格式化接口。
 - 保持 NULL、字节切片、数值和时间的原有文本格式；新增测试验证排序键和列筛选仍保持大小写不敏感语义。
 - 本次只消除字符串的格式化包装开销，不增加逐单元格缓存；尚无本地性能测量，等待双平台 CI。
+
+
+### 2026-11-27：补充结果值转换微基准
+
+- 新增 `BenchmarkResultValueText`，单独比较原生字符串快路径与 `fmt.Sprint`，并覆盖 int64、NULL 和 `[]byte` 回退路径。
+- 该基准只隔离文本转换成本；整体筛选收益仍应结合 `BenchmarkBuildResultRowViewLargeResult` 的 1 万 / 10 万 / 50 万行结果判断，不能用微基准代替端到端测量。
+- 推荐命令：`go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(ResultValueText|BuildResultRowViewLargeResult)' -benchmem`。
+- 本轮没有本地执行基准，尚无耗时或分配数结论。
