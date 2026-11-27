@@ -281,3 +281,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 新增 BenchmarkBuildResultSortKeys，分别覆盖 int64、Decimal 字符串、时间字符串、普通文本和 NULL，规模为 1 万 / 10 万 / 50 万行；每轮重新构建缓存，将解析和分配纳入计时。
 - 该基准用于识别不同 ClickHouse 列类型的排序键构建成本，不改变排序语义或缓存策略。CI 不执行性能基准，本地结果尚未取得。
 - 推荐命令：go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(BuildResultSortKeys|ExtendResultSortKeysReusesCache)' -benchmem。
+
+
+### 2026-11-27：减少普通文本排序键的时间解析开销
+
+- `parseResultTime` 现在先检查固定宽度的 `YYYY-MM-DD` 日期前缀；普通文本、数字和空值格式不会再尝试四种时间布局。
+- 对不支持的时间文本复用包级错误值，避免每个普通文本排序键都构造新的错误对象；日期前缀通过后仍按原有四种布局解析，时间识别和排序规则不变。
+- 新增测试覆盖普通文本 / 数字 / 空字符串快速拒绝，以及日期、常规时间、纳秒时间和 RFC3339 时间格式。
+- 这项改动针对首次排序键构建中的非时间列解析路径；CI 只验证正确性和构建，实际耗时 / 分配收益仍需在开发机运行 `BenchmarkBuildResultSortKeys` 后确认。

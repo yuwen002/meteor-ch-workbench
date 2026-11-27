@@ -394,3 +394,25 @@ func TestBuildResultRowViewIntoReusesBackingArray(t *testing.T) {
 		t.Fatalf("building the view mutated source rows: %#v", rows)
 	}
 }
+
+
+func TestParseResultTimeFastRejectsNonDateText(t *testing.T) {
+	for _, value := range []string{"query-event-000123", "123456789", "", "2026/11/27 10:00:00", " 2026-11-27"} {
+		if _, err := parseResultTime(value); err == nil {
+			t.Errorf("parseResultTime(%q) should reject unsupported prefix", value)
+		}
+	}
+}
+
+func TestParseResultTimeAcceptsSupportedDateLayouts(t *testing.T) {
+	for _, value := range []string{
+		"2026-11-27",
+		"2026-11-27 10:15:30",
+		"2026-11-27 10:15:30.123456789",
+		"2026-11-27T10:15:30Z",
+	} {
+		if _, err := parseResultTime(value); err != nil {
+			t.Errorf("parseResultTime(%q) returned error: %v", value, err)
+		}
+	}
+}

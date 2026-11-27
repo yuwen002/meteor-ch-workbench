@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -503,14 +504,35 @@ func compareResultNumbers(left, right string) (int, bool) {
 	return leftNumber.Cmp(rightNumber), true
 }
 
+var errUnsupportedResultTime = errors.New("not a supported timestamp")
+
+// hasResultDatePrefix avoids trying four time layouts for ordinary text and numeric values.
+// Every supported layout starts with a fixed-width YYYY-MM-DD date.
+func hasResultDatePrefix(value string) bool {
+	if len(value) < 10 || value[4] != '-' || value[7] != '-' {
+		return false
+	}
+	return value[0] >= '0' && value[0] <= '9' &&
+		value[1] >= '0' && value[1] <= '9' &&
+		value[2] >= '0' && value[2] <= '9' &&
+		value[3] >= '0' && value[3] <= '9' &&
+		value[5] >= '0' && value[5] <= '9' &&
+		value[6] >= '0' && value[6] <= '9' &&
+		value[8] >= '0' && value[8] <= '9' &&
+		value[9] >= '0' && value[9] <= '9'
+}
+
 func parseResultTime(value string) (time.Time, error) {
+	if !hasResultDatePrefix(value) {
+		return time.Time{}, errUnsupportedResultTime
+	}
 	layouts := []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05", "2006-01-02"}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, value); err == nil {
 			return parsed, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("not a supported timestamp")
+	return time.Time{}, errUnsupportedResultTime
 }
 
 // resultColumnLabel 显示当前列的排序方向。
