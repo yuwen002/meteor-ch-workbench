@@ -139,3 +139,7 @@ cmd/meteor-ch-gio
 ### 结果表格可见区缓存
 
 - Gio 垂直结果列表布局完成后读取 `Position.First/Count`，仅保留可见行及上下各 2 行的单元格点击控件和格式化文本缓存。
+
+
+- `internal/gui/gioapp/app/result_view.go`：筛选、列条件解析、排序键缓存与行索引视图；`buildResultRowViewWithPreparedSortKeysInto` 复用调用方提供的索引切片，减少重复筛选 / 排序时的整表索引分配。
+- `internal/gui/gioapp/app/result_view_bench_test.go`：覆盖 1 万、10 万和 50 万行的全局筛选及组合筛选 / 排序基准，使用 `-benchmem` 观察时间和分配量。

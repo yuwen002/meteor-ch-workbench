@@ -461,3 +461,10 @@ ClickHouse 官方驱动可以保留为基础设施依赖；旧 internal/clickhou
 
 - 结果行由 Gio `widget.List` 按视口布局；单元格交互控件和格式化文本缓存只保留列表当前可见范围及上下各 2 行的 overscan。
 - 缓存裁剪在 `List.Layout` 返回后执行，因为 `Position.First/Count` 在布局过程中更新。筛选 / 排序仍重建完整展示索引，是独立的后续性能方向。
+
+
+### 结果视图索引复用（2026-11-27）
+
+- 结果视图刷新复用已有 `[]resultRowView` 容量，降低重复筛选 / 排序时的索引切片分配；排序键仍按当前列缓存并只为新增结果行扩展。
+- 基准覆盖 1 万、10 万、50 万行的全局筛选与组合筛选 / 排序。尚未提供本地基准实测数字，需在开发机通过 `go test ./internal/gui/gioapp/app -run '^$' -bench BenchmarkBuildResultRowViewLargeResult -benchmem` 获取。
+- 此优化只减少展示索引的重复分配，不减少全量扫描和排序的 CPU 成本，也不代表 50 万行真实 GUI 渲染已验收。

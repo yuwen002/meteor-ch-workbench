@@ -32,10 +32,16 @@ func buildResultRowViewWithColumnFilters(rows [][]any, filter string, columnFilt
 // buildResultRowViewWithPreparedSortKeys 使用调用方维护的排序键缓存构建展示索引。
 // 缓存只包含当前排序列的键，不复制原始结果行。
 func buildResultRowViewWithPreparedSortKeys(rows [][]any, filter string, columnFilters []string, sortColumn int, descending bool, sortKeys []resultSortKey) []resultRowView {
+	return buildResultRowViewWithPreparedSortKeysInto(nil, rows, filter, columnFilters, sortColumn, descending, sortKeys)
+}
+
+// buildResultRowViewWithPreparedSortKeysInto 在调用方提供的索引切片上构建视图。
+// Gio 结果列表在同一事件循环内消费该切片，因此刷新时可以安全复用其底层数组。
+func buildResultRowViewWithPreparedSortKeysInto(dst []resultRowView, rows [][]any, filter string, columnFilters []string, sortColumn int, descending bool, sortKeys []resultSortKey) []resultRowView {
 	filter = strings.TrimSpace(filter)
 	filterNeedle := strings.ToLower(filter)
 	preparedColumnFilters := prepareResultColumnFilters(columnFilters)
-	view := make([]resultRowView, 0, len(rows))
+	view := dst[:0]
 	for i, row := range rows {
 		if filterNeedle != "" && !resultRowMatchesLowerFilter(row, filterNeedle) {
 			continue

@@ -300,3 +300,35 @@ func TestPruneResultCellCachesHandlesEmptyAndOutOfRangePositions(t *testing.T) {
 		t.Fatalf("empty out-of-range viewport should clear caches, got %d/%d", len(clicks), len(texts))
 	}
 }
+
+
+// TestBuildResultRowViewIntoReusesBackingArray verifies refreshes reuse the index storage.
+func TestBuildResultRowViewIntoReusesBackingArray(t *testing.T) {
+	rows := [][]any{{"alpha", 3}, {"beta", 1}, {"gamma", 2}}
+	storage := make([]resultRowView, 0, len(rows))
+	storage = append(storage, resultRowView{Index: 99})
+	base := &storage[:cap(storage)][0]
+
+	view := buildResultRowViewWithPreparedSortKeysInto(storage[:0], rows, "a", nil, -1, false, nil)
+	if len(view) != 3 {
+		t.Fatalf("filtered view length = %d, want 3", len(view))
+	}
+	if &view[:cap(view)][0] != base {
+		t.Fatal("view refresh allocated a new backing array despite sufficient capacity")
+	}
+
+	view = buildResultRowViewWithPreparedSortKeysInto(view[:0], rows, "beta", nil, -1, false, nil)
+	if len(view) != 1 || view[0].Index != 1 {
+		t.Fatalf("narrowed view = %#v, want source row 1", view)
+	}
+	view = buildResultRowViewWithPreparedSortKeysInto(view[:0], rows, "", nil, 1, false, extendResultSortKeys(rows, 1, nil))
+	if len(view) != 3 || view[0].Index != 1 || view[1].Index != 2 || view[2].Index != 0 {
+		t.Fatalf("expanded sorted view = %#v, want [1 2 0]", view)
+	}
+	if &view[:cap(view)][0] != base {
+		t.Fatal("expanding the view should reuse its retained capacity")
+	}
+	if rows[0][0] != "alpha" || rows[1][0] != "beta" || rows[2][0] != "gamma" {
+		t.Fatalf("building the view mutated source rows: %#v", rows)
+	}
+}
