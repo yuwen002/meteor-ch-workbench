@@ -225,3 +225,15 @@ func (s *workspace) setResultSort(column int, descending bool) {
 	s.resultViewDirty = true
 	s.queryRows.Position = layout.Position{}
 }
+
+func pruneRightClickTags(tags map[int64]*rightClickTag, position layout.Position, rowCount, overscan int) {
+	if overscan < 0 { overscan = 0 }
+	first := position.First - overscan
+	if first < 0 { first = 0 }
+	last := position.First + position.Count + overscan
+	if last > rowCount { last = rowCount }
+	for key := range tags {
+		row := int(uint32(uint64(key) >> 32))
+		if row < first || row >= last { delete(tags, key) }
+	}
+}
