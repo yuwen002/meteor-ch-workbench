@@ -80,6 +80,10 @@ func TestCompareResultSortKeysMatchesExistingSemantics(t *testing.T) {
 		"alpha",
 		"ALPHA",
 		"beta",
+		"ÄBC",
+		"äbc",
+		"Straße",
+		"STRASSE",
 	}
 	keys := make([]resultSortKey, len(values))
 	for i, value := range values {
@@ -254,8 +258,12 @@ func TestResultValueTextPreservesFormatting(t *testing.T) {
 
 func TestResultValueTextUsedBySortKeysAndColumnFilters(t *testing.T) {
 	key := newResultSortKey("MiXeD")
-	if key.text != "mixed" {
-		t.Fatalf("sort key text = %q, want mixed", key.text)
+	if key.text != "MiXeD" || key.textLower != "" {
+		t.Fatalf("ASCII sort key should retain original text without a lowercase copy: %#v", key)
+	}
+	unicodeKey := newResultSortKey("ÄBC")
+	if unicodeKey.textLower != "äbc" {
+		t.Fatalf("Unicode sort key lowercase cache = %q, want äbc", unicodeKey.textLower)
 	}
 	if !resultValueMatchesColumnCondition("MiXeD", "mixed") {
 		t.Fatal("column contains filter should match string values case-insensitively")
@@ -477,6 +485,11 @@ func TestIsResultSortNumberCandidate(t *testing.T) {
 		{value: "-12.50", want: true},
 		{value: "1/3", want: true},
 		{value: "1.2e+10", want: true},
+		{value: "0xFF", want: true},
+		{value: "0b1010", want: true},
+		{value: "0o17", want: true},
+		{value: "0x10/0x2", want: true},
+		{value: "1_000", want: true},
 		{value: "query-event-42", want: false},
 		{value: "2026-11-27T10:00:00Z", want: false},
 		{value: "", want: false},
