@@ -307,6 +307,15 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 数值行会额外产生一个 big.Rat 对象分配；是否改善整体内存/GC，需要结合实际数据类型比例及开发机基准验证，不能只依据结构体大小判断。
 
 
+### 2026-11-27：减少 ASCII 排序键的小写字符串分配
+
+- 排序键不再为 ASCII 文本创建 `strings.ToLower` 副本；比较时按字节执行 ASCII 大小写折叠，避免每行额外保留一份小写字符串。
+- 非 ASCII 文本仍在排序键构建时缓存 `strings.ToLower` 结果，比较阶段复用缓存，保持既有 Unicode 大小写不敏感语义；混合 ASCII / Unicode 比较也不创建临时字符串。
+- 同步扩展数值候选字符预检，覆盖 `big.Rat.SetString` 支持的十六进制 / 二进制 / 八进制前缀、分数和下划线形式，避免性能预检改变原有数值排序识别范围；最终合法性仍由 `SetString` 判断。
+- 新增 ASCII 与 Unicode 排序一致性测试，以及 `0xFF`、`0b1010`、`0o17`、带前缀分数和下划线数值回归用例。
+- 尚未执行本地 Go 测试 / 基准；等待最新 head 的 Linux / Windows CI 验证。
+
+
 ### 2026-11-27：避免非数值排序键的无效数值分配
 
 - 对按需分配的 big.Rat 再增加轻量字符预检：普通文本和 ISO 时间字符串不再进入 big.Rat.SetString，也不会创建临时 big.Rat 对象。
