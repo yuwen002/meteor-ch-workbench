@@ -172,32 +172,60 @@ func (s *workspace) contextRowTSV() string {
 	if menu.row < 0 || menu.row >= len(s.resultView) { return "" }
 	rowIndex := s.resultView[menu.row].Index
 	if rowIndex < 0 || rowIndex >= len(s.queryData) { return "" }
-	values := make([]string, len(s.queryColumns))
-	for i := range values { if i < len(s.queryData[rowIndex]) { values[i] = resultCellRawValue(s.queryData[rowIndex][i]) } }
+	indexes := visibleResultColumnIndexes(s.hiddenResultColumns, len(s.queryColumns))
+	values := make([]string, 0, len(indexes))
+	for _, column := range indexes {
+		if column < len(s.queryData[rowIndex]) { values = append(values, resultCellRawValue(s.queryData[rowIndex][column])) } else { values = append(values, "") }
+	}
 	return strings.Join(values, "\t")
 }
 
 func (s *workspace) contextInsertSQL(all bool) string {
 	menu := s.contextMenu
 	if menu.row < 0 || menu.row >= len(s.resultView) { return "" }
+	indexes := visibleResultColumnIndexes(s.hiddenResultColumns, len(s.queryColumns))
+	if len(indexes) == 0 { return "" }
 	start, end := menu.row, menu.row+1
 	if all { start, end = 0, len(s.resultView) }
-	columns := make([]string, len(s.queryColumns))
-	for i, col := range s.queryColumns { columns[i] = "`" + strings.ReplaceAll(col.Name, "`", "``") + "`" }
+	columns := make([]string, 0, len(indexes))
+	for _, index := range indexes { columns = append(columns, quoteSQLIdentifier(s.queryColumns[index].Name)) }
+	target := resultInsertTarget(s.selectedDatabase, s.selectedTable)
 	var b strings.Builder
-	fmt.Fprintf(&b, "INSERT INTO `table_name` (%s) VALUES\n", strings.Join(columns, ", "))
+	fmt.Fprintf(&b, "INSERT INTO %s (%s) VALUES\n", target, strings.Join(columns, ", "))
 	wroteRow := false
 	for i := start; i < end; i++ {
 		rowIndex := s.resultView[i].Index
 		if rowIndex < 0 || rowIndex >= len(s.queryData) { continue }
-		values := make([]string, len(s.queryColumns))
-		for col := range values { if col < len(s.queryData[rowIndex]) { values[col] = sqlLiteral(s.queryData[rowIndex][col]) } else { values[col] = "NULL" } }
+		values := make([]string, 0, len(indexes))
+		for _, column := range indexes {
+			if column < len(s.queryData[rowIndex]) { values = append(values, sqlLiteral(s.queryData[rowIndex][column])) } else { values = append(values, "NULL") }
+		}
 		if wroteRow { b.WriteString(",\n") }
 		b.WriteString("(" + strings.Join(values, ", ") + ")")
 		wroteRow = true
 	}
 	b.WriteString(";")
 	return b.String()
+}
+
+// visibleResultColumnIndexes 返回当前结果中可见列的原始索引，供复制与 INSERT 生成共用。
+func visibleResultColumnIndexes(hidden map[int]bool, columnCount int) []int {
+	indexes := make([]int, 0, columnCount)
+	for column := 0; column < columnCount; column++ {
+		if !hidden[column] { indexes = append(indexes, column) }
+	}
+	return indexes
+}
+
+func quoteSQLIdentifier(identifier string) string {
+	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
+}
+
+// resultInsertTarget 优先使用对象导航当前选中的表；没有明确目标时保留可替换占位符。
+func resultInsertTarget(database, table string) string {
+	if strings.TrimSpace(table) == "" { return "`table_name`" }
+	if strings.TrimSpace(database) == "" { return quoteSQLIdentifier(table) }
+	return quoteSQLIdentifier(database) + "." + quoteSQLIdentifier(table)
 }
 
 func (s *workspace) contextColumnValues(column int, distinct bool) string {
