@@ -353,3 +353,10 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 改为紧凑保存活动条件及其原始列索引，逐行筛选只遍历实际启用的条件；列索引仍指向原始结果列，越界列继续判定为不匹配。
 - 更新测试覆盖空条件、稀疏列索引、匹配和阈值不匹配；增加 64 列仅 1 个活动条件的 1 万 / 10 万 / 50 万行基准。
 - 未执行本地 Go 测试或基准；以最新 head 的 Linux / Windows CI 验证，性能数值需开发机实测。
+
+### 2026-11-27：修复紧凑列筛选重构后的编译错误
+
+- 最新 head 的 CI Run [45960486234](https://github.com/yuwen002/meteor-ch-workbench/actions/runs/45960486234) 中，Linux 与 Windows 的 `Run tests` 均在编译阶段失败；根因是筛选状态切换为 `[]indexedResultColumnFilter` 后，`between:` 分支和普通比较分支仍使用旧的 `prepared[column]` 下标赋值，单值条件适配函数也仍直接返回包装结构体。
+- 已将两处分支统一改为追加 `{column, filter}`，保留原始列索引；单值适配函数改为返回包装结构中的 `filter`。这修复的是类型不匹配编译错误，不改变筛选表达式语义。
+- 修复提交：`b6c3e389ce6612c0fcd0c08a09b959de8b7babff`（`fix(query): 修复紧凑列筛选条件写入`）。
+- 本次未执行本地 Go 测试、vet、build 或性能基准；必须以该修复提交触发的 Linux / Windows CI 结果验收。此前 Run `45960486234` 对应旧 head，不能作为修复后的验收结论。
