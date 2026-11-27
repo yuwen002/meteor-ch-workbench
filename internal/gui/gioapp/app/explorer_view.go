@@ -89,6 +89,7 @@ func (s *workspace) layoutNavigator(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 		layout.Rigid(s.divider),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return s.layoutContextMenu(gtx, "navigator") }),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if len(s.databases) == 0 {
 				message := "该连接没有可见数据库"
@@ -109,6 +110,9 @@ func (s *workspace) layoutNavigator(gtx layout.Context) layout.Dimensions {
 
 // layoutDatabaseNode 渲染一个可折叠的数据库节点及其下属表与视图。
 func (s *workspace) layoutDatabaseNode(gtx layout.Context, name string) layout.Dimensions {
+	rightTag := s.databaseRightClicks[name]
+	if rightTag == nil { rightTag = new(rightClickTag); s.databaseRightClicks[name] = rightTag }
+	s.watchSecondaryClick(gtx, rightTag, func() { s.openContextMenu("database", name, "", -1, -1) })
 	click := s.databaseClicks[name]
 	if click == nil {
 		click = new(widget.Clickable)
@@ -166,6 +170,9 @@ func (s *workspace) layoutDatabaseNode(gtx layout.Context, name string) layout.D
 func (s *workspace) layoutObjectNode(gtx layout.Context, database string, object metadataapp.Object, kind string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		key := database + "." + object.Name
+		rightTag := s.objectRightClicks[key]
+		if rightTag == nil { rightTag = new(rightClickTag); s.objectRightClicks[key] = rightTag }
+		s.watchSecondaryClick(gtx, rightTag, func() { s.openContextMenu("object", database, object.Name, -1, -1) })
 		click := s.objectClicks[key]
 		if click == nil {
 			click = new(widget.Clickable)
