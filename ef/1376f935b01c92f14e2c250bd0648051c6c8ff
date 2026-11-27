@@ -1,0 +1,16 @@
+internal/config/manager.go
+  h_a3f313f3d96276 45-67,175,217-219
+internal/config/manager_test.go
+  h_a3f313f3d96276 1-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "26.9.9",
+  "base_commit_sha": "ef1376f935b01c92f14e2c250bd0648051c6c8ff",
+  "prompts": {},
+  "humans": {
+    "h_a3f313f3d96276": {
+      "author": "liuxingyu <yuwen002@163.com>"
+    }
+  }
+}
