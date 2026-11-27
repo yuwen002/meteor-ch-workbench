@@ -265,6 +265,31 @@ func TestResultValueTextUsedBySortKeysAndColumnFilters(t *testing.T) {
 	}
 }
 
+func TestResultTextContainsLowerNeedlePreservesASCIIFoldingAndUnicode(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		needle string
+		want  bool
+	}{
+		{name: "lowercase ASCII", value: "clickhouse server", needle: "click", want: true},
+		{name: "uppercase ASCII", value: "ClickHouse Server", needle: "clickhouse", want: true},
+		{name: "mixed ASCII substring", value: "user-ABC-123", needle: "abc", want: true},
+		{name: "ASCII miss", value: "clickhouse", needle: "mysql", want: false},
+		{name: "Unicode uppercase", value: "ÄBC Server", needle: "äbc", want: true},
+		{name: "Unicode lowercase", value: "Straße", needle: "straße", want: true},
+		{name: "Unicode miss", value: "ÄBC Server", needle: "ö", want: false},
+		{name: "empty needle", value: "anything", needle: "", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resultTextContainsLowerNeedle(tc.value, tc.needle); got != tc.want {
+				t.Fatalf("resultTextContainsLowerNeedle(%q, %q) = %v, want %v", tc.value, tc.needle, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResultRowMatchesLowerFilter(t *testing.T) {
 	row := []any{"ClickHouse", int64(42), nil, []byte("ab")}
 	if !resultRowMatchesLowerFilter(row, "click") {

@@ -284,7 +284,7 @@ func (filter preparedResultColumnFilter) matches(value any) bool {
 	}
 	actual := resultValueText(value)
 	if filter.kind == resultColumnFilterContains {
-		matched := strings.Contains(strings.ToLower(actual), filter.expectedLower)
+		matched := resultTextContainsLowerNeedle(actual, filter.expectedLower)
 		if filter.operator == "!" {
 			return !matched
 		}
@@ -375,7 +375,7 @@ func preparedResultColumnFilterFor(expression string) preparedResultColumnFilter
 }
 
 func resultValueMatchesFilter(value any, filter string) bool {
-	return strings.Contains(strings.ToLower(resultValueText(value)), strings.ToLower(filter))
+	return resultTextContainsLowerNeedle(resultValueText(value), strings.ToLower(filter))
 }
 
 func resultRowMatchesFilter(row []any, filter string) bool {
@@ -393,10 +393,57 @@ func resultValueText(value any) string {
 	return fmt.Sprint(value)
 }
 
+
+// resultTextContainsLowerNeedle performs case-insensitive substring matching.
+// ASCII text is compared byte-by-byte without allocating a lowercased copy;
+// non-ASCII text keeps strings.ToLower semantics for Unicode compatibility.
+// needle must already be lowercased, as prepared by the caller.
+func resultTextContainsLowerNeedle(value, needle string) bool {
+	if needle == "" {
+		return true
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] >= 0x80 {
+			return strings.Contains(strings.ToLower(value), needle)
+		}
+	}
+	for i := 0; i < len(needle); i++ {
+		if needle[i] >= 0x80 {
+			return strings.Contains(strings.ToLower(value), needle)
+		}
+	}
+	if len(needle) > len(value) {
+		return false
+	}
+	for start := 0; start <= len(value)-len(needle); start++ {
+		if asciiLower(value[start]) != needle[0] {
+			continue
+		}
+		matched := true
+		for offset := 1; offset < len(needle); offset++ {
+			if asciiLower(value[start+offset]) != needle[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func asciiLower(value byte) byte {
+	if value >= 'A' && value <= 'Z' {
+		return value + ('a' - 'A')
+	}
+	return value
+}
+
 // resultRowMatchesLowerFilter 接收已标准化的关键词，避免每一行重复转换筛选词大小写。
 func resultRowMatchesLowerFilter(row []any, needle string) bool {
 	for _, value := range row {
-		if strings.Contains(strings.ToLower(resultValueText(value)), needle) {
+		if resultTextContainsLowerNeedle(resultValueText(value), needle) {
 			return true
 		}
 	}

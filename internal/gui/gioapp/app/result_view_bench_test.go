@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -91,3 +92,34 @@ func BenchmarkResultValueText(b *testing.B) {
 }
 
 var benchmarkResultValueTextSink string
+
+
+// BenchmarkResultTextContainsLowerNeedle compares allocation-free ASCII matching
+// with the previous lowercase-copy implementation, while checking Unicode fallback.
+func BenchmarkResultTextContainsLowerNeedle(b *testing.B) {
+	cases := []struct {
+		name string
+		value string
+		needle string
+	}{
+		{name: "lowercase-ascii", value: "user-000123 clickhouse query finished successfully", needle: "clickhouse"},
+		{name: "mixed-ascii", value: "User-000123 ClickHouse Query Finished Successfully", needle: "clickhouse"},
+		{name: "unicode-fallback", value: "ÄBC 数据库服务已启动", needle: "äbc"},
+	}
+	for _, item := range cases {
+		b.Run(item.name+"/legacy", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				benchmarkResultTextContainsSink = strings.Contains(strings.ToLower(item.value), item.needle)
+			}
+		})
+		b.Run(item.name+"/optimized", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				benchmarkResultTextContainsSink = resultTextContainsLowerNeedle(item.value, item.needle)
+			}
+		})
+	}
+}
+
+var benchmarkResultTextContainsSink bool

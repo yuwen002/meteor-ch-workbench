@@ -265,3 +265,11 @@ Meteor CH Workbench 正在从旧 Wails / Vue 实现全量重写为 Go + Gio 原�
 - 该基准只隔离文本转换成本；整体筛选收益仍应结合 `BenchmarkBuildResultRowViewLargeResult` 的 1 万 / 10 万 / 50 万行结果判断，不能用微基准代替端到端测量。
 - 推荐命令：`go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(ResultValueText|BuildResultRowViewLargeResult)' -benchmem`。
 - 本轮没有本地执行基准，尚无耗时或分配数结论。
+
+
+### 2026-11-27：减少结果筛选的大小写转换分配
+
+- 新增 `resultTextContainsLowerNeedle`：ASCII 文本使用无临时字符串的大小写折叠子串匹配；遇到非 ASCII 文本或关键词时回退到原有 `strings.ToLower` 路径，保留 Unicode 大小写语义。
+- 全局关键字筛选、列包含条件和单值筛选统一使用该入口；筛选关键词仍由调用方预先转为小写，不在每个单元格重复转换。
+- 新增 ASCII 大小写、混合大小写及 Unicode 回退测试，并补充新旧实现对照基准；基准覆盖小写 ASCII、混合 ASCII 和 Unicode。
+- 本轮未在本地执行 Go 测试或基准；需以最新 head 的 Linux / Windows CI 验证正确性，并在开发机运行 `go test ./internal/gui/gioapp/app -run '^$' -bench 'Benchmark(ResultTextContainsLowerNeedle|BuildResultRowViewLargeResult)' -benchmem` 获取实际性能数据。未测量前不宣称性能提升幅度。
