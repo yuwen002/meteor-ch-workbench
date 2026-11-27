@@ -296,7 +296,7 @@ type preparedResultColumnFilter struct {
 
 // prepareResultColumnFilters 在扫描结果行之前解析列条件，避免逐行重复拆分表达式。
 func prepareResultColumnFilters(filters []string) []indexedResultColumnFilter {
-	// 没有启用列条件时直接返回 nil，避免每次刷新结果视图都分配与列数等长的空条件切片。
+	// 没有启用列条件时直接返回 nil；有条件时仅保存活动列及其原始索引。
 	hasActiveFilter := false
 	for _, raw := range filters {
 		if strings.TrimSpace(raw) != "" {
@@ -314,7 +314,7 @@ func prepareResultColumnFilters(filters []string) []indexedResultColumnFilter {
 		if expression == "" {
 			continue
 		}
-		condition := preparedResultColumnFilter{active: true, valid: true, expected: expression}
+		condition := preparedResultColumnFilter{valid: true, expected: expression}
 		if strings.EqualFold(expression, "is:null") || strings.EqualFold(expression, "is:not-null") {
 			condition.kind = resultColumnFilterNull
 			condition.operator = strings.ToLower(expression)
